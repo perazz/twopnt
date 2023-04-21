@@ -2,9 +2,111 @@ module twopnt
   implicit none
   private
 
-  public :: say_hello
-contains
-  subroutine say_hello
-    print *, "Hello, twopnt!"
-  end subroutine say_hello
+
+  contains
+
+
+      SUBROUTINE TWTIME (TIMER)
+
+C///////////////////////////////////////////////////////////////////////
+C
+C     T W O P N T
+C
+C     TWTIME
+C
+C     OBTAIN COMPUTING TIME IN SECONDS.
+C
+C///////////////////////////////////////////////////////////////////////
+
+      IMPLICIT COMPLEX (A - Z)
+C*****PRECISION > DOUBLE
+      DOUBLE PRECISION
+C*****END PRECISION > DOUBLE
+C*****PRECISION > SINGLE
+C      REAL
+C*****END PRECISION > SINGLE
+     +   TIMER
+
+C     THE SYSTEM LIBRARY BASELIB CONTAINS SUBROUTINE IZM00.
+C*****COMPUTING TIME > CRI (CRAY) CTSS (LIVERMORE)
+C      EXTERNAL IZM00
+C      INTEGER FLAG, IZM00, VALUE
+C      REAL TEMP
+C      DIMENSION VALUE(5)
+C
+C      FLAG = IZM00 (VALUE)
+C      IF (FLAG .EQ. 0) THEN
+C         TEMP = REAL (VALUE(1)) / 1.0E6
+C      ELSE
+C         TEMP = 0.0
+C      END IF
+C*****END COMPUTING TIME > CRI (CRAY) CTSS (LIVERMORE)
+
+C     THE SYSTEM LIBRARY CFTLIB CONTAINS SUBROUTINE ISECOND.
+C*****COMPUTING TIME > CRI (CRAY) CTSS (LOS ALAMOS)
+C      EXTERNAL ISECOND
+C      INTEGER VALUE
+C      REAL TEMP
+C
+C      CALL ISECOND (VALUE)
+C      TEMP = REAL (VALUE) / 1.0E6
+C*****END COMPUTING TIME > CRI (CRAY) CTSS (LOS ALAMOS)
+
+C*****COMPUTING TIME > CRI (CRAY) UNICOS
+C      REAL SECOND, TEMP
+C      TEMP = SECOND ()
+C*****END COMPUTING TIME > CRI (CRAY) UNICOS
+
+C     THIS IS A SYSTEM SERVICE CALL FROM FORTRAN.
+C*****COMPUTING TIME > DEC (VAX) VMS
+C      INTEGER*2 LIST
+C      INTEGER*4 ADDRESS, TICS
+C      REAL*4 TEMP
+C
+C      DIMENSION LIST(6)
+C
+C      EQUIVALENCE (LIST(3), ADDRESS)
+C
+C      DATA LIST(1), LIST(2), LIST(5), LIST(6) / 4, '0407'X, 0, 0 /
+C
+C      ADDRESS = %LOC (TICS)
+C      CALL SYS$GETJPIW (, , , LIST, , , )
+C      TEMP = REAL (TICS) / 1.0E2
+C*****END COMPUTING TIME > DEC (VAX) VMS
+
+C*****COMPUTING TIME > generic unix etime
+C      EXTERNAL ETIME
+C      REAL ETIME, LIST, TEMP
+C      DIMENSION LIST(2)
+C
+C      TEMP = ETIME (LIST)
+C*****END COMPUTING TIME > generic unix etime
+
+C*****COMPUTING TIME > IBM (RISC System/6000) AIX
+C      INTEGER MCLOCK
+C      REAL TEMP
+C
+C      TEMP = REAL (MCLOCK()) * 0.01
+C*****END COMPUTING TIME > IBM (RISC System/6000) AIX
+
+C*****COMPUTING TIME > none
+      REAL TEMP
+
+      TEMP = 0.0
+C*****END COMPUTING TIME > none
+
+C*****COMPUTING TIME > SUN (SPARCstation) SunOS
+C      EXTERNAL ETIME
+C      REAL ETIME, LIST, TEMP
+C      DIMENSION LIST(2)
+C
+C      TEMP = ETIME (LIST)
+C*****END COMPUTING TIME > SUN (SPARCstation) SunOS
+
+      TIMER = TEMP
+
+      RETURN
+      END
+
 end module twopnt
+
