@@ -1,41 +1,9 @@
-c     cvs $revision: 1.1.1.1 $ reposited $date: 2006/05/26 19:09:34 $
+!     cvs $revision: 1.1.1.1 $ reposited $date: 2006/05/26 19:09:34 $
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     VERSION 3.29 OF APRIL 1998
-C
-C     THE TWOPNT PROGRAM FOR BOUNDARY VALUE PROBLEMS
-C
-C     WRITTEN BY: DR. JOSEPH F. GRCAR
-C                 SANDIA NATIONAL LABORATORIES
-C                 MAIL STOP 9051
-C                 LIVERMORE, CALIFORNIA  94551-0969  USA
-C
-C                 (925) 294-2662
-C                 (FTS) 234-2662
-C
-C                 na.grcar@na-net.ornl.gov
-C                 sepp@california.sandia.gov
-C
-C///////////////////////////////////////////////////////////////////////
-C
-C     DOCUMENTATION:
-C
-C     J. F. Grcar, "The Twopnt Program for Boundary Value Problems,"
-C     Sandia National Laboratories Report SAND91-8230, Livermore,
-C     California, April 1992.  Reprinted February 1996.
-C
-C///////////////////////////////////////////////////////////////////////
-C
-C     CHANGES FROM THE PREVIOUS VERSION:
-C
-C     1) PUT CHANGE BLOCK AROUND DECLARATION OF SAME IN TWEPS.
-C
-C     2) ALTER AREA CODE.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+
+!
+!///////////////////////////////////////////////////////////////////////
 
       subroutine evolve
      +  (error, text,
@@ -44,26 +12,26 @@ C///////////////////////////////////////////////////////////////////////
      +   step, steps2, strid0, stride, succes, tdabs, tdage, tdec,
      +   tdrel, time, tinc, tmax, tmin, v0, v1, vsave, y0, y1, ynorm)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     EVOLVE
-C
-C     PERFORM TIME EVOLUTION.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     EVOLVE
+!
+!     PERFORM TIME EVOLUTION.
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - p, r - z), integer (q)
       character
      +   cword*80, header*80, id*9, jword*80, name*(*), remark*80,
      +   signal*(*), yword*80
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+      real(RK)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!      REAL
+!*****END PRECISION > SINGLE
      +   above, below, buffer, change, condit, csave, dummy, high, low,
      +   s0, s1, strid0, stride, tdabs, tdec, tdrel, tinc, tmax, tmin,
      +   v0, v1, vsave, y0, y1, ynorm
@@ -81,7 +49,7 @@ C*****END PRECISION > SINGLE
 
       parameter (id = 'EVOLVE:  ')
 
-C     REPORT CODES
+!     REPORT CODES
       parameter (qnull = 0, qbnds = 1, qdvrg = 2)
 
       dimension
@@ -94,77 +62,77 @@ C     REPORT CODES
      +   vsave(groupa + comps * points + groupb),
      +   y0(groupa + comps * points + groupb)
 
-C///  SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
+!///  SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
 
       save
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     PROLOGUE.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     PROLOGUE.
+!
+!///////////////////////////////////////////////////////////////////////
 
-C///  INITIALIZE.
+!///  INITIALIZE.
 
-C     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
+!     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
       mess = .false.
 
-C     TURN OF REVERSE COMMUNICATION FLAGS.
+!     TURN OF REVERSE COMMUNICATION FLAGS.
       time = .false.
 
-C     TURN OFF ALL COMPLETION STATUS FLAGS.
+!     TURN OFF ALL COMPLETION STATUS FLAGS.
       error = .false.
       report = qnull
       succes = .false.
 
-C///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
+!///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
 
-      if (signal .ne. ' ') then
+      if (signal /= ' ') then
          go to (1010, 1020, 1060, 1080, 1090, 2020) route
          error = .true.
          go to 9001
       end if
 
-C///  CHECK THE ARGUMENTS.
+!///  CHECK THE ARGUMENTS.
 
-      error = .not. (((0 .lt. comps) .eqv. (0 .lt. points)) .and.
-     +   0 .le. comps .and. 0 .le. points .and. 0 .le. groupa .and.
-     +   0 .le. groupb .and. 0 .lt. groupa + comps * points + groupb)
+      error = .not. (((0 < comps) .eqv. (0 < points)) .and.
+     +   0 <= comps .and. 0 <= points .and. 0 <= groupa .and.
+     +   0 <= groupb .and. 0 < groupa + comps * points + groupb)
       if (error) go to 9002
 
-      error = .not. (0 .lt. desire)
+      error = .not. (0 < desire)
       if (error) go to 9003
 
-      error = .not. (1.0 .le. tdec .and. 1.0 .le. tinc)
+      error = .not. (1.0 <= tdec .and. 1.0 <= tinc)
       if (error) go to 9004
 
-      error = .not. (0.0 .lt. tmin .and. tmin .le. tmax)
+      error = .not. (0.0 < tmin .and. tmin <= tmax)
       if (error) go to 9005
 
-      error = .not. (tmin .le. strid0 .and. strid0 .le. tmax)
+      error = .not. (tmin <= strid0 .and. strid0 <= tmax)
       if (error) go to 9006
 
-      error = .not. (0 .le. step)
+      error = .not. (0 <= step)
       if (error) go to 9007
 
-      error = 1.0 .lt. tinc .and. .not. 0 .lt. steps2
+      error = 1.0 < tinc .and. .not. 0 < steps2
       if (error) go to 9008
 
-C///  WRITE ALL MESSAGES.
+!///  WRITE ALL MESSAGES.
 
-C                     123456789_123456789_123456789_123456789_1234
-C                     123456   123456   123456   123456   12345
+!                     123456789_123456789_123456789_123456789_1234
+!                     123456   123456   123456   123456   12345
       header(1, 1) = '  TIME   LOG10                      NEWTON S'
       header(1, 2) = ' POINT   ------------------------   --------'
       header(1, 3) = 'NUMBER   NORM F   CHANGE   STRIDE   STEPS   '
 
-C                     123456789_123456789_1
-C                     123   123456   123456
+!                     123456789_123456789_1
+!                     123   123456   123456
       header(2, 1) = 'EARCH                '
       header(2, 2) = '---------------------'
       header(2, 3) = 'J''S   COND J   REMARK'
 
-      if (mess .and. 0 .lt. text) then
+      if (mess .and. 0 < text) then
          route = 0
          ynorm = 1.0E-4
          call twlogr (yword, ynorm)
@@ -186,40 +154,40 @@ C                     123   123456   123456
          go to 9001
       end if
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     TIME EVOLUTION.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     TIME EVOLUTION.
+!
+!///////////////////////////////////////////////////////////////////////
 
-C///  0 < M?
+!///  0 < M?
 
-      if (0 .lt. step) go to 1010
+      if (0 < step) go to 1010
          stride = strid0
          age = 0
 
-C        RETAIN THE LATEST SOLUTION FOR USE BY THE FUNCTION
+!        RETAIN THE LATEST SOLUTION FOR USE BY THE FUNCTION
          call twcopy (groupa + comps * points + groupb, v0, buffer)
          signal = 'RETAIN'
-C        GO TO 1010 WHEN ROUTE = 1
+!        GO TO 1010 WHEN ROUTE = 1
          route = 1
          go to 99999
 1010  continue
       signal = ' '
 
-C///  FIRST := STEP, LAST := STEP + DESIRE.
+!///  FIRST := STEP, LAST := STEP + DESIRE.
 
       exist = .false.
       first = step
       last = step + desire
 
-C///  PRINT.
+!///  PRINT.
 
-      if (.not. (0 .lt. levelm .and. 0 .lt. text)) go to 1030
+      if (.not. (0 < levelm .and. 0 < text)) go to 1030
          call twcopy (groupa + comps * points + groupb, v0, buffer)
          signal = 'RESIDUAL'
          time = .false.
-C        GO TO 1020 WHEN ROUTE = 2
+!        GO TO 1020 WHEN ROUTE = 2
          route = 2
          go to 99999
 1020     continue
@@ -227,14 +195,14 @@ C        GO TO 1020 WHEN ROUTE = 2
          call twnorm (groupa + comps * points + groupb, ynorm, buffer)
          call twlogr (yword, ynorm)
 
-         if (1 .eq. levelm) then
-            if (step .eq. 0) then
+         if (1 == levelm) then
+            if (step == 0) then
                write (text, 10001) id, header, step, yword
             else
                write (text, 10002) id, header, step, yword
             end if
-         else if (1 .lt. levelm .and. 0 .eq. step) then
-            if (step .eq. 0) then
+         else if (1 < levelm .and. 0 == step) then
+            if (step == 0) then
                write (text, 20001) id, step, yword, log10 (stride)
             else
                write (text, 20002) id, step, yword, log10 (stride)
@@ -242,34 +210,34 @@ C        GO TO 1020 WHEN ROUTE = 2
          end if
 1030  continue
 
-C///  LOW := TMIN, HIGH := TMAX.
+!///  LOW := TMIN, HIGH := TMAX.
 
 1040  continue
 
       low = tmin
       high = tmax
 
-C///  IF AGE = STEPS2 AND STRIDE < HIGH AND 1 < TINC, THEN INCREASE
-C///  STRIDE.
+!///  IF AGE = STEPS2 AND STRIDE < HIGH AND 1 < TINC, THEN INCREASE
+!///  STRIDE.
 
-      if (age .eq. steps2 .and. stride .lt. high .and. 1.0 .lt. tinc)
+      if (age == steps2 .and. stride < high .and. 1.0 < tinc)
      +   then
          age = 0
          exist = .false.
          low = stride * tdec
          stride = min (high, stride * tinc)
-         if (1 .lt. levelm .and. 0 .lt. text)
+         if (1 < levelm .and. 0 < text)
      +      write (text, 20003) id, step, yword, log10 (stride)
       else
-         if (1 .lt. levelm .and. 0 .lt. text .and. 0 .lt. step)
+         if (1 < levelm .and. 0 < text .and. 0 < step)
      +      write (text, 20002) id, step, yword, log10 (stride)
       end if
 
-C///  NEWTON SEARCH.
+!///  NEWTON SEARCH.
 
 1050  continue
 
-C     STORE THE LATEST SOLUTION SHOULD THE SEARCH FAIL
+!     STORE THE LATEST SOLUTION SHOULD THE SEARCH FAIL
       call twcopy (groupa + comps * points + groupb, v0, vsave)
 
       count = 0
@@ -283,19 +251,19 @@ C     STORE THE LATEST SOLUTION SHOULD THE SEARCH FAIL
          exist = .true.
          count = count + 1
          csave = max (condit, csave)
-         if (csave .eq. 0.0) then
+         if (csave == 0.0) then
             write (jword, '(I3, 3X, A6)') count, '    NA'
          else
             write (jword, '(I3, 3X, F6.2)') count, log10 (csave)
          end if
       end if
 
-C     SUBROUTINE SEARCH
-C    +  (ERROR, TEXT,
-C    +   ABOVE, AGE, BELOW, BUFFER, COMPS, CONDIT, EXIST, GROUPA,
-C    +   GROUPB, LEVELD, LEVELM, NAME, NAMES, POINTS, REPORT, S0, S1,
-C    +   SIGNAL, STEPS, SUCCES, V0, V1, XXABS, XXAGE, XXREL, Y0, Y0NORM,
-C    +   Y1)
+!     SUBROUTINE SEARCH
+!    +  (ERROR, TEXT,
+!    +   ABOVE, AGE, BELOW, BUFFER, COMPS, CONDIT, EXIST, GROUPA,
+!    +   GROUPB, LEVELD, LEVELM, NAME, NAMES, POINTS, REPORT, S0, S1,
+!    +   SIGNAL, STEPS, SUCCES, V0, V1, XXABS, XXAGE, XXREL, Y0, Y0NORM,
+!    +   Y1)
 
       call search
      +  (error, text,
@@ -305,22 +273,22 @@ C    +   Y1)
      +   y0, dummy, y1)
       if (error) go to 9009
 
-      if (signal .ne. ' ') then
-         jacob = signal .eq. 'PREPARE'
+      if (signal /= ' ') then
+         jacob = signal == 'PREPARE'
          time = .true.
-C        GO TO 1060 WHEN ROUTE = 3
+!        GO TO 1060 WHEN ROUTE = 3
          route = 3
          go to 99999
       end if
 
-C///  UNSUCCESSFUL?
+!///  UNSUCCESSFUL?
 
       if (.not. xsucce) then
-         if (1 .eq. levelm .and. 0 .lt. text) then
-            if (xrepor .eq. qbnds) then
+         if (1 == levelm .and. 0 < text) then
+            if (xrepor == qbnds) then
                length = 6
                remark = 'BOUNDS'
-            else if (xrepor .eq. qdvrg) then
+            else if (xrepor == qdvrg) then
                length = 7
                remark = 'DIVERGE'
             else
@@ -331,26 +299,26 @@ C///  UNSUCCESSFUL?
      +         remark (1 : length)
          end if
 
-C///  IF ALSO LOW < STRIDE AND 1 < TDEC, THEN DECREASE STRIDE.
+!///  IF ALSO LOW < STRIDE AND 1 < TDEC, THEN DECREASE STRIDE.
 
-         if (low .lt. stride .and. 1.0 .lt. tdec) then
+         if (low < stride .and. 1.0 < tdec) then
             age = 0
             call twcopy (groupa + comps * points + groupb, vsave, v0)
             exist = .false.
             high = stride / tinc
             stride = max (low, stride / tdec)
-            if (1 .lt. levelm .and. 0 .lt. text) write (text, 20004)
+            if (1 < levelm .and. 0 < text) write (text, 20004)
      +         id, step, yword, log10 (stride)
             go to 1050
          end if
 
-C///  OTHERWISE END, FAILURE.
+!///  OTHERWISE END, FAILURE.
 
          go to 2010
       end if
 
-C///  IF NO CHANGE AND STRIDE .LT. HIGH AND 1.0 .LT. TINC, THEN
-C///  INCREASE STRIDE.  OTHERWISE END, FAILURE.
+!///  IF NO CHANGE AND STRIDE < HIGH AND 1.0 < TINC, THEN
+!///  INCREASE STRIDE.  OTHERWISE END, FAILURE.
 
       do 1070 j = 1, groupa + comps * points + groupb
          buffer(j) = v0(j) - vsave(j)
@@ -358,31 +326,31 @@ C///  INCREASE STRIDE.  OTHERWISE END, FAILURE.
       call twnorm (groupa + comps * points + groupb, change, buffer)
       call twlogr (cword, change)
 
-      if (change .eq. 0.0) then
-         if (1 .eq. levelm .and. 0 .lt. text) then
+      if (change == 0.0) then
+         if (1 == levelm .and. 0 < text) then
             write (text, 10004)
      +         step + 1, '  ZERO', log10 (stride), number, jword
          end if
 
-         if (1.0 .lt. tinc .and. stride .lt. high) then
+         if (1.0 < tinc .and. stride < high) then
             age = 0
             exist = .false.
             low = stride * tdec
             stride = min (high, stride * tinc)
-            if (1 .lt. levelm .and. 0 .lt. text)
+            if (1 < levelm .and. 0 < text)
      +         write (text, 20005) id, step, yword, log10 (stride)
             go to 1050
          end if
          go to 2010
       end if
 
-C///  AGE := AGE + 1, M := M + 1.
+!///  AGE := AGE + 1, M := M + 1.
 
       age = age + 1
       step = step + 1
 
-C     RETAIN THE LATEST SOLUTION FOR USE BY THE FUNCTION.
-C     GO TO 1080 WHEN ROUTE = 4
+!     RETAIN THE LATEST SOLUTION FOR USE BY THE FUNCTION.
+!     GO TO 1080 WHEN ROUTE = 4
       route = 4
       call twcopy (groupa + comps * points + groupb, v0, buffer)
       signal = 'RETAIN'
@@ -390,13 +358,13 @@ C     GO TO 1080 WHEN ROUTE = 4
 1080  continue
       signal = ' '
 
-C///  PRINT.
+!///  PRINT.
 
-      if (.not. (0 .lt. levelm .and. 0 .lt. text)) go to 1100
+      if (.not. (0 < levelm .and. 0 < text)) go to 1100
          call twcopy (groupa + comps * points + groupb, v0, buffer)
          signal = 'RESIDUAL'
          time = .false.
-C        GO TO 1090 WHEN ROUTE = 5
+!        GO TO 1090 WHEN ROUTE = 5
          route = 5
          go to 99999
 1090     continue
@@ -404,48 +372,48 @@ C        GO TO 1090 WHEN ROUTE = 5
          call twnorm (groupa + comps * points + groupb, ynorm, buffer)
          call twlogr (yword, ynorm)
 
-         if (1 .eq. levelm) write (text, 10005)
+         if (1 == levelm) write (text, 10005)
      +      step, yword, cword, log10 (stride), number, jword
 1100  continue
 
-C///  M < LAST?
+!///  M < LAST?
 
-      if (step .lt. last) go to 1040
+      if (step < last) go to 1040
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     EPILOGUE.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     EPILOGUE.
+!
+!///////////////////////////////////////////////////////////////////////
 
 2010  continue
 
-C///  PRINT.
+!///  PRINT.
 
-      if (0 .lt. levelm .and. 0 .lt. text) then
-         if (1 .eq. levelm) then
-            if (step .eq. first) then
+      if (0 < levelm .and. 0 < text) then
+         if (1 == levelm) then
+            if (step == first) then
                write (text, 10006) id
-            else if (step .eq. last) then
+            else if (step == last) then
                write (text, 10007) id
             else
                write (text, 10008) id
             end if
-         else if (1 .lt. levelm) then
-            if (step .eq. first) then
+         else if (1 < levelm) then
+            if (step == first) then
                write (text, 10006) id
-            else if (step .eq. last) then
+            else if (step == last) then
                write (text, 20006) id, step, yword
             else
                write (text, 20007) id, step, yword
             end if
          end if
 
-         if (first .lt. last .and. 1 .eq. leveld) then
+         if (first < last .and. 1 == leveld) then
             write (text, 20008) id
             call twcopy (groupa + comps * points + groupb, v0, buffer)
             signal = 'SHOW'
-C           GO TO 2020 WHEN ROUTE = 6
+!           GO TO 2020 WHEN ROUTE = 6
             route = 6
             go to 99999
          end if
@@ -454,16 +422,16 @@ C           GO TO 2020 WHEN ROUTE = 6
 2020  continue
       signal = ' '
 
-C///  SET THE COMPLETION STATUS FLAGS.
+!///  SET THE COMPLETION STATUS FLAGS.
 
-      succes = first .lt. step
-      if (step .lt. last) report = xrepor
+      succes = first < step
+      if (step < last) report = xrepor
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     INFORMATIVE MESSAGES.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     INFORMATIVE MESSAGES.
+!
+!///////////////////////////////////////////////////////////////////////
 
 10001 format
      +  (/1X, a9, 'BEGIN TIME EVOLUTION.'
@@ -542,40 +510,40 @@ C///////////////////////////////////////////////////////////////////////
 20008 format
      + (/1X, a9, 'THE LATEST SOLUTION:')
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     ERROR MESSAGES.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     ERROR MESSAGES.
+!
+!///////////////////////////////////////////////////////////////////////
 
       go to 99999
 
-9001  if (0 .lt. text) write (text, 99001) id, route
+9001  if (0 < text) write (text, 99001) id, route
       if (.not. mess) go to 99999
 
-9002  if (0 .lt. text) write (text, 99002) id,
+9002  if (0 < text) write (text, 99002) id,
      +   comps, points, groupa, groupb, groupa + comps * points + groupb
       if (.not. mess) go to 99999
 
-9003  if (0 .lt. text) write (text, 99003) id, desire
+9003  if (0 < text) write (text, 99003) id, desire
       if (.not. mess) go to 99999
 
-9004  if (0 .lt. text) write (text, 99004) id, tdec, tinc
+9004  if (0 < text) write (text, 99004) id, tdec, tinc
       if (.not. mess) go to 99999
 
-9005  if (0 .lt. text) write (text, 99005) id, tmin, tmax
+9005  if (0 < text) write (text, 99005) id, tmin, tmax
       if (.not. mess) go to 99999
 
-9006  if (0 .lt. text) write (text, 99006) id, tmin, strid0, tmax
+9006  if (0 < text) write (text, 99006) id, tmin, strid0, tmax
       if (.not. mess) go to 99999
 
-9007  if (0 .lt. text) write (text, 99007) id, step
+9007  if (0 < text) write (text, 99007) id, step
       if (.not. mess) go to 99999
 
-9008  if (0 .lt. text) write (text, 99008) id, steps2
+9008  if (0 < text) write (text, 99008) id, steps2
       if (.not. mess) go to 99999
 
-9009  if (0 .lt. text) write (text, 99009) id
+9009  if (0 < text) write (text, 99009) id
       if (.not. mess) go to 99999
 
 99001 format
@@ -629,7 +597,7 @@ C///////////////////////////////////////////////////////////////////////
 99009 format
      +  (/1X, a9, 'ERROR.  SEARCH FAILS.')
 
-C///  EXIT.
+!///  EXIT.
 
       stop
 99999 continue
@@ -642,27 +610,27 @@ C///  EXIT.
      +   signal, steps, succes, v0, v1, xxabs, xxage, xxrel, y0, y0norm,
      +   y1)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     SEARCH
-C
-C     PERFORM THE DAMPED, MODIFIED NEWTON'S SEARCH.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     SEARCH
+!
+!     PERFORM THE DAMPED, MODIFIED NEWTON'S SEARCH.
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - z)
 
       character
      +   column*16, ctemp1*80, ctemp2*80, header*80, id*9, name*(*),
      +   signal*(*), string*80
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+      real(RK)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!      REAL
+!*****END PRECISION > SINGLE
      +   above, abs0, abs1, below, buffer, condit, deltab, deltad, rel0,
      +   rel1, s0, s0norm, s1, s1norm, sj, temp, v0, v1, value, vj,
      +   xxabs, xxrel, y0, y0norm, y1, y1norm, zero
@@ -681,7 +649,7 @@ C*****END PRECISION > SINGLE
       parameter (lines = 20)
       parameter (zero = 0.0)
 
-C     REPORT CODES
+!     REPORT CODES
       parameter (qnull = 0, qbnds = 1, qdvrg = 2)
 
       dimension
@@ -696,73 +664,73 @@ C     REPORT CODES
      +   y0(groupa + comps * points + groupb),
      +   y1(groupa + comps * points + groupb)
 
-C///  SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
+!///  SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
 
       save
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     PROLOGUE.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     PROLOGUE.
+!
+!///////////////////////////////////////////////////////////////////////
 
-C///  EVERY-TIME INITIALIZATION.
+!///  EVERY-TIME INITIALIZATION.
 
-C     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
+!     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
       mess = .false.
 
-C     TURN OFF ALL COMPLETION STATUS FLAGS.
+!     TURN OFF ALL COMPLETION STATUS FLAGS.
       error = .false.
       report = qnull
       succes = .false.
 
-C///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
+!///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
 
-      if (signal .ne. ' ') then
+      if (signal /= ' ') then
          go to (2020, 2040, 2050, 2140, 2150, 2180) route
          error = .true.
          go to 9001
       end if
 
-C///  ONE-TIME INITIALIZATION.
+!///  ONE-TIME INITIALIZATION.
 
       number = 0
 
-C///  CHECK THE ARGUMENTS.
+!///  CHECK THE ARGUMENTS.
 
-      error = .not. (((0 .lt. comps) .eqv. (0 .lt. points)) .and.
-     +   0 .le. comps .and. 0 .le. points .and. 0 .le. groupa .and.
-     +   0 .le. groupb .and. 0 .lt. groupa + comps * points + groupb)
+      error = .not. (((0 < comps) .eqv. (0 < points)) .and.
+     +   0 <= comps .and. 0 <= points .and. 0 <= groupa .and.
+     +   0 <= groupb .and. 0 < groupa + comps * points + groupb)
       if (error) go to 9002
 
-      error = .not. (names .eq. 1 .or.
-     +   names .eq. groupa + comps + groupb)
+      error = .not. (names == 1 .or.
+     +   names == groupa + comps + groupb)
       if (error) go to 9003
 
       count = 0
       do 1010 j = 1, groupa + comps * points + groupb
-         if (.not. (below(j) .lt. above(j))) count = count + 1
+         if (.not. (below(j) < above(j))) count = count + 1
 1010  continue
-      error = count .ne. 0
+      error = count /= 0
       if (error) go to 9004
 
       count = 0
       do 1020 j = 1, groupa + comps * points + groupb
-         if (.not. (below(j) .le. v0(j) .and. v0(j) .le. above(j)))
+         if (.not. (below(j) <= v0(j) .and. v0(j) <= above(j)))
      +      count = count + 1
 1020  continue
-      error = count .ne. 0
+      error = count /= 0
       if (error) go to 9005
 
-      error = .not. (0.0 .le. xxabs .and. 0.0 .le. xxrel)
+      error = .not. (0.0 <= xxabs .and. 0.0 <= xxrel)
       if (error) go to 9006
 
-      error = .not. (0 .lt. xxage)
+      error = .not. (0 < xxage)
       if (error) go to 9007
 
-C///  WRITE ALL MESSAGES.
+!///  WRITE ALL MESSAGES.
 
-      if (mess .and. 0 .lt. text) then
+      if (mess .and. 0 < text) then
          route = 0
 
          write (text, 10003) id
@@ -770,25 +738,25 @@ C///  WRITE ALL MESSAGES.
          count = 0
          do 1030 j = 1, groupa + comps * points + groupb
             count = count + 1
-            if (count .le. lines) then
-               if (j .le. groupa) then
+            if (count <= lines) then
+               if (j <= groupa) then
                   i = j
-               else if (j .le. groupa + comps * points) then
+               else if (j <= groupa + comps * points) then
                   i = groupa + mod (j - groupa - 1, comps) + 1
                else
                   i = j - groupa - comps * points
                end if
 
-               if (names .eq. comps + groupa + groupb) then
+               if (names == comps + groupa + groupb) then
                   ctemp1 = name(i)
                else
                   ctemp1 = ' '
                end if
                call twsqez (len1, ctemp1)
 
-               if (j .le. groupa) then
+               if (j <= groupa) then
                   write (ctemp2, 80001) 'A', i
-               else if (j .le. groupa + comps * points) then
+               else if (j <= groupa + comps * points) then
                   write (ctemp2, 80002) 'C', i,
      +               'P', int ((j - groupa - 1) / comps) + 1
                else
@@ -796,13 +764,13 @@ C///  WRITE ALL MESSAGES.
                end if
                call twsqez (len2, ctemp2)
 
-               if (ctemp1 .eq. ' ') then
+               if (ctemp1 == ' ') then
                   string = ctemp2
                   length = len2
-               else if (len1 + 2 + len2 .le. 30) then
+               else if (len1 + 2 + len2 <= 30) then
                   string = ctemp1 (1 : len1) // '  ' // ctemp2
                   length = len1 + 2 + len2
-               else if (len1 + 1 + len2 .le. 30) then
+               else if (len1 + 1 + len2 <= 30) then
                   string = ctemp1 (1 : len1) // ' ' // ctemp2
                   length = len1 + 1 + len2
                else
@@ -814,7 +782,7 @@ C///  WRITE ALL MESSAGES.
                write (text, 80003) 'LOWER', v0(j), string (1 : length)
             end if
 1030     continue
-         if (lines .lt. count) write (text, 80004)
+         if (lines < count) write (text, 80004)
          write (text, 10001) id
          write (text, 10006) id
          write (text, 10005) id
@@ -822,70 +790,70 @@ C///  WRITE ALL MESSAGES.
          go to 9001
       end if
 
-C///  PRINT THE HEADER.
+!///  PRINT THE HEADER.
 
-C                     123456789_123456789_123456789_123456789_1234
-C                     123456   123456   123456   123456   123456
+!                     123456789_123456789_123456789_123456789_1234
+!                     123456   123456   123456   123456   123456
       header(1, 1) = '         LOG10                              '
       header(2, 1) = '  SLTN   -----------------------------------'
       header(3, 1) = 'NUMBER   NORM F   COND J   NORM S      ABS A'
 
-C                     123456789_123456789_123
-C                     123456   123456  123456
+!                     123456789_123456789_123
+!                     123456   123456  123456
       header(1, 2) = '                       '
       header(2, 2) = '-----------------------'
       header(3, 2) = 'ND REL    DELTA B AND D'
 
-      if (levelm .ge. 1 .or. mess) then
-         if (0 .lt. text) write (text, 10001)
+      if (levelm >= 1 .or. mess) then
+         if (0 < text) write (text, 10001)
      +      id, ((header(j, k), k = 1, 2), j = 1, 3)
       end if
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     SIR ISSAC NEWTON'S ALGORITHM.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     SIR ISSAC NEWTON'S ALGORITHM.
+!
+!///////////////////////////////////////////////////////////////////////
 
-C///  J EXIST?
+!///  J EXIST?
 
       if (.not. exist) go to 2010
 
-C///  AGE < XXAGE?
+!///  AGE < XXAGE?
 
-      if (age .lt. xxage) go to 2030
+      if (age < xxage) go to 2030
 
-C///  EVALUATE J AT V0.  RE-EVALUATE Y0 := F(V0) IN CASE F CHANGES WHEN
-C///  J DOES.  SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
+!///  EVALUATE J AT V0.  RE-EVALUATE Y0 := F(V0) IN CASE F CHANGES WHEN
+!///  J DOES.  SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
 
 2010  continue
 
       call twcopy (groupa + comps * points + groupb, v0, buffer)
       signal = 'PREPARE'
-C     GO TO 2020 WHEN ROUTE = 1
+!     GO TO 2020 WHEN ROUTE = 1
       route = 1
       go to 99999
 2020  continue
       signal = ' '
       age = 0
 
-C     JACOBIAN EVALUATION SHOULD RETURN A NEW RESIDUAL TOO.
+!     JACOBIAN EVALUATION SHOULD RETURN A NEW RESIDUAL TOO.
 
-      if (0 .lt. levelm .and. 0 .lt. text) then
-         if (0.0 .lt. condit) then
+      if (0 < levelm .and. 0 < text) then
+         if (0.0 < condit) then
             write (column(2), '(F6.2)') log10 (condit)
          else
             column(2) = '    NA'
          end if
       end if
 
-C///  EVALUATE Y0 := F(V0).  SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
+!///  EVALUATE Y0 := F(V0).  SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
 
 2030  continue
 
       call twcopy (groupa + comps * points + groupb, v0, buffer)
       signal = 'RESIDUAL'
-C     GO TO 2040 WHEN ROUTE = 2
+!     GO TO 2040 WHEN ROUTE = 2
       route = 2
       go to 99999
 2040  continue
@@ -895,7 +863,7 @@ C     GO TO 2040 WHEN ROUTE = 2
 
       call twcopy (groupa + comps * points + groupb, y0, buffer)
       signal = 'SOLVE'
-C     GO TO 2050 WHEN ROUTE = 3
+!     GO TO 2050 WHEN ROUTE = 3
       route = 3
       go to 99999
 2050  continue
@@ -908,37 +876,37 @@ C     GO TO 2050 WHEN ROUTE = 3
       do 2060 j = 1, groupa + comps * points + groupb
          sj = abs (v0(j) - (v0(j) - s0(j)))
          vj = abs (v0(j))
-         if (xxrel * vj .lt. sj) abs0 = max (abs0, sj)
-         if (xxabs .lt. sj .and. 0.0 .lt. vj)
+         if (xxrel * vj < sj) abs0 = max (abs0, sj)
+         if (xxabs < sj .and. 0.0 < vj)
      +      rel0 = max (rel0, sj / vj)
 2060  continue
 
-C///  CHECK FOR SUCCESS.
+!///  CHECK FOR SUCCESS.
 
-      if (abs0 .le. xxabs .and. rel0 .le. xxrel) go to 2170
+      if (abs0 <= xxabs .and. rel0 <= xxrel) go to 2170
 
-C///  CHOOSE DELTAB.
+!///  CHOOSE DELTAB.
 
 2070  continue
 
-C     DELTAB IS THE LARGEST DAMPING COEFFICIENT BETWEEN 0 AND 1 THAT
-C     KEEPS V1 WITHIN BOUNDS.  IF V1 BELONGS ON THE BOUNDARY, THEN
-C     PROVISIONS ARE MADE TO FORCE IT THERE DESPITE ROUNDING ERROR.
+!     DELTAB IS THE LARGEST DAMPING COEFFICIENT BETWEEN 0 AND 1 THAT
+!     KEEPS V1 WITHIN BOUNDS.  IF V1 BELONGS ON THE BOUNDARY, THEN
+!     PROVISIONS ARE MADE TO FORCE IT THERE DESPITE ROUNDING ERROR.
 
       deltab = 1.0
       force = .false.
       do 2080 j = 1, groupa + comps * points + groupb
-         if (s0(j) .gt. max (zero, v0(j) - below(j))) then
+         if (s0(j) > max (zero, v0(j) - below(j))) then
             temp = (v0(j) - below(j)) / s0(j)
-            if (temp .lt. deltab) then
+            if (temp < deltab) then
                deltab = temp
                entry = j
                force = .true.
                value = below(j)
             end if
-         else if (s0(j) .lt. min (zero, v0(j) - above(j))) then
+         else if (s0(j) < min (zero, v0(j) - above(j))) then
             temp = (v0(j) - above(j)) / s0(j)
-            if (temp .lt. deltab) then
+            if (temp < deltab) then
                deltab = temp
                entry = j
                force = .true.
@@ -947,50 +915,50 @@ C     PROVISIONS ARE MADE TO FORCE IT THERE DESPITE ROUNDING ERROR.
          end if
 2080  continue
 
-      error = deltab .lt. 0.0
+      error = deltab < 0.0
       if (error) go to 9008
 
-C///  0 < DELTAB?
+!///  0 < DELTAB?
 
-      if (.not. (0.0 .lt. deltab)) then
-         if (0 .lt. age) go to 2010
+      if (.not. (0.0 < deltab)) then
+         if (0 < age) go to 2010
 
-         if (0 .lt. levelm .and. 0 .lt. text) then
+         if (0 < levelm .and. 0 < text) then
             call twlogr (column(1), y0norm)
             call twlogr (column(3), s0norm)
             call twlogr (column(4), abs0)
             call twlogr (column(5), rel0)
             column(6) = ' '
-            if (deltab .ne. 1.0) call twlogr (column(6), deltab)
+            if (deltab /= 1.0) call twlogr (column(6), deltab)
             column(7) = ' '
-            if (deltad .ne. 1.0) call twlogr (column(7), deltad)
+            if (deltad /= 1.0) call twlogr (column(7), deltad)
             write (text, 10004) number, column
             write (text, 10002) id
 
             count = 0
             do 2090 j = 1, groupa + comps * points + groupb
-               if ((below(j) .eq. v0(j) .and. 0.0 .lt. s0(j)) .or.
-     +            (v0(j) .eq. above(j) .and. s0(j) .lt. 0.0)) then
+               if ((below(j) == v0(j) .and. 0.0 < s0(j)) .or.
+     +            (v0(j) == above(j) .and. s0(j) < 0.0)) then
                   count = count + 1
-                  if (count .le. lines) then
-                     if (j .le. groupa) then
+                  if (count <= lines) then
+                     if (j <= groupa) then
                         i = j
-                     else if (j .le. groupa + comps * points) then
+                     else if (j <= groupa + comps * points) then
                         i = groupa + mod (j - groupa - 1, comps) + 1
                      else
                         i = j - groupa - comps * points
                      end if
 
-                     if (names .eq. comps + groupa + groupb) then
+                     if (names == comps + groupa + groupb) then
                         ctemp1 = name(i)
                      else
                         ctemp1 = ' '
                      end if
                      call twsqez (len1, ctemp1)
 
-                     if (j .le. groupa) then
+                     if (j <= groupa) then
                         write (ctemp2, 80001) 'A', i
-                     else if (j .le. groupa + comps * points) then
+                     else if (j <= groupa + comps * points) then
                         write (ctemp2, 80002) 'C', i,
      +                     'P', int ((j - groupa - 1) / comps) + 1
                      else
@@ -998,13 +966,13 @@ C///  0 < DELTAB?
                      end if
                      call twsqez (len2, ctemp2)
 
-                     if (ctemp1 .eq. ' ') then
+                     if (ctemp1 == ' ') then
                         string = ctemp2
                         length = len2
-                     else if (len1 + 2 + len2 .le. 30) then
+                     else if (len1 + 2 + len2 <= 30) then
                         string = ctemp1 (1 : len1) // '  ' // ctemp2
                         length = len1 + 2 + len2
-                     else if (len1 + 1 + len2 .le. 30) then
+                     else if (len1 + 1 + len2 <= 30) then
                         string = ctemp1 (1 : len1) // ' ' // ctemp2
                         length = len1 + 1 + len2
                      else
@@ -1013,7 +981,7 @@ C///  0 < DELTAB?
                         length = 30
                      end if
 
-                     if (below(j) .eq. v0(j)) then
+                     if (below(j) == v0(j)) then
                         write (text, 80003)
      +                     'LOWER', v0(j), string (1 : length)
                      else
@@ -1023,7 +991,7 @@ C///  0 < DELTAB?
                   end if
                end if
 2090        continue
-            if (lines .lt. count) write (text, 80005)
+            if (lines < count) write (text, 80005)
          end if
 
          report = qbnds
@@ -1031,13 +999,13 @@ C///  0 < DELTAB?
          go to 99999
       end if
 
-C///  DELTAD := 1.
+!///  DELTAD := 1.
 
       deltad = 1.0
       expone = 0
 
-C///  V1 := V0 - DELTAB DELTAD S0.  EVALUATE Y1 := F(V1).  SOLVE
-C///  J S1 = Y1.  EVALUATE ABS1 AND REL1.
+!///  V1 := V0 - DELTAB DELTAD S0.  EVALUATE Y1 := F(V1).  SOLVE
+!///  J S1 = Y1.  EVALUATE ABS1 AND REL1.
 
 2100  continue
 
@@ -1046,7 +1014,7 @@ C///  J S1 = Y1.  EVALUATE ABS1 AND REL1.
          v1(j) = v0(j) - temp * s0(j)
 2110  continue
 
-C     KEEP V1 IN BOUNDS DESPITE ROUNDING ERROR.
+!     KEEP V1 IN BOUNDS DESPITE ROUNDING ERROR.
 
       do 2120 j = 1, groupa + comps * points + groupb
          v1(j) = min (v1(j), above(j))
@@ -1054,11 +1022,11 @@ C     KEEP V1 IN BOUNDS DESPITE ROUNDING ERROR.
       do 2130 j = 1, groupa + comps * points + groupb
          v1(j) = max (v1(j), below(j))
 2130  continue
-      if (expone .eq. 0 .and. force) v1(entry) = value
+      if (expone == 0 .and. force) v1(entry) = value
 
       call twcopy (groupa + comps * points + groupb, v1, buffer)
       signal = 'RESIDUAL'
-C     GO TO 2140 WHEN ROUTE = 4
+!     GO TO 2140 WHEN ROUTE = 4
       route = 4
       go to 99999
 2140  continue
@@ -1068,7 +1036,7 @@ C     GO TO 2140 WHEN ROUTE = 4
 
       call twcopy (groupa + comps * points + groupb, y1, buffer)
       signal = 'SOLVE'
-C     GO TO 2150 WHEN ROUTE = 5
+!     GO TO 2150 WHEN ROUTE = 5
       route = 5
       go to 99999
 2150  continue
@@ -1081,28 +1049,28 @@ C     GO TO 2150 WHEN ROUTE = 5
       do 2160 j = 1, groupa + comps * points + groupb
          sj = abs (v1(j) - (v1(j) - s1(j)))
          vj = abs (v1(j))
-         if (xxrel * vj .lt. sj) abs1 = max (abs1, sj)
-         if (xxabs .lt. sj .and. 0.0 .lt. vj)
+         if (xxrel * vj < sj) abs1 = max (abs1, sj)
+         if (xxabs < sj .and. 0.0 < vj)
      +      rel1 = max (rel1, sj / vj)
 2160  continue
 
-C///  NORM S1 < OR = NORM S0?
+!///  NORM S1 < OR = NORM S0?
 
-      if (s1norm .le. s0norm) then
+      if (s1norm <= s0norm) then
       else
          deltad = 0.5 * deltad
          expone = expone + 1
-         if (expone .le. 5) go to 2100
-            if (0 .lt. age) go to 2010
-               if (0 .lt. levelm .and. 0 .lt. text) then
+         if (expone <= 5) go to 2100
+            if (0 < age) go to 2010
+               if (0 < levelm .and. 0 < text) then
                   call twlogr (column(1), y0norm)
                   call twlogr (column(3), s0norm)
                   call twlogr (column(4), abs0)
                   call twlogr (column(5), rel0)
                   column(6) = ' '
-                  if (deltab .ne. 1.0) call twlogr (column(6), deltab)
+                  if (deltab /= 1.0) call twlogr (column(6), deltab)
                   column(7) = ' '
-                  if (deltad .ne. 1.0) call twlogr (column(7), deltad)
+                  if (deltad /= 1.0) call twlogr (column(7), deltad)
                   write (text, 10004) number, column
                   write (text, 10003) id
                end if
@@ -1111,22 +1079,22 @@ C///  NORM S1 < OR = NORM S0?
                go to 99999
       end if
 
-C///  PRINT.
+!///  PRINT.
 
-      if (0 .lt. levelm .and. 0 .lt. text) then
+      if (0 < levelm .and. 0 < text) then
          call twlogr (column(1), y0norm)
          call twlogr (column(3), s0norm)
          call twlogr (column(4), abs0)
          call twlogr (column(5), rel0)
          column(6) = ' '
-         if (deltab .ne. 1.0) call twlogr (column(6), deltab)
+         if (deltab /= 1.0) call twlogr (column(6), deltab)
          column(7) = ' '
-         if (deltad .ne. 1.0) call twlogr (column(7), deltad)
+         if (deltad /= 1.0) call twlogr (column(7), deltad)
          write (text, 10004) number, column
          column(2) = ' '
       end if
 
-C///  S0 := S1, U := V1, Y0 := Y1, AGE := AGE + 1.
+!///  S0 := S1, U := V1, Y0 := Y1, AGE := AGE + 1.
 
       age = age + 1
       number = number + 1
@@ -1138,32 +1106,32 @@ C///  S0 := S1, U := V1, Y0 := Y1, AGE := AGE + 1.
       abs0 = abs1
       rel0 = rel1
 
-C///  S0 SMALL VS V0?
+!///  S0 SMALL VS V0?
 
-      if (.not. (abs0 .le. xxabs .and. rel0 .le. xxrel)) then
-         if (age .lt. xxage) go to 2070
+      if (.not. (abs0 <= xxabs .and. rel0 <= xxrel)) then
+         if (age < xxage) go to 2070
          go to 2010
       end if
 
-C///  SUCCESS.
+!///  SUCCESS.
 
 2170  continue
 
-C///  PRINT.
+!///  PRINT.
 
-      if (0 .lt. levelm .and. 0 .lt. text) then
+      if (0 < levelm .and. 0 < text) then
          call twlogr (column(1), y0norm)
          call twlogr (column(3), s0norm)
          call twlogr (column(4), abs0)
          call twlogr (column(5), rel0)
          column(6) = ' '
          column(7) = ' '
-         if (0 .lt. leveld) then
+         if (0 < leveld) then
             write (text, 10004) number, column
             write (text, 10005) id
             signal = 'SHOW'
             call twcopy (groupa + comps * points + groupb, v0, buffer)
-C           GO TO 2180 WHEN ROUTE = 6
+!           GO TO 2180 WHEN ROUTE = 6
             route = 6
             go to 99999
          else
@@ -1177,11 +1145,11 @@ C           GO TO 2180 WHEN ROUTE = 6
 
       succes = .true.
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     INFORMATIVE MESSAGES.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     INFORMATIVE MESSAGES.
+!
+!///////////////////////////////////////////////////////////////////////
 
 10001 format
      +  (/1X, a9, 'SOLVE NONLINEAR, NONDIFFERENTIAL EQUATIONS.'
@@ -1190,7 +1158,7 @@ C///////////////////////////////////////////////////////////////////////
 10002 format
      + (/1X, a9, 'FAILURE.  THE SEARCH FOR THE FOLLOWING UNKNOWNS GOES'
      +  /10X, 'OUT OF BOUNDS.'
-C              12345  123456789_
+!              12345  123456789_
      + //10X, 'BOUND       VALUE   UNKNOWN'
      +  /)
 
@@ -1227,56 +1195,56 @@ C              12345  123456789_
 80007 format
      +  (10X, 1p, e10.2, 2X, e10.2, 2X, e10.2, 3X, a)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     ERROR MESSAGES.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     ERROR MESSAGES.
+!
+!///////////////////////////////////////////////////////////////////////
 
       go to 99999
 
-9001  if (0 .lt. text) write (text, 99001) id, route
+9001  if (0 < text) write (text, 99001) id, route
       if (.not. mess) go to 99999
 
-9002  if (0 .lt. text) write (text, 99002) id,
+9002  if (0 < text) write (text, 99002) id,
      +   comps, points, groupa, groupb, groupa + comps * points + groupb
       if (.not. mess) go to 99999
 
-9003  if (0 .lt. text) write (text, 99003) id,
+9003  if (0 < text) write (text, 99003) id,
      +   names, comps, groupa, groupb, groupa + comps + groupb
       if (.not. mess) go to 99999
 
-9004  if (0 .lt. text) then
+9004  if (0 < text) then
          write (text, 99004) id,
      +      groupa, groupb, comps, groupa + comps + groupb, count
          count = 0
          do 8010 j = 1, groupa + comps + groupb
-            if (.not. (below(j) .lt. above(j)) .or. mess) then
+            if (.not. (below(j) < above(j)) .or. mess) then
                count = count + 1
-               if (count .le. lines) then
-                  if (names .eq. comps + groupa + groupb) then
+               if (count <= lines) then
+                  if (names == comps + groupa + groupb) then
                      ctemp1 = name(j)
                   else
                      ctemp1 = ' '
                   end if
                   call twsqez (len1, ctemp1)
 
-                  if (j .le. groupa) then
+                  if (j <= groupa) then
                      write (ctemp2, 80001) 'A', j
-                  else if (j .le. groupa + comps) then
+                  else if (j <= groupa + comps) then
                      write (ctemp2, 80001) 'C', j - groupa
                   else
                      write (ctemp2, 80001) 'B', j - groupa - comps
                   end if
                   call twsqez (len2, ctemp2)
 
-                  if (ctemp1 .eq. ' ') then
+                  if (ctemp1 == ' ') then
                      string = ctemp2
                      length = len2
-                  else if (len1 + 2 + len2 .le. 40) then
+                  else if (len1 + 2 + len2 <= 40) then
                      string = ctemp1 (1 : len1) // '  ' // ctemp2
                      length = len1 + 2 + len2
-                  else if (len1 + 1 + len2 .le. 40) then
+                  else if (len1 + 1 + len2 <= 40) then
                      string = ctemp1 (1 : len1) // ' ' // ctemp2
                      length = len1 + 1 + len2
                   else
@@ -1290,37 +1258,37 @@ C///////////////////////////////////////////////////////////////////////
                end if
             end if
 8010     continue
-         if (lines .lt. count) write (text, 80005)
+         if (lines < count) write (text, 80005)
       end if
       if (.not. mess) go to 99999
 
-9005  if (0 .lt. text) then
+9005  if (0 < text) then
          write (text, 99005) id, groupa, groupb, comps, points,
      +      groupa + comps * points + groupb, count
          count = 0
          do 8020 j = 1, groupa + comps * points + groupb
-            if (.not. (below(j) .le. v0(j) .and. v0(j) .le. above(j))
+            if (.not. (below(j) <= v0(j) .and. v0(j) <= above(j))
      +         .or. mess) then
                count = count + 1
-               if (count .le. lines) then
-                  if (j .le. groupa) then
+               if (count <= lines) then
+                  if (j <= groupa) then
                      i = j
-                  else if (j .le. groupa + comps * points) then
+                  else if (j <= groupa + comps * points) then
                      i = groupa + mod (j - groupa - 1, comps) + 1
                   else
                      i = j - groupa - comps * points
                   end if
 
-                  if (names .eq. comps + groupa + groupb) then
+                  if (names == comps + groupa + groupb) then
                      ctemp1 = name(i)
                   else
                      ctemp1 = ' '
                   end if
                   call twsqez (len1, ctemp1)
 
-                  if (j .le. groupa) then
+                  if (j <= groupa) then
                      write (ctemp2, 80001) 'A', i
-                  else if (j .le. groupa + comps * points) then
+                  else if (j <= groupa + comps * points) then
                      write (ctemp2, 80002) 'C', i,
      +                  'P', int ((j - groupa - 1) / comps) + 1
                   else
@@ -1328,13 +1296,13 @@ C///////////////////////////////////////////////////////////////////////
                   end if
                   call twsqez (len2, ctemp2)
 
-                  if (ctemp1 .eq. ' ') then
+                  if (ctemp1 == ' ') then
                      string = ctemp2
                      length = len2
-                  else if (len1 + 2 + len2 .le. 30) then
+                  else if (len1 + 2 + len2 <= 30) then
                      string = ctemp1 (1 : len1) // '  ' // ctemp2
                      length = len1 + 2 + len2
-                  else if (len1 + 1 + len2 .le. 30) then
+                  else if (len1 + 1 + len2 <= 30) then
                      string = ctemp1 (1 : len1) // ' ' // ctemp2
                      length = len1 + 1 + len2
                   else
@@ -1348,17 +1316,17 @@ C///////////////////////////////////////////////////////////////////////
                end if
             end if
 8020     continue
-         if (lines .lt. count) write (text, 80005)
+         if (lines < count) write (text, 80005)
       end if
       if (.not. mess) go to 99999
 
-9006  if (0 .lt. text) write (text, 99006) id, xxabs, xxrel
+9006  if (0 < text) write (text, 99006) id, xxabs, xxrel
       if (.not. mess) go to 99999
 
-9007  if (0 .lt. text) write (text, 99007) id, xxage
+9007  if (0 < text) write (text, 99007) id, xxage
       if (.not. mess) go to 99999
 
-9008  if (0 .lt. text) write (text, 99008) id, deltab
+9008  if (0 < text) write (text, 99008) id, deltab
       if (.not. mess) go to 99999
 
 99001 format
@@ -1392,7 +1360,7 @@ C///////////////////////////////////////////////////////////////////////
      +  /10X, i10, '  COMPONENTS AT POINTS (C)'
      +  /10X, i10, '  TOTAL TYPES OF UNKNOWNS'
      +  /10X, i10, '  NUMBER OF BOUNDS OUT OF ORDER'
-C              123456789_  123456789_
+!              123456789_  123456789_
      + //10X, '     LOWER       UPPER'
      +  /10X, '     BOUND       BOUND   UNKNOWN'
      +  /)
@@ -1406,7 +1374,7 @@ C              123456789_  123456789_
      +  /10X, i10, '  POINTS (P)'
      +  /10X, i10, '  TOTAL UNKNOWNS'
      +  /10X, i10, '  NUMBER OUT OF BOUNDS'
-C              123456789_  123456789_  123456789_
+!              123456789_  123456789_  123456789_
      + //10X, '     LOWER                   UPPER'
      +  /10X, '     BOUND       VALUE       BOUND   UNKNOWN'
      +  /)
@@ -1427,36 +1395,36 @@ C              123456789_  123456789_  123456789_
      +  /10X, 'IN BOUNDS IS NEGATIVE.'
      + //10X, 1p, e10.2, '  DELTA B')
 
-C///  EXIT.
+!///  EXIT.
 
       stop
 99999 continue
 
-C     COPY THE PROTECTED LOCAL VARIABLE
+!     COPY THE PROTECTED LOCAL VARIABLE
       steps = number
 
       return
       end
       subroutine twcopy (n, x, y)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWCOPY
-C
-C     COPY ONE VECTOR TO ANOTHER.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWCOPY
+!
+!     COPY ONE VECTOR TO ANOTHER.
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - z)
       integer j, n
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+      real(RK)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!      REAL
+!*****END PRECISION > SINGLE
      +   x, y
 
       dimension x(n), y(n)
@@ -1469,96 +1437,96 @@ C*****END PRECISION > SINGLE
       end
       subroutine tweps (eps)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWEPS
-C
-C     FIND MACHINE EPSILON.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWEPS
+!
+!     FIND MACHINE EPSILON.
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - z)
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+      real(RK)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!      REAL
+!*****END PRECISION > SINGLE
      +   eps, value
       integer
      +   scrtch
-C*****MACHINE EPSILON > COMPUTED
-C      LOGICAL
-C     +   SAME
-C*****end MACHINE EPSILON > COMPUTED
+!*****MACHINE EPSILON > COMPUTED
+!      LOGICAL
+!     +   SAME
+!*****end MACHINE EPSILON > COMPUTED
 
       parameter (scrtch = 98)
 
-C///  IEEE STANDARD
+!///  IEEE STANDARD
 
-C*****PRECISION > DOUBLE
+!*****PRECISION > DOUBLE
       value = 1.1102230246251565D-16
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      VALUE = 5.9604645E-08
-C*****END PRECISION > SINGLE
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!      VALUE = 5.9604645E-08
+!*****END PRECISION > SINGLE
 
-C*****MACHINE EPSILON > IEEE STANDARD
+!*****MACHINE EPSILON > IEEE STANDARD
       eps = value
-C*****END MACHINE EPSILON > IEEE STANDARD
+!*****END MACHINE EPSILON > IEEE STANDARD
 
-C///  COMPUTED
+!///  COMPUTED
 
-C*****MACHINE EPSILON > COMPUTED
-C      OPEN (ACCESS = 'SEQUENTIAL', FORM = 'UNFORMATTED',
-C     +   STATUS = 'SCRATCH', UNIT = SCRTCH)
-C
-C      EPS = 1
-C1010  CONTINUE
-C      EPS = 0.5 * EPS
-C
-C      VALUE = 1 + EPS
-C
-C      REWIND (SCRTCH)
-C      WRITE (SCRTCH) VALUE
-C
-C      REWIND (SCRTCH)
-C      READ (SCRTCH) VALUE
-C
-C      SAME = 1 .EQ. VALUE
-C
-C      IF (.NOT. SAME) GO TO 1010
-C
-C      CLOSE (UNIT = SCRTCH)
-C*****END MACHINE EPSILON > COMPUTED
+!*****MACHINE EPSILON > COMPUTED
+!      OPEN (ACCESS = 'SEQUENTIAL', FORM = 'UNFORMATTED',
+!     +   STATUS = 'SCRATCH', UNIT = SCRTCH)
+!
+!      EPS = 1
+!1010  CONTINUE
+!      EPS = 0.5 * EPS
+!
+!      VALUE = 1 + EPS
+!
+!      REWIND (SCRTCH)
+!      WRITE (SCRTCH) VALUE
+!
+!      REWIND (SCRTCH)
+!      READ (SCRTCH) VALUE
+!
+!      SAME = 1 == VALUE
+!
+!      IF (.NOT. SAME) GO TO 1010
+!
+!      CLOSE (UNIT = SCRTCH)
+!*****END MACHINE EPSILON > COMPUTED
 
-C///  EXIT.
+!///  EXIT.
 
       return
       end
       subroutine twgbco (a, lda, n, lower, upper, pivot, rcond, z)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWGBCO
-C
-C     FACTOR A BANDED MATRIX AND ESTIMATE THE RECIPROCAL OF ITS
-C     CONDITION NUMBER.  BASED ON _GBCO FROM THE LINPACK LIBRARY.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWGBCO
+!
+!     FACTOR A BANDED MATRIX AND ESTIMATE THE RECIPROCAL OF ITS
+!     CONDITION NUMBER.  BASED ON _GBCO FROM THE LINPACK LIBRARY.
+!
+!///////////////////////////////////////////////////////////////////////
 
-      double precision
+      real(RK)
      +   dsum
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+      real(RK)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!      REAL
+!*****END PRECISION > SINGLE
      +   a, anorm, ek, rcond, s, sm, sum, t, wk, wkm, ynorm, z
       external
      +   twgbfa
@@ -1573,7 +1541,7 @@ C*****END PRECISION > SINGLE
 
       jdiag = lower + upper + 1
 
-C///  COMPUTE THE 1-NORM OF A
+!///  COMPUTE THE 1-NORM OF A
 
       anorm = 0.0
       do 1020 k = 1, n
@@ -1586,11 +1554,11 @@ C///  COMPUTE THE 1-NORM OF A
          anorm = max (anorm, sum)
 1020  continue
 
-C///  FACTOR A
+!///  FACTOR A
 
       call twgbfa (a, lda, n, lower, upper, pivot, info)
 
-C///  SOLVE TRANSPOSE(U) * W = E
+!///  SOLVE TRANSPOSE(U) * W = E
 
       ek = 1.0
       do 2010 j = 1, n
@@ -1599,9 +1567,9 @@ C///  SOLVE TRANSPOSE(U) * W = E
 
       ju = 0
       do 2050 k = 1, n
-         if (z(k) .ne. 0.0) ek = sign (ek, - z(k))
+         if (z(k) /= 0.0) ek = sign (ek, - z(k))
 
-         if (abs (ek - z(k)) .gt. abs (a(jdiag, k))) then
+         if (abs (ek - z(k)) > abs (a(jdiag, k))) then
             s = abs (a(jdiag, k)) / abs (ek - z(k))
             ek = s * ek
             do 2020 j = 1, n
@@ -1613,7 +1581,7 @@ C///  SOLVE TRANSPOSE(U) * W = E
          wkm = - ek - z(k)
          s = abs (wk)
          sm = abs (wkm)
-         if (a(jdiag, k) .ne. 0.0) then
+         if (a(jdiag, k) /= 0.0) then
             wk = wk / a(jdiag, k)
             wkm = wkm / a(jdiag, k)
          else
@@ -1623,7 +1591,7 @@ C///  SOLVE TRANSPOSE(U) * W = E
 
          ju = min (max (ju, upper + pivot(k)), n)
          mm = jdiag
-         if (k + 1 .le. ju) then
+         if (k + 1 <= ju) then
             do 2030 j = k + 1, ju
                mm = mm - 1
                sm = sm + abs (z(j) + wkm * a(mm, j))
@@ -1631,7 +1599,7 @@ C///  SOLVE TRANSPOSE(U) * W = E
                s = s + abs (z(j))
 2030        continue
 
-            if (s .lt. sm) then
+            if (s < sm) then
                t = wkm - wk
                wk = wkm
                mm = jdiag
@@ -1655,7 +1623,7 @@ C///  SOLVE TRANSPOSE(U) * W = E
          z(j) = s * z(j)
 2070  continue
 
-C///  SOLVE TRANSPOSE(L) * Y = W
+!///  SOLVE TRANSPOSE(L) * Y = W
 
       do 3030 k = n, 1, - 1
          dsum = 0.0
@@ -1664,7 +1632,7 @@ C///  SOLVE TRANSPOSE(L) * Y = W
 3010     continue
          z(k) = z(k) + dsum
 
-         if (1.0 .lt. abs (z(k))) then
+         if (1.0 < abs (z(k))) then
             s = 1.0 / abs (z(k))
             do 3020 j = 1, n
                z(j) = s * z(j)
@@ -1689,7 +1657,7 @@ C///  SOLVE TRANSPOSE(L) * Y = W
 
       ynorm = 1.0
 
-C///  SOLVE L * V = Y
+!///  SOLVE L * V = Y
 
       do 4030 k = 1, n
          j = pivot(k)
@@ -1701,7 +1669,7 @@ C///  SOLVE L * V = Y
             z(k + j) = t * a(jdiag + j, k) + z(k + j)
 4010     continue
 
-         if (1.0 .lt. abs (z(k))) then
+         if (1.0 < abs (z(k))) then
             s = 1.0 / abs (z(k))
             do 4020 j = 1, n
                z(j) = s * z(j)
@@ -1723,10 +1691,10 @@ C///  SOLVE L * V = Y
 
       ynorm = s * ynorm
 
-C///  SOLVE U * Z = W
+!///  SOLVE U * Z = W
 
       do 5030 k = n, 1, - 1
-         if (abs (z(k)) .gt. abs (a(jdiag, k))) then
+         if (abs (z(k)) > abs (a(jdiag, k))) then
             s = abs (a(jdiag, k)) / abs (z(k))
             do 5010 j = 1, n
                z(j) = s * z(j)
@@ -1734,7 +1702,7 @@ C///  SOLVE U * Z = W
             ynorm = s*ynorm
          end if
 
-         if (a(jdiag, k) .ne. 0.0) then
+         if (a(jdiag, k) /= 0.0) then
             z(k) = z(k) / a(jdiag, k)
          else
             z(k) = 1.0
@@ -1758,37 +1726,37 @@ C///  SOLVE U * Z = W
 
       ynorm = s * ynorm
 
-C///  FORM RCOND
+!///  FORM RCOND
 
-      if (anorm .ne. 0.0) then
+      if (anorm /= 0.0) then
          rcond = ynorm / anorm
       else
          rcond = 0.0
       end if
 
-C///  EXIT
+!///  EXIT
 
       return
       end
       subroutine twgbfa (a, lda, n, lower, upper, pivot, info)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWGBFA
-C
-C     FACTOR A BANDED MATRIX FOR TWGBCO. BASED ON _GBFA FROM THE LINPACK
-C     LIBRARY.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWGBFA
+!
+!     FACTOR A BANDED MATRIX FOR TWGBCO. BASED ON _GBFA FROM THE LINPACK
+!     LIBRARY.
+!
+!///////////////////////////////////////////////////////////////////////
 
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+      real(RK)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!      REAL
+!*****END PRECISION > SINGLE
      +   a, t, value
       integer
      +   i, info, j, jk, k, lda, lower, n, pack, pdiag, pivot, pjk,
@@ -1799,72 +1767,72 @@ C*****END PRECISION > SINGLE
       dimension
      +   a(lda, n), pivot(n)
 
-C///  STATEMENT FUNTIONS
+!///  STATEMENT FUNTIONS
 
-C     PACKED ROW POSITION OF ENTRY J IN COLUMN K
+!     PACKED ROW POSITION OF ENTRY J IN COLUMN K
       pack (j, k) = j - k + pdiag
 
-C     TRUE ROW POSITION OF ENTRY J PACKED IN COLUMN K
+!     TRUE ROW POSITION OF ENTRY J PACKED IN COLUMN K
       true (j, k) = j - pdiag + k
 
-C///  INITIALIZE
+!///  INITIALIZE
 
-C     PACKED ROW POSITION OF THE DIAGONAL
+!     PACKED ROW POSITION OF THE DIAGONAL
       pdiag = lower + upper + 1
 
       info = 0
 
-C///  TOP OF THE LOOP OVER COLUMNS
+!///  TOP OF THE LOOP OVER COLUMNS
 
       do 2060 k = 1, n
 
-C///  INITIALIZE THE FILL-IN SPACE
+!///  INITIALIZE THE FILL-IN SPACE
 
          do 2010 i = 1, lower
             a(i, k) = 0.0
 2010     continue
 
-C///  LOOP OVER THE PREVIOUS COLUMNS
+!///  LOOP OVER THE PREVIOUS COLUMNS
 
          do 2030 j = max (1, k - lower - upper), k - 1
             pjk = pack (pivot(j), k)
             jk = pack (j, k)
             t = a(pjk, k)
-            if (pjk .ne. jk) then
+            if (pjk /= jk) then
                a(pjk, k) = a(jk, k)
                a(jk, k) = t
             end if
 
-            if (t .ne. 0.0) then
+            if (t /= 0.0) then
                do 2020 i = 1, min (lower, n - j)
                   a(jk + i, k) = t * a(pdiag + i, j) + a(jk + i, k)
 2020           continue
             end if
 2030     continue
 
-C///  FIND THE PIVOT
+!///  FIND THE PIVOT
 
          save = pdiag
          value = abs (a(pdiag, k))
          do 2040 i = pdiag + 1, pdiag + min (lower, n - k)
-            if (value .lt. abs (a(i, k))) then
+            if (value < abs (a(i, k))) then
                save = i
                value = abs (a(i, k))
             end if
 2040     continue
          pivot(k) = true (save, k)
 
-C///  INTERCHANGE IF NECESSARY
+!///  INTERCHANGE IF NECESSARY
 
-         if (save .ne. pdiag) then
+         if (save /= pdiag) then
             t = a(save, k)
             a(save, k) = a(pdiag, k)
             a(pdiag, k) = t
          end if
 
-C///  SCALE THE LOWER COLUMN
+!///  SCALE THE LOWER COLUMN
 
-         if (a(save, k) .ne. 0.0) then
+         if (a(save, k) /= 0.0) then
             t = - 1.0 / a(pdiag, k)
             do 2050 i = pdiag + 1, pdiag + min (lower, n - k)
                a(i, k) = t * a(i, k)
@@ -1873,89 +1841,31 @@ C///  SCALE THE LOWER COLUMN
             info = k
          end if
 
-C///  BOTTOM OF THE LOOP OVER COLUMNS
+!///  BOTTOM OF THE LOOP OVER COLUMNS
 
 2060  continue
 
-C///  THE FINAL COLUMN IS TRIVIAL
+!///  THE FINAL COLUMN IS TRIVIAL
 
       pivot(n) = n
-      if (a(pdiag, n) .eq. 0.0) info = n
+      if (a(pdiag, n) == 0.0) info = n
 
-C///  EXIT
-
-      return
-      end
-      subroutine twgbsl (abd, lda, n, lower, upper, pivot, b)
-
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWGBSL
-C
-C     SOLVE A SYSTEM OF LINEAR EQUATIONS FOR TWSOLV.  BASED ON _GBSL
-C     FROM THE LINPACK LIBRARY.
-C
-C///////////////////////////////////////////////////////////////////////
-
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
-     +   abd, b, t
-      integer
-     +   j, jdiag, k, l, la, lb, lda, lm, lower, n, pivot, upper
-      intrinsic
-     +   min
-
-      dimension
-     +   abd(lda,*), b(*), pivot(*)
-
-      jdiag = upper + lower + 1
-
-      if (0 .lt. lower) then
-         do 1020 k = 1, n - 1
-            l = pivot(k)
-            t = b(l)
-            if (l .ne. k) then
-               b(l) = b(k)
-               b(k) = t
-            end if
-
-            lm = min (lower, n - k)
-            do 1010 j = 1, lm
-               b(k + j) = t * abd(jdiag + j, k) + b(k + j)
-1010        continue
-1020     continue
-      end if
-
-      do 1040 k = n, 1, - 1
-         b(k) = b(k) / abd (jdiag, k)
-         lm = min (k, jdiag) - 1
-         la = jdiag - lm - 1
-         lb = k - lm - 1
-         t = - b(k)
-         do 1030 j = 1, lm
-            b(lb + j) = t * abd(la + j, k) + b(lb + j)
-1030     continue
-1040  continue
+!///  EXIT
 
       return
       end
+
       subroutine twgrab (error, last, first, number)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWGRAB
-C
-C     RESERVE SPACE IN AN ARRAY.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWGRAB
+!
+!     RESERVE SPACE IN AN ARRAY.
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - z)
 
@@ -1966,45 +1876,45 @@ C///////////////////////////////////////////////////////////////////////
       logical
      +   error
 
-C///  CHECK THE ARGUMENTS.
+!///  CHECK THE ARGUMENTS.
 
-      error = .not. (0 .le. last)
+      error = .not. (0 <= last)
       if (error) go to 99999
 
-      error = .not. (0 .le. number)
+      error = .not. (0 <= number)
       if (error) go to 99999
 
-C///  GRAB THE SPACE.
+!///  GRAB THE SPACE.
 
       first = last + 1
       last = last + max (1, number)
 
-C///  EXIT.
+!///  EXIT.
 
 99999 continue
       return
       end
       subroutine twinit (error, text, force)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWINIT
-C
-C     INITIALIZE THE CONTROLS.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWINIT
+!
+!     INITIALIZE THE CONTROLS.
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - z)
       character
      +   id*9
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+      real(RK)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!      REAL
+!*****END PRECISION > SINGLE
      +   rvalue
       integer
      +   cntrls, count, ivalue, text
@@ -2020,149 +1930,149 @@ C*****END PRECISION > SINGLE
       common / twcoml / lvalue
       common / twcomr / rvalue
 
-C     THE GNU F77 COMPILER REQUIRES THE SAVE TO PRECEED THE DATA
+!     THE GNU F77 COMPILER REQUIRES THE SAVE TO PRECEED THE DATA
 
       save first
 
       data first / .true. /
 
-C///  WRITE ALL MESSAGES.
+!///  WRITE ALL MESSAGES.
 
-C     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
+!     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
       mess = .false.
 
-      if (mess .and. 0 .lt. text) go to 9001
+      if (mess .and. 0 < text) go to 9001
 
-C///  TOP OF THE BLOCK TO SET THE CONTROLS.
+!///  TOP OF THE BLOCK TO SET THE CONTROLS.
 
       if (first .or. force) then
          first = .false.
 
-C///  SET THE CONTROLS.
+!///  SET THE CONTROLS.
 
       count = 0
 
-C     ADAPT
+!     ADAPT
 
       count = count + 1
       lvalue(count) = .false.
 
-C     LEVELD
+!     LEVELD
 
       count = count + 1
       ivalue(count) = 1
 
-C     LEVELM
+!     LEVELM
 
       count = count + 1
       ivalue(count) = 1
 
-C     PADD
+!     PADD
 
       count = count + 1
       lvalue(count) = .false.
 
-C     SSABS
+!     SSABS
 
       count = count + 1
       rvalue(count) = 1.0E-9
 
-C     SSAGE
+!     SSAGE
 
       count = count + 1
       ivalue(count) = 10
 
-C     SSREL
+!     SSREL
 
       count = count + 1
       rvalue(count) = 1.0E-6
 
-C     STEADY
+!     STEADY
 
       count = count + 1
       lvalue(count) = .true.
 
-C     STEPS0
+!     STEPS0
 
       count = count + 1
       ivalue(count) = 0
 
-C     STEPS1
+!     STEPS1
 
       count = count + 1
       ivalue(count) = 200
 
-C     STEPS2
+!     STEPS2
 
       count = count + 1
       ivalue(count) = 100
 
-C     STRID0
+!     STRID0
 
       count = count + 1
       rvalue(count) = 1.0E-4
 
-C     TDABS
+!     TDABS
 
       count = count + 1
       rvalue(count) = 1.0E-9
 
-C     TDAGE
+!     TDAGE
 
       count = count + 1
       ivalue(count) = 20
 
-C     TDEC
+!     TDEC
 
       count = count + 1
       rvalue(count) = 3.1623
 
-C     TDREL
+!     TDREL
 
       count = count + 1
       rvalue(count) = 1.0E-6
 
-C     TINC
+!     TINC
 
       count = count + 1
       rvalue(count) = 10.0
 
-C     TMAX
+!     TMAX
 
       count = count + 1
       rvalue(count) = 1.0E-2
 
-C     TMIN
+!     TMIN
 
       count = count + 1
       rvalue(count) = 1.0E-20
 
-C     TOLER0
+!     TOLER0
 
       count = count + 1
       rvalue(count) = 1.0E-9
 
-C     TOLER1
+!     TOLER1
 
       count = count + 1
       rvalue(count) = 0.2
 
-C     TOLER2
+!     TOLER2
 
       count = count + 1
       rvalue(count) = 0.2
 
-C///  BOTTOM OF THE BLOCK TO SET THE CONTROLS.
+!///  BOTTOM OF THE BLOCK TO SET THE CONTROLS.
 
-         error = .not. (count .eq. cntrls)
+         error = .not. (count == cntrls)
          if (error) go to 9001
       end if
 
-C///  ERROR MESSAGES.
+!///  ERROR MESSAGES.
 
       go to 99999
 
-9001  if (0 .lt. text) write (text, 99001) id, cntrls, count
+9001  if (0 < text) write (text, 99001) id, cntrls, count
       if (.not. mess) go to 99999
 
 99001 format
@@ -2170,7 +2080,7 @@ C///  ERROR MESSAGES.
      + //10X, i10, '  CONTROLS'
      +  /10X, i10, '  COUNTED')
 
-C///  EXIT.
+!///  EXIT.
 
       stop
 99999 continue
@@ -2178,24 +2088,24 @@ C///  EXIT.
       end
       subroutine twlaps (timer)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWLAPS
-C
-C     OBTAIN ELAPSED COMPUTING TIME IN SECONDS.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWLAPS
+!
+!     OBTAIN ELAPSED COMPUTING TIME IN SECONDS.
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - z)
       external twtime
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+      real(RK)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!      REAL
+!*****END PRECISION > SINGLE
      +   temp, timer
 
       call twtime (temp)
@@ -2205,15 +2115,15 @@ C*****END PRECISION > SINGLE
       end
       subroutine twlast (length, string)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWLAST
-C
-C     FIND THE LAST NONBLANK CHARACTER IN A STRING.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWLAST
+!
+!     FIND THE LAST NONBLANK CHARACTER IN A STRING.
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - z)
       character
@@ -2224,7 +2134,7 @@ C///////////////////////////////////////////////////////////////////////
      +   len
 
       do 0100 j = len (string), 1, - 1
-         if (string(j : j) .ne. ' ') then
+         if (string(j : j) /= ' ') then
             length = j
             go to 0200
          end if
@@ -2236,34 +2146,34 @@ C///////////////////////////////////////////////////////////////////////
       end
       subroutine twlogr (string, value)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWLOGR
-C
-C     WRITE A COMMON LOGARITHM TO A CHARACTER STRING.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWLOGR
+!
+!     WRITE A COMMON LOGARITHM TO A CHARACTER STRING.
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - z)
 
       character
      +   string*(*)
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+      real(RK)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!      REAL
+!*****END PRECISION > SINGLE
      +   value
       intrinsic
      +   len, log10
 
-      if (6 .le. len (string)) then
-         if (value .lt. 0.0) then
+      if (6 <= len (string)) then
+         if (value < 0.0) then
             string = ' '
-         else if (value .eq. 0.0) then
+         else if (value == 0.0) then
             string = '  ZERO'
          else
             write (string, '(F6.2)') log10 (value)
@@ -2276,24 +2186,24 @@ C*****END PRECISION > SINGLE
       end
       subroutine twnorm (n, value, x)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWNORM
-C
-C     COMPUTE THE MAX-NORM OF A VECTOR.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWNORM
+!
+!     COMPUTE THE MAX-NORM OF A VECTOR.
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - z)
 
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+      real(RK)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!      REAL
+!*****END PRECISION > SINGLE
      +   value, x
       integer
      +   j, n
@@ -2315,24 +2225,24 @@ C*****END PRECISION > SINGLE
      +   isize, iwork, mark, name, names, pmax, points, report, rsize,
      +   rwork, signal, stride, time, u, x)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWOPNT
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWOPNT
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - z)
       character
      +   column*80, ctemp1*80, ctemp2*80, header*80, id*9, name*(*),
      +   report*(*), signal*(*), string*80, versio*(*), vnmbr*8
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+      real(RK)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!      REAL
+!*****END PRECISION > SINGLE
      +   above, below, buffer, condit, detail, maxcon, ratio, rvalue,
      +   rwork, ssabs, ssrel, strid0, stride, tdabs, tdec, tdrel, temp,
      +   timer, tinc, tmax, tmin, toler0, toler1, toler2, total, u, x,
@@ -2362,14 +2272,14 @@ C*****END PRECISION > SINGLE
       parameter (lines = 20)
       parameter (vnmbrs = 12)
 
-C     REPORT CODES
+!     REPORT CODES
       parameter (qnull = 0, qbnds = 1, qdvrg = 2)
 
-C     LOCATION OF DATA IN ARRAYS DETAIL, EVENT, TIMER, AND TOTAL.  THE
-C     LOCATIONS ARE CHOSEN TO SIMPLIFY WRITE STATEMENTS.  DETAIL USES
-C     ONLY 1 : 8, EVENT USES ONLY 5 : 8, TIMER USES 1 : 9, AND TOTAL
-C     USES ONLY 2 : 9.  IN ADDITION, 2, 3, 4, 10, AND 11 ARE USED AS
-C     MNEMONIC VALUES FOR QTASK.
+!     LOCATION OF DATA IN ARRAYS DETAIL, EVENT, TIMER, AND TOTAL.  THE
+!     LOCATIONS ARE CHOSEN TO SIMPLIFY WRITE STATEMENTS.  DETAIL USES
+!     ONLY 1 : 8, EVENT USES ONLY 5 : 8, TIMER USES 1 : 9, AND TOTAL
+!     USES ONLY 2 : 9.  IN ADDITION, 2, 3, 4, 10, AND 11 ARE USED AS
+!     MNEMONIC VALUES FOR QTASK.
       parameter
      +  (qgrid  =  1,
      +   qtimst =  2,
@@ -2396,46 +2306,46 @@ C     MNEMONIC VALUES FOR QTASK.
       common / twcoml / lvalue
       common / twcomr / rvalue
 
-C///  SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
+!///  SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
 
       save
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     PROLOGUE.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     PROLOGUE.
+!
+!///////////////////////////////////////////////////////////////////////
 
-C///  EVERY-TIME INITIALIZATION.
+!///  EVERY-TIME INITIALIZATION.
 
-C     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
+!     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
       mess = .false.
 
-C     TURN OFF ALL REVERSE COMMUNICATION FLAGS.
+!     TURN OFF ALL REVERSE COMMUNICATION FLAGS.
       time = .false.
 
-C///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
+!///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
 
-      if (signal .ne. ' ') then
+      if (signal /= ' ') then
          go to (9912, 9922, 9932, 9942) route
          error = .true.
          go to 9001
       end if
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     ENTRY BLOCK.  INITIALIZE A NEW PROBLEM.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     ENTRY BLOCK.  INITIALIZE A NEW PROBLEM.
+!
+!///////////////////////////////////////////////////////////////////////
 
-C///  TURN OFF ALL STATUS REPORTS.
+!///  TURN OFF ALL STATUS REPORTS.
 
       error = .false.
       report = ' '
 
-C///  WRITE ALL MESSAGES.
+!///  WRITE ALL MESSAGES.
 
-      if (mess .and. 0 .lt. text) then
+      if (mess .and. 0 < text) then
          label = 0
          return = 0
          route = 0
@@ -2446,7 +2356,7 @@ C///  WRITE ALL MESSAGES.
          write (text, 10014) id
          string = vnmbr(vnmbrs)
          call twlast (length, string)
-         write (text, 10001) id, 'DOUBLE PRECISION', string (1 : length)
+         write (text, 10001) id, 'real(RK)', string (1 : length)
          write (text, 10022) id
          write (text, 10021) id
          write (text, 10011) id, '???', ratio, toler1, toler2
@@ -2467,7 +2377,7 @@ C///  WRITE ALL MESSAGES.
          go to 9001
       end if
 
-C///  CHECK THE VERSION.
+!///  CHECK THE VERSION.
 
       data vnmbr
      +   / '3.18', '3.19', '3.20', '3.21', '3.22', '3.23', '3.24',
@@ -2476,19 +2386,19 @@ C///  CHECK THE VERSION.
       flag = .false.
       do 1010 j = 1, vnmbrs
          flag = flag .or.
-C*****PRECISION > DOUBLE
-     +      versio .eq. 'DOUBLE PRECISION VERSION ' // vnmbr(j)
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C     +      VERSIO .EQ. 'SINGLE PRECISION VERSION ' // VNMBR(J)
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+     +      versio == 'real(RK) VERSION ' // vnmbr(j)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!     +      VERSIO == 'SINGLE PRECISION VERSION ' // VNMBR(J)
+!*****END PRECISION > SINGLE
 1010  continue
       error = .not. flag
       if (error) go to 9002
 
-C///  SET THE CONTROLS.
+!///  SET THE CONTROLS.
 
-C     SUBROUTINE TWINIT (ERROR, TEXT, FORCE)
+!     SUBROUTINE TWINIT (ERROR, TEXT, FORCE)
 
       call twinit (error, text, .false.)
       if (error) go to 9003
@@ -2565,137 +2475,137 @@ C     SUBROUTINE TWINIT (ERROR, TEXT, FORCE)
       count = count + 1
       toler2 = rvalue(count)
 
-      error = .not. (count .eq. cntrls)
+      error = .not. (count == cntrls)
       if (error) go to 9004
 
-C///  PRINT THE ENTRY BANNER AT ALL PRINT LEVELS.
+!///  PRINT THE ENTRY BANNER AT ALL PRINT LEVELS.
 
       string = vnmbr(vnmbrs)
       call twlast (length, string)
-      if ((0 .lt. levelm .or. mess) .and. 0 .lt. text)
+      if ((0 < levelm .or. mess) .and. 0 < text)
      +   write (text, 10001) id,
-C*****PRECISION > DOUBLE
-     +   'DOUBLE PRECISION', string (1 : length)
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C     +   'SINGLE PRECISION', STRING (1 : LENGTH)
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+     +   'real(RK)', string (1 : length)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!     +   'SINGLE PRECISION', STRING (1 : LENGTH)
+!*****END PRECISION > SINGLE
 
-C///  CHECK THE ARGUMENTS.
+!///  CHECK THE ARGUMENTS.
 
-      error = .not. (leveld .le. levelm)
+      error = .not. (leveld <= levelm)
       if (error) go to 9005
 
-      error = .not. (0 .le. comps .and. 0 .le. points .and.
-     +   0 .le. groupa .and. 0 .le. groupb)
+      error = .not. (0 <= comps .and. 0 <= points .and.
+     +   0 <= groupa .and. 0 <= groupb)
       if (error) go to 9006
 
-      error = .not. ((0 .lt. comps) .eqv. (0 .lt. points))
+      error = .not. ((0 < comps) .eqv. (0 < points))
       if (error) go to 9007
 
-      error = .not. (0 .lt. groupa + comps * points + groupb)
+      error = .not. (0 < groupa + comps * points + groupb)
       if (error) go to 9008
 
-      error = .not. (names .eq. 1 .or.
-     +   names .eq. groupa + comps + groupb)
+      error = .not. (names == 1 .or.
+     +   names == groupa + comps + groupb)
       if (error) go to 9009
 
-      error = .not. (points .le. pmax)
+      error = .not. (points <= pmax)
       if (error) go to 9010
 
       count = 0
       do 1020 j = 1, groupa + comps + groupb
-         if (.not. (below(j) .lt. above(j))) count = count + 1
+         if (.not. (below(j) < above(j))) count = count + 1
 1020  continue
-      error = count .ne. 0
+      error = count /= 0
       if (error) go to 9011
 
-C///  PARTITION THE INTEGER WORK SPACE.
+!///  PARTITION THE INTEGER WORK SPACE.
 
-C     SUBROUTINE TWGRAB (ERROR, LAST, FIRST, NUMBER)
+!     SUBROUTINE TWGRAB (ERROR, LAST, FIRST, NUMBER)
 
       ilast = 0
 
-C     VARY(PMAX)
+!     VARY(PMAX)
       call twgrab (error, ilast, qvary, pmax)
       if (error) go to 9012
 
-C     VARY1(PMAX)
+!     VARY1(PMAX)
       call twgrab (error, ilast, qvary1, pmax)
       if (error) go to 9012
 
-C     VARY2(PMAX)
+!     VARY2(PMAX)
       call twgrab (error, ilast, qvary2, pmax)
       if (error) go to 9012
 
-C///  PARTITION THE REAL WORK SPACE.
+!///  PARTITION THE REAL WORK SPACE.
 
-C     SUBROUTINE TWGRAB (ERROR, LAST, FIRST, NUMBER)
+!     SUBROUTINE TWGRAB (ERROR, LAST, FIRST, NUMBER)
 
       rlast = 0
 
-C     ABOVE(GROUPA + COMPS * PMAX + GROUPB)
+!     ABOVE(GROUPA + COMPS * PMAX + GROUPB)
       call twgrab (error, rlast, qabove, groupa + comps * pmax + groupb)
       if (error) go to 9012
 
-C     BELOW(GROUPA + COMPS * PMAX + GROUPB)
+!     BELOW(GROUPA + COMPS * PMAX + GROUPB)
       call twgrab (error, rlast, qbelow, groupa + comps * pmax + groupb)
       if (error) go to 9012
 
-C     RATIO1(PMAX)
+!     RATIO1(PMAX)
       call twgrab (error, rlast, qrat1, pmax)
       if (error) go to 9012
 
-C     RATIO2(PMAX)
+!     RATIO2(PMAX)
       call twgrab (error, rlast, qrat2, pmax)
       if (error) go to 9012
 
-C     S0(GROUPA + COMPS * PMAX + GROUPB)
+!     S0(GROUPA + COMPS * PMAX + GROUPB)
       call twgrab (error, rlast, qs0, groupa + comps * pmax + groupb)
       if (error) go to 9012
 
-C     S1(GROUPA + COMPS * PMAX + GROUPB)
+!     S1(GROUPA + COMPS * PMAX + GROUPB)
       call twgrab (error, rlast, qs1, groupa + comps * pmax + groupb)
       if (error) go to 9012
 
-C     USAVE(GROUPA + COMPS * PMAX + GROUPB)
+!     USAVE(GROUPA + COMPS * PMAX + GROUPB)
       call twgrab (error, rlast, qusave, groupa + comps * pmax + groupb)
       if (error) go to 9012
 
-C     VSAVE(GROUPA + COMPS * PMAX + GROUPB)
+!     VSAVE(GROUPA + COMPS * PMAX + GROUPB)
       call twgrab (error, rlast, qvsave, groupa + comps * pmax + groupb)
       if (error) go to 9012
 
-C     V1(GROUPA + COMPS * PMAX + GROUPB)
+!     V1(GROUPA + COMPS * PMAX + GROUPB)
       call twgrab (error, rlast, qv1, groupa + comps * pmax + groupb)
       if (error) go to 9012
 
-C     XSAVE(PMAX)
+!     XSAVE(PMAX)
       call twgrab (error, rlast, qxsave, pmax)
       if (error) go to 9012
 
-C     Y0(GROUPA + COMPS * PMAX + GROUPB)
+!     Y0(GROUPA + COMPS * PMAX + GROUPB)
       call twgrab (error, rlast, qy0, groupa + comps * pmax + groupb)
       if (error) go to 9012
 
-C     Y1(GROUPA + COMPS * PMAX + GROUPB)
+!     Y1(GROUPA + COMPS * PMAX + GROUPB)
       call twgrab (error, rlast, qy1, groupa + comps * pmax + groupb)
       if (error) go to 9012
 
-C///  CHECK THE WORK SPACES' SIZES.
+!///  CHECK THE WORK SPACES' SIZES.
 
-      error = .not. (ilast .le. isize .and. rlast .le. rsize)
+      error = .not. (ilast <= isize .and. rlast <= rsize)
       if (error) go to 9013
 
-C///  ONE-TIME INITIALIZATION.
+!///  ONE-TIME INITIALIZATION.
 
-C     ALLOW FURTHER TIME EVOLUTION
+!     ALLOW FURTHER TIME EVOLUTION
       allow = .true.
 
-C     PRESENT TASK
+!     PRESENT TASK
       qtask = qentry
 
-C     STATISTICS ARRAYS
+!     STATISTICS ARRAYS
       do 1040 k = 1, qtotal
          total(k) = 0.0
          do 1030 j = 1, gmax
@@ -2704,21 +2614,21 @@ C     STATISTICS ARRAYS
 1030     continue
 1040  continue
 
-C     TOTAL TIME STATISTIC
+!     TOTAL TIME STATISTIC
       call twtime (timer(qtotal))
 
-C     GRID POINTER AND STATISTICS FOR THE FIRST GRID
+!     GRID POINTER AND STATISTICS FOR THE FIRST GRID
       grid = 1
       size(grid) = points
       call twtime (timer(qgrid))
 
-C     TIME STEP NUMBER
+!     TIME STEP NUMBER
       step = 0
 
-C     SOLUTION FLAG
+!     SOLUTION FLAG
       found = .true.
 
-C///  EXPAND THE BOUNDS.
+!///  EXPAND THE BOUNDS.
 
       count = 0
 
@@ -2742,57 +2652,57 @@ C///  EXPAND THE BOUNDS.
          count = count + 1
 1080  continue
 
-C///  SAVE THE INITIAL SOLUTION.
+!///  SAVE THE INITIAL SOLUTION.
 
       psave = points
-      if (adapt .and. 0 .lt. points)
+      if (adapt .and. 0 < points)
      +   call twcopy (points, x, rwork(qxsave))
       call twcopy (groupa + comps * points + groupb, u, rwork(qusave))
 
-C     GO TO 1090 WHEN RETURN = 1
+!     GO TO 1090 WHEN RETURN = 1
       return = 1
       go to 9911
 1090  continue
 
-C///  PRINT LEVELS 11, 21, AND 22.
+!///  PRINT LEVELS 11, 21, AND 22.
 
-      if (0 .lt. leveld .and. 0 .lt. text) then
+      if (0 < leveld .and. 0 < text) then
          write (text, 10002) id, 'INITIAL GUESS:'
-C        GO TO 1100 WHEN RETURN = 2
+!        GO TO 1100 WHEN RETURN = 2
          return = 2
          go to 9921
       end if
 1100  continue
 
-C///  PRINT LEVEL 10 AND 11.
+!///  PRINT LEVEL 10 AND 11.
 
-C                  123456789_123456789_123456789_1234
-C                  12345678   123456  123456   123456
+!                  123456789_123456789_123456789_1234
+!                  12345678   123456  123456   123456
       header(1) = '            LOG10   LOG10         '
       header(2) = '    TASK   NORM F  COND J   REMARK'
 
-      if (levelm .eq. 1 .and. 0 .lt. text) then
-         if (0 .lt. leveld) write (text, 10002) id,
+      if (levelm == 1 .and. 0 < text) then
+         if (0 < leveld) write (text, 10002) id,
      +      'SOLVE THE PROBLEM.'
          write (text, 10003) (header(j), j = 1, 2)
-C        GO TO 1110 WHEN LABEL = 1
+!        GO TO 1110 WHEN LABEL = 1
          label = 1
          go to 7010
       end if
 1110  continue
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     DECISION BLOCK.  THE PREVIOUS TASK DETERMINES THE NEXT.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     DECISION BLOCK.  THE PREVIOUS TASK DETERMINES THE NEXT.
+!
+!///////////////////////////////////////////////////////////////////////
 
 2010  continue
 
-C///  ENTRY WAS THE PREVIOUS TASK.
+!///  ENTRY WAS THE PREVIOUS TASK.
 
-      if (qtask .eq. qentry) then
-         if (0 .lt. steps0) then
+      if (qtask == qentry) then
+         if (0 < steps0) then
             qtask = qtimst
             desire = steps0
          else if (steady) then
@@ -2802,9 +2712,9 @@ C///  ENTRY WAS THE PREVIOUS TASK.
             go to 9014
          end if
 
-C///  SEARCH WAS THE PREVIOUS TASK.
+!///  SEARCH WAS THE PREVIOUS TASK.
 
-      else if (qtask .eq. qsearc) then
+      else if (qtask == qsearc) then
          if (found) then
             if (adapt) then
                qtask = qrefin
@@ -2813,12 +2723,12 @@ C///  SEARCH WAS THE PREVIOUS TASK.
                report = ' '
             end if
          else
-            if (allow .and. 0 .lt. steps1) then
+            if (allow .and. 0 < steps1) then
                qtask = qtimst
                desire = steps1
             else
                qtask = qexit
-               if (1 .lt. grid) then
+               if (1 < grid) then
                   report = 'SOME SOLVED'
                else
                   report = 'NOT SOLVED'
@@ -2826,9 +2736,9 @@ C///  SEARCH WAS THE PREVIOUS TASK.
             end if
          end if
 
-C///  REFINE WAS THE PREVIOUS TASK.
+!///  REFINE WAS THE PREVIOUS TASK.
 
-      else if (qtask .eq. qrefin) then
+      else if (qtask == qrefin) then
          if (found) then
             step = 0
             qtask = qsearc
@@ -2842,9 +2752,9 @@ C///  REFINE WAS THE PREVIOUS TASK.
             end if
          end if
 
-C///  EVOLVE WAS THE PREVIOUS TASK.
+!///  EVOLVE WAS THE PREVIOUS TASK.
 
-      else if (qtask .eq. qtimst) then
+      else if (qtask == qtimst) then
          if (found) then
             if (steady) then
                qtask = qsearc
@@ -2854,7 +2764,7 @@ C///  EVOLVE WAS THE PREVIOUS TASK.
             end if
          else
             qtask = qexit
-            if (1 .lt. grid) then
+            if (1 < grid) then
                report = 'SOME SOLVED'
             else
                report = 'NOT SOLVED'
@@ -2862,78 +2772,78 @@ C///  EVOLVE WAS THE PREVIOUS TASK.
          end if
       end if
 
-C///  BRANCH TO THE NEXT TASK.
+!///  BRANCH TO THE NEXT TASK.
 
-      if (qtask .eq. qexit) go to 3010
-      if (qtask .eq. qsearc) go to 4010
-      if (qtask .eq. qrefin) go to 5010
-      if (qtask .eq. qtimst) go to 6010
+      if (qtask == qexit) go to 3010
+      if (qtask == qsearc) go to 4010
+      if (qtask == qrefin) go to 5010
+      if (qtask == qtimst) go to 6010
       error = .true.
       go to 9015
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     EXIT BLOCK.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     EXIT BLOCK.
+!
+!///////////////////////////////////////////////////////////////////////
 
 3010  continue
 
-C///  COMPLETE STATISTICS FOR THE LAST GRID.
+!///  COMPLETE STATISTICS FOR THE LAST GRID.
 
       call twlaps (timer(qgrid))
-      if (grid .le. gmax) then
+      if (grid <= gmax) then
          detail(grid, qgrid) = timer(qgrid)
          detail(grid, qother)
      +      = detail(grid, qgrid) - (detail(grid, qfunct)
      +      + detail(grid, qjacob) + detail(grid, qsolve))
       end if
 
-C///  RESTORE THE SOLUTION.
+!///  RESTORE THE SOLUTION.
 
-      if (report .ne. ' ') then
-C        BE CAREFUL NOT TO ASSIGN A VALUE TO A PARAMETER
-         if (points .ne. psave) points = psave
-         if (adapt .and. 0 .lt. points)
+      if (report /= ' ') then
+!        BE CAREFUL NOT TO ASSIGN A VALUE TO A PARAMETER
+         if (points /= psave) points = psave
+         if (adapt .and. 0 < points)
      +      call twcopy (points, rwork(qxsave), x)
          call twcopy
      +      (groupa + comps * points + groupb, rwork(qusave), u)
       end if
 
-C///  PRINT LEVEL 11 OR 21.
+!///  PRINT LEVEL 11 OR 21.
 
-C     SAVE THE STATUS REPORTS DURING REVERSE COMMUNICATION
+!     SAVE THE STATUS REPORTS DURING REVERSE COMMUNICATION
       string = report
 
-      if (leveld .eq. 1 .and. 0 .lt. text) then
+      if (leveld == 1 .and. 0 < text) then
          write (text, 10002) id, 'FINAL SOLUTION:'
-C        GO TO 3020 WHEN RETURN = 3
+!        GO TO 3020 WHEN RETURN = 3
          return = 3
          go to 9921
       end if
 3020  continue
 
-C     RESTORE THE STATUS REPORTS AFTER REVERSE COMMUNICATION
+!     RESTORE THE STATUS REPORTS AFTER REVERSE COMMUNICATION
       report = string
 
-C///  COMPLETE THE TOTAL TIME STATISTICS.
+!///  COMPLETE THE TOTAL TIME STATISTICS.
 
       call twlaps (timer(qtotal))
       total(qtotal) = timer(qtotal)
       total(qother) = total(qtotal)
      +   - (total(qfunct) + total(qjacob) + total(qsolve))
 
-C///  TOP OF THE REPORT BLOCK.
+!///  TOP OF THE REPORT BLOCK.
 
-      if (0 .lt. levelm .and. 0 .lt. text) then
-         if (0.0 .lt. total(qtotal)) then
+      if (0 < levelm .and. 0 < text) then
+         if (0.0 < total(qtotal)) then
 
-C///  REPORT TOTAL COMPUTER TIME.
+!///  REPORT TOTAL COMPUTER TIME.
 
       temp = total(qtotal)
-      if (3600.0 .le. temp) then
+      if (3600.0 <= temp) then
          write (string, '(F10.2, A)') temp / 3600.0, ' HOURS'
-      else if (60.0 .le. temp) then
+      else if (60.0 <= temp) then
          write (string, '(F10.2, A)') temp / 60.0, ' MINUTES'
       else
          write (string, '(F10.2, A)') temp, ' SECONDS'
@@ -2942,32 +2852,32 @@ C///  REPORT TOTAL COMPUTER TIME.
       call twsqez (length, string)
       write (text, 10004) id, string (1 : length)
 
-C///  REPORT PERCENT OF TOTAL COMPUTER TIME.
+!///  REPORT PERCENT OF TOTAL COMPUTER TIME.
 
       temp = 100.0 / total(qtotal)
       if (adapt) then
 
-C                  123456789_123456789_123456789_12345678
-C                  123456  123456  123456 123456 123456
+!                  123456789_123456789_123456789_12345678
+!                  123456  123456  123456 123456 123456
       header(1) = '                TASK                  '
       header(3) = '  GRID    GRID  --------------------  '
       header(5) = 'POINTS  TOTALS  EVOLVE SEARCH REFINE  '
 
-C                  123456789_123456789_1234567
-C                  123456 123456 123456 123456
+!                  123456789_123456789_1234567
+!                  123456 123456 123456 123456
       header(2) = 'SUBTASK                    '
       header(4) = '---------------------------'
       header(6) = 'EVAL F PREP J  SOLVE  OTHER'
 
       write (text, 10005) header,
      +   (size(j), (temp * detail(j, k), k = 1, 8), j = 1, grid)
-      if (1 .lt. grid) write (text, 10006) (temp * total(k), k = 2, 8)
-      if (gmax .lt. grid) write (text, 10007)
+      if (1 < grid) write (text, 10006) (temp * total(k), k = 2, 8)
+      if (gmax < grid) write (text, 10007)
 
       else
 
-C                  123456789_123456789_123456789_123456789_123456789_1
-C                  123456   123456   123456   123456   123456   123456
+!                  123456789_123456789_123456789_123456789_123456789_1
+!                  123456   123456   123456   123456   123456   123456
       header(1) = 'SUBTASK                             TASK           '
       header(2) = '---------------------------------   ---------------'
       header(3) = 'EVAL F   PREP J    SOLVE    OTHER   EVOLVE   SEARCH'
@@ -2980,17 +2890,17 @@ C                  123456   123456   123456   123456   123456   123456
 
       end if
 
-C///  REPORT AVERAGE COMPUTER TIME.
+!///  REPORT AVERAGE COMPUTER TIME.
 
-C                  123456789_123456789_123456789_1234567
-C                  123456   1234567  1234567  1234567
+!                  123456789_123456789_123456789_1234567
+!                  123456   1234567  1234567  1234567
       header(1) = '         AVERAGE SECONDS             '
       header(3) = '  GRID   -------------------------   '
       header(5) = 'POINTS    EVAL F   PREP J    SOLVE   '
 
 
-C                  123456789_123456789_12345
-C                  1234567  1234567  1234567
+!                  123456789_123456789_12345
+!                  1234567  1234567  1234567
       header(2) = 'NUMBER OF SUBTASKS       '
       header(4) = '-------------------------'
       header(6) = ' EVAL F   PREP J    SOLVE'
@@ -3001,19 +2911,19 @@ C                  1234567  1234567  1234567
 
       end if
 
-C///  REPORT THE COMPLETION STATUS.
+!///  REPORT THE COMPLETION STATUS.
 
-      if (0 .lt. levelm) then
-         if (report .eq. ' ') then
+      if (0 < levelm) then
+         if (report == ' ') then
             write (text, 10010) id
-         else if (report .eq. 'NO SPACE') then
+         else if (report == 'NO SPACE') then
             write (string, '(I10)') points
             call twsqez (length, string)
             write (text, 10011)
      +         id, string (1 : length), ratio, toler1, toler2
-         else if (report .eq. 'NOT SOLVED') then
+         else if (report == 'NOT SOLVED') then
             write (text, 10012) id
-         else if (report .eq. 'SOME SOLVED') then
+         else if (report == 'SOME SOLVED') then
             write (string, '(I10)') points
             call twsqez (length, string)
             write (text, 10013)
@@ -3024,53 +2934,53 @@ C///  REPORT THE COMPLETION STATUS.
          end if
       end if
 
-C///  BOTTOM OF THE REPORT BLOCK.
+!///  BOTTOM OF THE REPORT BLOCK.
 
       end if
 
-C///  BOTTOM OF THE EXIT BLOCK.
+!///  BOTTOM OF THE EXIT BLOCK.
 
       go to 99999
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     SEARCH BLOCK.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     SEARCH BLOCK.
+!
+!///////////////////////////////////////////////////////////////////////
 
 4010  continue
 
-C///  INITIALIZE STATISTICS ON ENTRY TO THE SEARCH BLOCK.
+!///  INITIALIZE STATISTICS ON ENTRY TO THE SEARCH BLOCK.
 
       call twtime (timer(qsearc))
       first = .true.
       jacobs = 0
       maxcon = 0.0
 
-C///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE SEARCH BLOCK.
+!///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE SEARCH BLOCK.
 
-      if (1 .lt. levelm) then
-         if (0 .lt. text) write (text, 10014) id
+      if (1 < levelm) then
+         if (0 < text) write (text, 10014) id
       end if
 
-C///  PREPARE TO CALL SEARCH.
+!///  PREPARE TO CALL SEARCH.
 
-C     SAVE THE SOLUTION SHOULD THE SEARCH FAIL
+!     SAVE THE SOLUTION SHOULD THE SEARCH FAIL
       call twcopy (groupa + comps * points + groupb, u, rwork(qvsave))
 
       exist = .false.
 
-C///  CALL SEARCH.
+!///  CALL SEARCH.
 
       age = 0
 4020  continue
 
-C     SUBROUTINE SEARCH
-C    +  (ERROR, TEXT,
-C    +   ABOVE, AGE, BELOW, BUFFER, COMPS, CONDIT, EXIST, GROUPA,
-C    +   GROUPB, LEVELD, LEVELM, NAME, NAMES, POINTS, REPORT, S0, S1,
-C    +   SIGNAL, STEPS, SUCCES, V0, V1, XXABS, XXAGE, XXREL, Y0, Y0NORM,
-C    +   Y1)
+!     SUBROUTINE SEARCH
+!    +  (ERROR, TEXT,
+!    +   ABOVE, AGE, BELOW, BUFFER, COMPS, CONDIT, EXIST, GROUPA,
+!    +   GROUPB, LEVELD, LEVELM, NAME, NAMES, POINTS, REPORT, S0, S1,
+!    +   SIGNAL, STEPS, SUCCES, V0, V1, XXABS, XXAGE, XXREL, Y0, Y0NORM,
+!    +   Y1)
 
       call search
      +  (error, text,
@@ -3081,101 +2991,101 @@ C    +   Y1)
      +   rwork(qy1))
       if (error) go to 9017
 
-C///  PASS REQUESTS FROM SEARCH TO THE CALLER.
+!///  PASS REQUESTS FROM SEARCH TO THE CALLER.
 
-      if (signal .ne. ' ') then
-C        GO TO 4020 WHEN RETURN = 4
+      if (signal /= ' ') then
+!        GO TO 4020 WHEN RETURN = 4
          return = 4
          go to 9931
       end if
 
-C///  REACT TO THE COMPLETION OF SEARCH.
+!///  REACT TO THE COMPLETION OF SEARCH.
 
       if (found) then
-C        SAVE THE LATEST SOLUTION
+!        SAVE THE LATEST SOLUTION
 
          psave = points
-         if (adapt .and. 0 .lt. points)
+         if (adapt .and. 0 < points)
      +      call twcopy (points, x, rwork(qxsave))
          call twcopy
      +      (groupa + comps * points + groupb, u, rwork(qusave))
 
-C        GO TO 4030 WHEN RETURN = 5
+!        GO TO 4030 WHEN RETURN = 5
          return = 5
          go to 9911
       else
-C        RESTORE THE SOLUTION
+!        RESTORE THE SOLUTION
          call twcopy
      +      (groupa + comps * points + groupb, rwork(qvsave), u)
       end if
 4030  continue
 
-C///  COMPLETE STATISTICS FOR THE SEARCH BLOCK.
+!///  COMPLETE STATISTICS FOR THE SEARCH BLOCK.
 
       call twlaps (timer(qsearc))
       total(qsearc) = total(qsearc) + timer(qsearc)
-      if (grid .le. gmax)
+      if (grid <= gmax)
      +   detail(grid, qsearc) = detail(grid, qsearc) + timer(qsearc)
 
-C///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE SEARCH BLOCK.
+!///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE SEARCH BLOCK.
 
-      if (levelm .eq. 1 .and. 0 .lt. text) then
-C        GO TO 4040 WHEN LABEL = 2
+      if (levelm == 1 .and. 0 < text) then
+!        GO TO 4040 WHEN LABEL = 2
          label = 2
          go to 7010
       end if
 4040  continue
 
-C///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE SEARCH BLOCK.
+!///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE SEARCH BLOCK.
 
-      if (1 .lt. levelm) then
+      if (1 < levelm) then
          if (found) then
-            if (0 .lt. text) write (text, 10015) id
+            if (0 < text) write (text, 10015) id
          else
-            if (0 .lt. text) write (text, 10016) id
+            if (0 < text) write (text, 10016) id
          end if
       end if
 
-C///  BOTTOM OF THE SEARCH BLOCK.
+!///  BOTTOM OF THE SEARCH BLOCK.
 
       go to 2010
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     REFINE BLOCK.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     REFINE BLOCK.
+!
+!///////////////////////////////////////////////////////////////////////
 
 5010  continue
 
-C///  INITIALIZE STATISTICS ON ENTRY TO THE REFINE BLOCK.
+!///  INITIALIZE STATISTICS ON ENTRY TO THE REFINE BLOCK.
 
       call twtime (timer(qrefin))
 
-C///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE REFINE BLOCK.
+!///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE REFINE BLOCK.
 
-      if (1 .lt. levelm) then
-         if (0 .lt. text) write (text, 10017) id
+      if (1 < levelm) then
+         if (0 < text) write (text, 10017) id
       end if
 
-C///  PREPARE TO CALL REFINE.
+!///  PREPARE TO CALL REFINE.
 
-C     SAVE THE GROUP B VALUES
+!     SAVE THE GROUP B VALUES
       do 5020 j = 1, groupb
          rwork(qvsave - 1 + j) = u(groupa + comps * points + j)
 5020  continue
 
       exist = .false.
 
-C///  CALL REFINE.
+!///  CALL REFINE.
 
 5030  continue
 
-C     SUBROUTINE REFINE
-C    +  (ERROR, TEXT,
-C    +   ACTIVE, BUFFER, COMPS, LEVELD, LEVELM, MARK, NEWX, PADD, PMAX,
-C    +   POINTS, RATIO, RATIO1, RATIO2, SIGNAL, SUCCES, TOLER0, TOLER1,
-C    +   TOLER2, U, VARY1, VARY2, WEIGHT, X)
+!     SUBROUTINE REFINE
+!    +  (ERROR, TEXT,
+!    +   ACTIVE, BUFFER, COMPS, LEVELD, LEVELM, MARK, NEWX, PADD, PMAX,
+!    +   POINTS, RATIO, RATIO1, RATIO2, SIGNAL, SUCCES, TOLER0, TOLER1,
+!    +   TOLER2, U, VARY1, VARY2, WEIGHT, X)
 
       call refine
      +  (error, text,
@@ -3186,10 +3096,10 @@ C    +   TOLER2, U, VARY1, VARY2, WEIGHT, X)
      +   iwork(qvary1), iwork(qvary2), iwork(qvary), x)
       if (error) go to 9018
 
-C///  SERVICE REQUESTS FROM REFINE: PASS REQUESTS TO THE CALLER.
+!///  SERVICE REQUESTS FROM REFINE: PASS REQUESTS TO THE CALLER.
 
-      if (signal .ne. ' ') then
-C        INSERT THE GROUP A AND B UNKNOWNS
+      if (signal /= ' ') then
+!        INSERT THE GROUP A AND B UNKNOWNS
          do 5040 j = 1, groupa
             buffer(j) = u(j)
 5040     continue
@@ -3197,37 +3107,37 @@ C        INSERT THE GROUP A AND B UNKNOWNS
             buffer(groupa + comps * points + j) = rwork(qvsave - 1 + j)
 5050     continue
 
-C        GO TO 5030 WHEN RETURN = 6
+!        GO TO 5030 WHEN RETURN = 6
          return = 6
          go to 9931
       end if
 
-C///  REACT TO THE COMPLETION OF REFINE.
+!///  REACT TO THE COMPLETION OF REFINE.
 
       if (.not. found) go to 5110
 
-C        COMPLETE STATISTICS FOR THE OLD GRID
+!        COMPLETE STATISTICS FOR THE OLD GRID
          call twlaps (timer(qgrid))
-         if (grid .le. gmax) then
+         if (grid <= gmax) then
             detail(grid, qgrid) = timer(qgrid)
             detail(grid, qother)
      +         = detail(grid, qgrid) - (detail(grid, qfunct)
      +         + detail(grid, qjacob) + detail(grid, qsolve))
          end if
 
-C        INITIALIZE STATISTICS FOR THE NEW GRID
+!        INITIALIZE STATISTICS FOR THE NEW GRID
          grid = grid + 1
-         if (grid .le. gmax) then
+         if (grid <= gmax) then
             call twtime (timer(qgrid))
             size(grid) = points
          end if
 
-C        INSERT THE GROUP B VALUES
+!        INSERT THE GROUP B VALUES
          do 5060 j = 1, groupb
             u(groupa + comps * points + j) = rwork(qvsave - 1 + j)
 5060     continue
 
-C        EXPAND THE BOUNDS
+!        EXPAND THE BOUNDS
          count = groupa
 
          do 5080 k = 1, points
@@ -3244,54 +3154,54 @@ C        EXPAND THE BOUNDS
             count = count + 1
 5090     continue
 
-C        SAVE THE LATEST SOLUTION
-C        GO TO 5100 WHEN RETURN = 7
+!        SAVE THE LATEST SOLUTION
+!        GO TO 5100 WHEN RETURN = 7
          return = 7
          go to 9911
 5100     continue
 
 5110  continue
 
-C///  COMPLETE STATISTICS FOR THE REFINE BLOCK.
+!///  COMPLETE STATISTICS FOR THE REFINE BLOCK.
 
       call twlaps (timer(qrefin))
       total(qrefin) = total(qrefin) + timer(qrefin)
-      if (grid .le. gmax)
+      if (grid <= gmax)
      +   detail(grid, qrefin) = detail(grid, qrefin) + timer(qrefin)
 
-C///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE REFINE BLOCK.
+!///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE REFINE BLOCK.
 
-      if (levelm .eq. 1 .and. 0 .lt. text) then
+      if (levelm == 1 .and. 0 < text) then
          write (text, '()')
-C        GO TO 5120 WHEN LABEL = 3
+!        GO TO 5120 WHEN LABEL = 3
          label = 3
          go to 7010
       end if
 5120  continue
 
-C///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE REFINE BLOCK.
+!///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE REFINE BLOCK.
 
-      if (1 .lt. levelm) then
+      if (1 < levelm) then
          if (found) then
-            if (0 .lt. text) write (text, 10018) id
+            if (0 < text) write (text, 10018) id
          else
-            if (0 .lt. text) write (text, 10019) id
+            if (0 < text) write (text, 10019) id
          end if
       end if
 
-C///  BOTTOM OF THE REFINE BLOCK.
+!///  BOTTOM OF THE REFINE BLOCK.
 
       go to 2010
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     EVOLVE BLOCK.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     EVOLVE BLOCK.
+!
+!///////////////////////////////////////////////////////////////////////
 
 6010  continue
 
-C///  INITIALIZE STATISTICS ON ENTRY TO THE EVOLVE BLOCK.
+!///  INITIALIZE STATISTICS ON ENTRY TO THE EVOLVE BLOCK.
 
       call twtime (timer(qtimst))
       first = .true.
@@ -3299,22 +3209,22 @@ C///  INITIALIZE STATISTICS ON ENTRY TO THE EVOLVE BLOCK.
       maxcon = 0.0
       steps = step
 
-C///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE EVOLVE BLOCK.
+!///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE EVOLVE BLOCK.
 
-      if (1 .lt. levelm) then
-         if (0 .lt. text) write (text, 10020) id
+      if (1 < levelm) then
+         if (0 < text) write (text, 10020) id
       end if
 
-C///  CALL EVOLVE.
+!///  CALL EVOLVE.
 
 6020  continue
 
-C     SUBROUTINE EVOLVE
-C    +  (ERROR, TEXT,
-C    +   ABOVE, BELOW, BUFFER, COMPS, CONDIT, DESIRE, GROUPA, GROUPB,
-C    +   LEVELD, LEVELM, NAME, NAMES, POINTS, REPORT, S0, S1, SIGNAL,
-C    +   STEP, STEPS2, STRID0, STRIDE, SUCCES, TDABS, TDAGE, TDEC,
-C    +   TDREL, TIME, TINC, TMAX, TMIN, V0, V1, VSAVE, Y0, Y1, YNORM)
+!     SUBROUTINE EVOLVE
+!    +  (ERROR, TEXT,
+!    +   ABOVE, BELOW, BUFFER, COMPS, CONDIT, DESIRE, GROUPA, GROUPB,
+!    +   LEVELD, LEVELM, NAME, NAMES, POINTS, REPORT, S0, S1, SIGNAL,
+!    +   STEP, STEPS2, STRID0, STRIDE, SUCCES, TDABS, TDAGE, TDEC,
+!    +   TDREL, TIME, TINC, TMAX, TMIN, V0, V1, VSAVE, Y0, Y1, YNORM)
 
       call evolve
      +  (error, text,
@@ -3326,64 +3236,64 @@ C    +   TDREL, TIME, TINC, TMAX, TMIN, V0, V1, VSAVE, Y0, Y1, YNORM)
      +   ynorm)
       if (error) go to 9019
 
-C///  PASS REQUESTS FROM EVOLVE TO THE CALLER.
+!///  PASS REQUESTS FROM EVOLVE TO THE CALLER.
 
-      if (signal .ne. ' ') then
-C        GO TO 6020 WHEN RETURN = 8
+      if (signal /= ' ') then
+!        GO TO 6020 WHEN RETURN = 8
          return = 8
          go to 9931
       end if
 
-C///  REACT TO THE COMPLETION OF EVOLVE.
+!///  REACT TO THE COMPLETION OF EVOLVE.
 
       if (found) then
-C        SAVE THE LATEST SOLUTION
-C        GO TO 6030 WHEN RETURN = 9
+!        SAVE THE LATEST SOLUTION
+!        GO TO 6030 WHEN RETURN = 9
          return = 9
          go to 9911
       end if
 6030  continue
 
-C///  ALLOW FURTHER TIME EVOLUTION.
+!///  ALLOW FURTHER TIME EVOLUTION.
 
-      allow = xrepor .eq. qnull
+      allow = xrepor == qnull
 
-C///  COMPLETE STATISTICS FOR THE EVOLVE BLOCK.
+!///  COMPLETE STATISTICS FOR THE EVOLVE BLOCK.
 
       call twlaps (timer(qtimst))
       total(qtimst) = total(qtimst) + timer(qtimst)
-      if (grid .le. gmax)
+      if (grid <= gmax)
      +   detail(grid, qtimst) = detail(grid, qtimst) + timer(qtimst)
       steps = step - steps
 
-C///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE EVOLVE BLOCK.
+!///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE EVOLVE BLOCK.
 
-      if (levelm .eq. 1 .and. 0 .lt. text) then
-C        GO TO 6040 WHEN LABEL = 4
+      if (levelm == 1 .and. 0 < text) then
+!        GO TO 6040 WHEN LABEL = 4
          label = 4
          go to 7010
       end if
 6040  continue
 
-C///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE EVOLVE BLOCK.
+!///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE EVOLVE BLOCK.
 
-      if (1 .lt. levelm) then
+      if (1 < levelm) then
          if (found) then
-            if (0 .lt. text) write (text, 10021) id
+            if (0 < text) write (text, 10021) id
          else
-            if (0 .lt. text) write (text, 10022) id
+            if (0 < text) write (text, 10022) id
          end if
       end if
 
-C///  BOTTOM OF THE EVOLVE BLOCK.
+!///  BOTTOM OF THE EVOLVE BLOCK.
 
       go to 2010
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     BLOCK TO PRINT LOG LINES.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     BLOCK TO PRINT LOG LINES.
+!
+!///////////////////////////////////////////////////////////////////////
 
 7010  continue
 
@@ -3393,15 +3303,15 @@ C///////////////////////////////////////////////////////////////////////
 
       string = ' '
 
-C     COLUMN 1: NAME OF THE TASK
-      if (qtask .eq. qentry) column(1) = '   START'
-      if (qtask .eq. qsearc) column(1) = '  SEARCH'
-      if (qtask .eq. qrefin) column(1) = '  REFINE'
-      if (qtask .eq. qtimst) column(1) = '  EVOLVE'
+!     COLUMN 1: NAME OF THE TASK
+      if (qtask == qentry) column(1) = '   START'
+      if (qtask == qsearc) column(1) = '  SEARCH'
+      if (qtask == qrefin) column(1) = '  REFINE'
+      if (qtask == qtimst) column(1) = '  EVOLVE'
 
-C     COLUMN 2: NORM OF THE STEADY STATE FUNCTION
+!     COLUMN 2: NORM OF THE STEADY STATE FUNCTION
       if (.not. found) go to 7040
-C        GO TO 7030 WHEN RETURN = 10
+!        GO TO 7030 WHEN RETURN = 10
          return = 10
          go to 9941
 7030     continue
@@ -3409,37 +3319,37 @@ C        GO TO 7030 WHEN RETURN = 10
          call twlogr (column(2), temp)
 7040  continue
 
-C     COLUMN 3: LARGEST CONDITION NUMBER
-      if (qtask .eq. qsearc .or. qtask .eq. qtimst) then
-         if (maxcon .ne. 0.0) call twlogr (column(3), maxcon)
+!     COLUMN 3: LARGEST CONDITION NUMBER
+      if (qtask == qsearc .or. qtask == qtimst) then
+         if (maxcon /= 0.0) call twlogr (column(3), maxcon)
       end if
 
-C     REMARK
-      if (qtask .eq. qsearc) then
-         if (xrepor .eq. qdvrg) then
+!     REMARK
+      if (qtask == qsearc) then
+         if (xrepor == qdvrg) then
             string = 'DIVERGING'
-         else if (xrepor .eq. qnull) then
-            if (nsteps .eq. 1) then
+         else if (xrepor == qnull) then
+            if (nsteps == 1) then
                write (string, '(I10, A)') nsteps, ' SEARCH STEP'
             else
                write (string, '(I10, A)') nsteps, ' SEARCH STEPS'
             end if
-         else if (xrepor .eq. qbnds) then
+         else if (xrepor == qbnds) then
             string = 'GOING OUT OF BOUNDS'
          else
             string = '?'
          end if
-      else if (qtask .eq. qtimst) then
-         if (xrepor .eq. qbnds .or. xrepor .eq. qdvrg .or.
-     +      xrepor .eq. qnull) then
+      else if (qtask == qtimst) then
+         if (xrepor == qbnds .or. xrepor == qdvrg .or.
+     +      xrepor == qnull) then
             write (string, '(I10, A, 1P, E10.1, A)')
      +         steps, ' TIME STEPS, ', stride, ' LAST STRIDE'
          else
             string = '?'
          end if
-      else if (qtask .eq. qentry .and. adapt) then
+      else if (qtask == qentry .and. adapt) then
          write (string, '(I10, A)') points, ' GRID POINTS'
-      else if (qtask .eq. qrefin) then
+      else if (qtask == qrefin) then
          if (found) then
             write (string, '(F10.2, A, F10.2, A, I10, A)')
      +         ratio(1), ' AND ', ratio(2), ' RATIOS, ', points,
@@ -3451,25 +3361,25 @@ C     REMARK
       end if
 
       call twsqez (length, string)
-      if (0 .lt. text) write (text, 10023) column, string (1 : length)
+      if (0 < text) write (text, 10023) column, string (1 : length)
 
       go to (1110, 4040, 5120, 6040) label
       error = .true.
       go to 9020
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     REQUEST REVERSE COMMUNICATION.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     REQUEST REVERSE COMMUNICATION.
+!
+!///////////////////////////////////////////////////////////////////////
 
-C///  SAVE THE SOLUTION.
+!///  SAVE THE SOLUTION.
 
 9911  continue
 
       call twcopy (groupa + comps * points + groupb, u, buffer)
       signal = 'SAVE'
-C     GO TO 9912 WHEN ROUTE = 1
+!     GO TO 9912 WHEN ROUTE = 1
       route = 1
       go to 99999
 9912  continue
@@ -3480,13 +3390,13 @@ C     GO TO 9912 WHEN ROUTE = 1
       error = .true.
       go to 9021
 
-C///  PRINT THE LATEST SOLUTION.
+!///  PRINT THE LATEST SOLUTION.
 
 9921  continue
 
       call twcopy (groupa + comps * points + groupb, u, buffer)
       signal = 'SHOW'
-C     GO TO 9922 WHEN ROUTE = 2
+!     GO TO 9922 WHEN ROUTE = 2
       route = 2
       go to 99999
 9922  continue
@@ -3497,39 +3407,39 @@ C     GO TO 9922 WHEN ROUTE = 2
       error = .true.
       go to 9021
 
-C///  PASS REQUESTS FROM SEARCH, REFINE, OR EVOLVE TO THE CALLER.
+!///  PASS REQUESTS FROM SEARCH, REFINE, OR EVOLVE TO THE CALLER.
 
 9931  continue
 
-C     IDENTIFY THE REQUEST.  THIS MUST BE SAVED TO GATHER STATISTICS
-C     AT REENTRY.  THE REVERSE COMMUNICATION FLAGS WILL NOT BE SAVED
-C     BECAUSE THEY ARE CLEARED AT EVERY ENTRY.
-      if (signal .eq. 'RESIDUAL') then
+!     IDENTIFY THE REQUEST.  THIS MUST BE SAVED TO GATHER STATISTICS
+!     AT REENTRY.  THE REVERSE COMMUNICATION FLAGS WILL NOT BE SAVED
+!     BECAUSE THEY ARE CLEARED AT EVERY ENTRY.
+      if (signal == 'RESIDUAL') then
          qtype = qfunct
-      else if (signal .eq. 'PREPARE') then
+      else if (signal == 'PREPARE') then
          qtype = qjacob
-      else if (signal .eq. 'SOLVE') then
+      else if (signal == 'SOLVE') then
          qtype = qsolve
       else
          qtype = qother
       end if
 
-C     COUNT THE JACOBIANS
-      if (qtype .eq. qjacob) jacobs = jacobs + 1
+!     COUNT THE JACOBIANS
+      if (qtype == qjacob) jacobs = jacobs + 1
 
       call twtime (timer(qtype))
 
-C     GO TO 9932 WHEN ROUTE = 3
+!     GO TO 9932 WHEN ROUTE = 3
       route = 3
       go to 99999
 9932  continue
 
-C     SAVE THE CONDITION NUMBER
-      if (qtype .eq. qjacob) maxcon = max (maxcon, condit)
+!     SAVE THE CONDITION NUMBER
+      if (qtype == qjacob) maxcon = max (maxcon, condit)
 
       call twlaps (timer(qtype))
       total(qtype) = total(qtype) + timer(qtype)
-      if (grid .le. gmax) then
+      if (grid <= gmax) then
          detail(grid, qtype) = detail(grid, qtype) + timer(qtype)
          event(grid, qtype) = event(grid, qtype) + 1
       end if
@@ -3539,7 +3449,7 @@ C     SAVE THE CONDITION NUMBER
       error = .true.
       go to 9021
 
-C///  EVALUATE THE STEADY STATE FUNCTION.
+!///  EVALUATE THE STEADY STATE FUNCTION.
 
 9941  continue
       call twtime (timer(qfunct))
@@ -3547,7 +3457,7 @@ C///  EVALUATE THE STEADY STATE FUNCTION.
       call twcopy (groupa + comps * points + groupb, u, buffer)
       signal = 'RESIDUAL'
       time = .false.
-C     GO TO 9942 WHEN ROUTE = 4
+!     GO TO 9942 WHEN ROUTE = 4
       route = 4
       go to 99999
 9942  continue
@@ -3555,7 +3465,7 @@ C     GO TO 9942 WHEN ROUTE = 4
 
       call twlaps (timer(qfunct))
       total(qfunct) = total(qfunct) + timer(qfunct)
-      if (grid .le. gmax) then
+      if (grid <= gmax) then
          detail(grid, qfunct) = detail(grid, qfunct) + timer(qfunct)
          event(grid, qfunct) = event(grid, qfunct) + 1
       end if
@@ -3565,11 +3475,11 @@ C     GO TO 9942 WHEN ROUTE = 4
       error = .true.
       go to 9021
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     INFORMATIVE MESSAGES.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     INFORMATIVE MESSAGES.
+!
+!///////////////////////////////////////////////////////////////////////
 
 10001 format
      +   (/1X, a9, a, ' (TWO POINT BOUNDARY VALUE PROBLEM) SOLVER,'
@@ -3613,7 +3523,7 @@ C///////////////////////////////////////////////////////////////////////
 10011 format
      +  (/1X, a9, 'FAILURE.  A SOLUTION WAS FOUND FOR A GRID WITH ', a
      +  /10X, 'POINTS, BUT ONE OR BOTH RATIOS ARE TOO LARGE.'
-C               123456789_  123456789_
+!               123456789_  123456789_
      +  //22X, '   RATIO 1     RATIO 2'
      +  //10X, '     FOUND', 2F12.2
      +   /10X, '   DESIRED', 2F12.2
@@ -3625,7 +3535,7 @@ C               123456789_  123456789_
 10013 format
      +  (/1X, a9, 'FAILURE.  A SOLUTION WAS FOUND FOR A GRID WITH ', a
      +  /10X, 'POINTS, BUT ONE OR BOTH RATIOS ARE TOO LARGE.'
-C               123456789_  123456789_
+!               123456789_  123456789_
      +  //22X, '   RATIO 1     RATIO 2'
      +  //10X, '     FOUND', 2F12.2
      +   /10X, '   DESIRED', 2F12.2
@@ -3670,90 +3580,90 @@ C               123456789_  123456789_
 80003 format
      +   (10X, '  ... MORE')
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     ERROR MESSAGES.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     ERROR MESSAGES.
+!
+!///////////////////////////////////////////////////////////////////////
 
-C     GO TO 99999
+!     GO TO 99999
 
-9001  if (0 .lt. text) write (text, 99001) id, route
+9001  if (0 < text) write (text, 99001) id, route
       if (.not. mess) go to 99999
 
-9002  if (0 .lt. text) then
+9002  if (0 < text) then
          call twlast (length, versio)
          write (text, 99002) id, versio (1 : length), vnmbr(vnmbrs)
          do 9901 j = vnmbrs - 1, 1, - 1
             write (text, '(10X, A, A)')
-C*****PRECISION > DOUBLE
-     +         ' CAN REPLACE:  DOUBLE PRECISION VERSION ', vnmbr(j)
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C     +         ' CAN REPLACE:  SINGLE PRECISION VERSION ', VNMBR(J)
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+     +         ' CAN REPLACE:  real(RK) VERSION ', vnmbr(j)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!     +         ' CAN REPLACE:  SINGLE PRECISION VERSION ', VNMBR(J)
+!*****END PRECISION > SINGLE
 9901     continue
       end if
       if (.not. mess) go to 99999
 
-9003  if (0 .lt. text) write (text, 99003) id
+9003  if (0 < text) write (text, 99003) id
       if (.not. mess) go to 99999
 
-9004  if (0 .lt. text) write (text, 99004) id, cntrls, count
+9004  if (0 < text) write (text, 99004) id, cntrls, count
       if (.not. mess) go to 99999
 
-9005  if (0 .lt. text) write (text, 99005) id, leveld, levelm
+9005  if (0 < text) write (text, 99005) id, leveld, levelm
       if (.not. mess) go to 99999
 
-9006  if (0 .lt. text) write (text, 99006) id,
+9006  if (0 < text) write (text, 99006) id,
      +   comps, points, groupa, groupb
       if (.not. mess) go to 99999
 
-9007  if (0 .lt. text) write (text, 99007) id, comps, points
+9007  if (0 < text) write (text, 99007) id, comps, points
       if (.not. mess) go to 99999
 
-9008  if (0 .lt. text) write (text, 99008) id,
+9008  if (0 < text) write (text, 99008) id,
      +   comps, points, groupa, groupb, groupa + comps * points + groupb
       if (.not. mess) go to 99999
 
-9009  if (0 .lt. text) write (text, 99009) id,
+9009  if (0 < text) write (text, 99009) id,
      +   names, comps, groupa, groupb, groupa + comps + groupb
       if (.not. mess) go to 99999
 
-9010  if (0 .lt. text) write (text, 99010) id, points, pmax
+9010  if (0 < text) write (text, 99010) id, points, pmax
       if (.not. mess) go to 99999
 
-9011  if (0 .lt. text) then
+9011  if (0 < text) then
          write (text, 99011) id,
      +      groupa, groupb, comps, groupa + comps + groupb, count
          count = 0
          do 8010 j = 1, groupa + comps + groupb
-            if (.not. (below(j) .lt. above(j)) .or. mess) then
+            if (.not. (below(j) < above(j)) .or. mess) then
                count = count + 1
-               if (count .le. lines) then
-                  if (names .eq. comps + groupa + groupb) then
+               if (count <= lines) then
+                  if (names == comps + groupa + groupb) then
                      ctemp1 = name(j)
                   else
                      ctemp1 = ' '
                   end if
                   call twsqez (len1, ctemp1)
 
-                  if (j .le. groupa) then
+                  if (j <= groupa) then
                      write (ctemp2, 80001) 'A', j
-                  else if (j .le. groupa + comps) then
+                  else if (j <= groupa + comps) then
                      write (ctemp2, 80001) 'C', j - groupa
                   else
                      write (ctemp2, 80001) 'B', j - groupa - comps
                   end if
                   call twsqez (len2, ctemp2)
 
-                  if (ctemp1 .eq. ' ') then
+                  if (ctemp1 == ' ') then
                      string = ctemp2
                      length = len2
-                  else if (len1 + 2 + len2 .le. 40) then
+                  else if (len1 + 2 + len2 <= 40) then
                      string = ctemp1 (1 : len1) // '  ' // ctemp2
                      length = len1 + 2 + len2
-                  else if (len1 + 1 + len2 .le. 40) then
+                  else if (len1 + 1 + len2 <= 40) then
                      string = ctemp1 (1 : len1) // ' ' // ctemp2
                      length = len1 + 1 + len2
                   else
@@ -3767,39 +3677,39 @@ C*****END PRECISION > SINGLE
                end if
             end if
 8010     continue
-         if (lines .lt. count) write (text, 80003)
+         if (lines < count) write (text, 80003)
       end if
       if (.not. mess) go to 99999
 
-9012  if (0 .lt. text) write (text, 99012) id
+9012  if (0 < text) write (text, 99012) id
       if (.not. mess) go to 99999
 
-9013  if (0 .lt. text) write (text, 99013) id,
+9013  if (0 < text) write (text, 99013) id,
      +   isize, rsize, ilast, rlast
       if (.not. mess) go to 99999
 
-9014  if (0 .lt. text) write (text, 99014) id
+9014  if (0 < text) write (text, 99014) id
       if (.not. mess) go to 99999
 
-9015  if (0 .lt. text) write (text, 99015) id
+9015  if (0 < text) write (text, 99015) id
       if (.not. mess) go to 99999
 
-9016  if (0 .lt. text) write (text, 99016) id
+9016  if (0 < text) write (text, 99016) id
       if (.not. mess) go to 99999
 
-9017  if (0 .lt. text) write (text, 99017) id
+9017  if (0 < text) write (text, 99017) id
       if (.not. mess) go to 99999
 
-9018  if (0 .lt. text) write (text, 99018) id
+9018  if (0 < text) write (text, 99018) id
       if (.not. mess) go to 99999
 
-9019  if (0 .lt. text) write (text, 99019) id
+9019  if (0 < text) write (text, 99019) id
       if (.not. mess) go to 99999
 
-9020  if (0 .lt. text) write (text, 99020) id, label
+9020  if (0 < text) write (text, 99020) id, label
       if (.not. mess) go to 99999
 
-9021  if (0 .lt. text) write (text, 99021) id, return
+9021  if (0 < text) write (text, 99021) id, return
       if (.not. mess) go to 99999
 
 99001 format
@@ -3810,12 +3720,12 @@ C*****END PRECISION > SINGLE
      +  (/1X, a9, 'ERROR.  THE CALLING PROGRAM EXPECTS A VERSION OF'
      +  /10X, 'TWOPNT NOT COMPATIBLE WITH THIS VERSION.'
      + //10X, '     EXPECTS:  ', a
-C*****PRECISION > DOUBLE
-     + //10X, 'THIS VERSION:  DOUBLE PRECISION VERSION ', a)
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C     + //10X, 'THIS VERSION:  SINGLE PRECISION VERSION ', A)
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+     + //10X, 'THIS VERSION:  real(RK) VERSION ', a)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!     + //10X, 'THIS VERSION:  SINGLE PRECISION VERSION ', A)
+!*****END PRECISION > SINGLE
 
 99003 format
      +  (/1X, a9, 'ERROR.  TWINIT FAILS.')
@@ -3874,7 +3784,7 @@ C*****END PRECISION > SINGLE
      +  /10X, i10, '  COMPONENTS AT POINTS (C)'
      +  /10X, i10, '  TOTAL TYPES OF UNKNOWNS'
      +  /10X, i10, '  NUMBER OF BOUNDS OUT OF ORDER'
-C              123456789_  123456789_
+!              123456789_  123456789_
      + //10X, '     LOWER       UPPER'
      +  /10X, '     BOUND       BOUND   UNKNOWN'
      +  /)
@@ -3884,9 +3794,9 @@ C              123456789_  123456789_
 
 99013 format
      +  (/1X, a9, 'ERROR.  ONE OR BOTH WORK SPACES ARE TOO SMALL.'
-C              123456789_  123456789_
+!              123456789_  123456789_
      + //25X, '   INTEGER        REAL'
-C              123456789_123
+!              123456789_123
      + //10X, ' PRESENT SIZE', 2i12
      +  /10X, 'REQUIRED SIZE', 2i12)
 
@@ -3917,7 +3827,7 @@ C              123456789_123
      +  (/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.'
      + //10X, i10, '  RETURN')
 
-C///  EXIT.
+!///  EXIT.
 
       stop
 99999 continue
@@ -3928,29 +3838,29 @@ C///  EXIT.
      +   a, asize, buffer, comps, condit, groupa, groupb, pivot, points,
      +   return)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWPREP
-C
-C     EVALUATE A BLOCK TRIDIAGONAL JACOBIAN MATRIX BY ONE-SIDED FINITE
-C     DIFFERENCES AND REVERSE COMMUNICATION, PACK THE MATRIX INTO THE
-C     LINPACK BANDED FORM, SCALE THE ROWS, AND FACTOR THE MATRIX USING
-C     LINPACK'S SGBCO.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWPREP
+!
+!     EVALUATE A BLOCK TRIDIAGONAL JACOBIAN MATRIX BY ONE-SIDED FINITE
+!     DIFFERENCES AND REVERSE COMMUNICATION, PACK THE MATRIX INTO THE
+!     LINPACK BANDED FORM, SCALE THE ROWS, AND FACTOR THE MATRIX USING
+!     LINPACK'S SGBCO.
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - z)
 
       character
      +   id*9, string*80
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+      real(RK)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!      REAL
+!*****END PRECISION > SINGLE
      +   a, absol, buffer, condit, delta, eps, relat, sum, temp
       external
      +   tweps, twgbco, twsqez
@@ -3972,18 +3882,18 @@ C*****END PRECISION > SINGLE
 
       save
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     (1) PROLOGUE.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     (1) PROLOGUE.
+!
+!///////////////////////////////////////////////////////////////////////
 
-C///  EVERY-TIME INITIALIZATION.
+!///  EVERY-TIME INITIALIZATION.
 
-C     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
+!     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
       mess = .false.
 
-C///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
+!///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
 
       if (return) then
          return = .false.
@@ -3992,47 +3902,47 @@ C///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
          go to 9001
       endif
 
-C///  CHECK THE ARGUMENTS.
+!///  CHECK THE ARGUMENTS.
 
       n = groupa + comps * points + groupb
-      error = .not. (((0 .lt. comps) .eqv. (0 .lt. points)) .and.
-     +   0 .le. comps .and. 0 .le. points .and. 0 .le. groupa .and.
-     +   0 .le. groupb .and. 0 .lt. n)
+      error = .not. (((0 < comps) .eqv. (0 < points)) .and.
+     +   0 <= comps .and. 0 <= points .and. 0 <= groupa .and.
+     +   0 <= groupb .and. 0 < n)
       if (error) go to 9002
 
       width = comps + max (comps, groupa, groupb) - 1
-      error = .not. ((3 * width + 2) * n .le. asize)
+      error = .not. ((3 * width + 2) * n <= asize)
       if (error) go to 9003
 
-C///  WRITE ALL MESSAGES.
+!///  WRITE ALL MESSAGES.
 
-      if (mess .and. 0 .lt. text) then
+      if (mess .and. 0 < text) then
          route = 0
          go to 9001
       end if
 
-C///  FORM MACHINE EPSILON AND THE ABSOLUTE AND RELATIVE PERTURBATIONS.
+!///  FORM MACHINE EPSILON AND THE ABSOLUTE AND RELATIVE PERTURBATIONS.
 
       call tweps (eps)
       absol = sqrt (eps)
       relat = sqrt (eps)
 
-C///  INITIALIZE COUNTERS AND POINTERS.
+!///  INITIALIZE COUNTERS AND POINTERS.
 
-C     MAIN DIAGONAL ROW IN THE PACKING WHICH PLACES DIAGONALS IN ROWS
+!     MAIN DIAGONAL ROW IN THE PACKING WHICH PLACES DIAGONALS IN ROWS
 
       diag = 2 * width + 1
 
-C     PACKED ROW DIMENSION
+!     PACKED ROW DIMENSION
 
       lda = 3 * width + 1
       skip = 2 * width + 1
 
-C     BLOCKS AND BLOCK SIZES
-C     ARRAY PIVOT HOLDS BLOCK SIZES AND POINTERS TEMPORARILY
+!     BLOCKS AND BLOCK SIZES
+!     ARRAY PIVOT HOLDS BLOCK SIZES AND POINTERS TEMPORARILY
 
       blocks = 0
-      if (0 .lt. groupa) then
+      if (0 < groupa) then
          blocks = blocks + 1
          pivot(blocks) = groupa
       end if
@@ -4042,51 +3952,51 @@ C     ARRAY PIVOT HOLDS BLOCK SIZES AND POINTERS TEMPORARILY
          pivot(blocks) = comps
 1020  continue
 
-      if (0 .lt. groupb) then
+      if (0 < groupb) then
          blocks = blocks + 1
          pivot(blocks) = groupb
       end if
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     (2) INITIALIZE THE COLUMNS OF THE MATRIX.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     (2) INITIALIZE THE COLUMNS OF THE MATRIX.
+!
+!///////////////////////////////////////////////////////////////////////
 
-C///  STORE THE EVALUATION VECTOR.
+!///  STORE THE EVALUATION VECTOR.
 
       do 2010 j = 1, n
          a(j) = buffer(j)
 2010  continue
 
-C///  CLEAR THE MATRIX.
+!///  CLEAR THE MATRIX.
 
        do 2020 j = n + 1, (3 * width + 2) * n
           a(j) = 0.0
 2020  continue
 
-C///  EVALUATE THE FUNCTION AT THE UNPERTURBED X.
+!///  EVALUATE THE FUNCTION AT THE UNPERTURBED X.
 
-C     GO TO 2030 WHEN ROUTE = 1
+!     GO TO 2030 WHEN ROUTE = 1
       route = 1
       return = .true.
       go to 99999
 2030  continue
 
-C///  PLACE THE FUNCTION VALUES IN THE MATRIX.
+!///  PLACE THE FUNCTION VALUES IN THE MATRIX.
 
       clast = 0
       do 2060 block = 1, blocks
          cfirst = clast + 1
          clast = clast + pivot(block)
 
-         if (1 .lt. block) then
+         if (1 < block) then
             rfirst = cfirst - pivot(block - 1)
          else
             rfirst = cfirst
          end if
 
-         if (block .lt. blocks) then
+         if (block < blocks) then
             rlast = clast + pivot(block + 1)
          else
             rlast = clast
@@ -4100,32 +4010,32 @@ C///  PLACE THE FUNCTION VALUES IN THE MATRIX.
 2050     continue
 2060  continue
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     (3) FORM THE COLUMNS OF THE MATRIX.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     (3) FORM THE COLUMNS OF THE MATRIX.
+!
+!///////////////////////////////////////////////////////////////////////
 
-C///  TOP OF THE LOOP OVER GROUPS OF COLUMNS.
+!///  TOP OF THE LOOP OVER GROUPS OF COLUMNS.
 
 3010  continue
       found = .false.
 
-C///  RESTORE THE EVALUATION VECTOR.
+!///  RESTORE THE EVALUATION VECTOR.
 
       do 3020 j = 1, n
          buffer(j) = a(j)
 3020  continue
 
-C///  PERTURB THE VECTOR AT INDEPENDENT POSITIONS.
+!///  PERTURB THE VECTOR AT INDEPENDENT POSITIONS.
 
       block = 1
       cfirst = 1
 3030  continue
-         if (0 .lt. pivot(block)) then
+         if (0 < pivot(block)) then
             found = .true.
             col = cfirst - 1 + pivot(block)
-            if (0 .le. a(col)) then
+            if (0 <= a(col)) then
                delta = relat * a(col) + absol
             else
                delta = relat * a(col) - absol
@@ -4138,9 +4048,9 @@ C///  PERTURB THE VECTOR AT INDEPENDENT POSITIONS.
          end if
 
          do 3040 j = 1, count
-            if (block .eq. 1 .and. 0 .lt. groupa) then
+            if (block == 1 .and. 0 < groupa) then
                cfirst = cfirst + groupa
-            else if (block .eq. blocks .and. 0 .lt. groupb) then
+            else if (block == blocks .and. 0 < groupb) then
                cfirst = cfirst + groupb
             else
                cfirst = cfirst + comps
@@ -4148,30 +4058,30 @@ C///  PERTURB THE VECTOR AT INDEPENDENT POSITIONS.
             block = block + 1
 3040     continue
 
-      if (block .le. blocks) go to 3030
+      if (block <= blocks) go to 3030
 
-C///  EXIT OF THE LOOP OVER GROUPS OF COLUMNS.
+!///  EXIT OF THE LOOP OVER GROUPS OF COLUMNS.
 
       if (.not. found) go to 3090
 
-C///  EVALUATE THE FUNCTION AT THE PERTURBED VALUES.
+!///  EVALUATE THE FUNCTION AT THE PERTURBED VALUES.
 
-C     GO TO 3050 WHEN ROUTE = 2
+!     GO TO 3050 WHEN ROUTE = 2
       route = 2
       return = .true.
       go to 99999
 3050  continue
 
-C///  DIFFERENCE TO FORM THE COLUMNS OF THE JACOBIAN MATRIX.
+!///  DIFFERENCE TO FORM THE COLUMNS OF THE JACOBIAN MATRIX.
 
       block = 1
       cfirst = 1
 3060  continue
-         if (0 .lt. pivot(block)) then
+         if (0 < pivot(block)) then
             col = cfirst - 1 + pivot(block)
             pivot(block) = pivot(block) - 1
 
-            if (0 .le. a(col)) then
+            if (0 <= a(col)) then
                delta = relat * a(col) + absol
             else
                delta = relat * a(col) - absol
@@ -4179,16 +4089,16 @@ C///  DIFFERENCE TO FORM THE COLUMNS OF THE JACOBIAN MATRIX.
             temp = 1.0 / delta
             offset = n + diag - col + lda * (col - 1)
 
-            if (block .eq. 1 .and. 0 .lt. groupa) then
+            if (block == 1 .and. 0 < groupa) then
                clast = cfirst + groupa - 1
-            else if (block .eq. blocks .and. 0 .lt. groupb) then
+            else if (block == blocks .and. 0 < groupb) then
                clast = cfirst + groupb - 1
             else
                clast = cfirst + comps - 1
             end if
 
-            if (1 .lt. block) then
-               if (block .eq. 2 .and. 0 .lt. groupa) then
+            if (1 < block) then
+               if (block == 2 .and. 0 < groupa) then
                   rfirst = cfirst - groupa
                else
                   rfirst = cfirst - comps
@@ -4197,8 +4107,8 @@ C///  DIFFERENCE TO FORM THE COLUMNS OF THE JACOBIAN MATRIX.
                rfirst = cfirst
             end if
 
-            if (block .lt. blocks) then
-               if (block .eq. blocks - 1 .and. 0 .lt. groupb) then
+            if (block < blocks) then
+               if (block == blocks - 1 .and. 0 < groupb) then
                   rlast = clast + groupb
                else
                   rlast = clast + comps
@@ -4217,9 +4127,9 @@ C///  DIFFERENCE TO FORM THE COLUMNS OF THE JACOBIAN MATRIX.
          end if
 
          do 3080 j = 1, count
-            if (block .eq. 1 .and. 0 .lt. groupa) then
+            if (block == 1 .and. 0 < groupa) then
                cfirst = cfirst + groupa
-            else if (block .eq. blocks .and. 0 .lt. groupb) then
+            else if (block == blocks .and. 0 < groupb) then
                cfirst = cfirst + groupb
             else
                cfirst = cfirst + comps
@@ -4227,18 +4137,18 @@ C///  DIFFERENCE TO FORM THE COLUMNS OF THE JACOBIAN MATRIX.
             block = block + 1
 3080     continue
 
-      if (block .le. blocks) go to 3060
+      if (block <= blocks) go to 3060
 
-C///  BOTTOM OF THE LOOP OVER GROUPS OF COLUMNS.
+!///  BOTTOM OF THE LOOP OVER GROUPS OF COLUMNS.
 
       go to 3010
 3090  continue
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     (4) CHECK FOR ZERO COLUMNS.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     (4) CHECK FOR ZERO COLUMNS.
+!
+!///////////////////////////////////////////////////////////////////////
 
       count = 0
       do 4020 col = 1, n
@@ -4249,17 +4159,17 @@ C///////////////////////////////////////////////////////////////////////
 4010     continue
          a(col) = sum
 
-         if (sum .eq. 0.0) count = count + 1
+         if (sum == 0.0) count = count + 1
 4020  continue
 
-      error = .not. (count .eq. 0)
+      error = .not. (count == 0)
       if (error) go to 9004
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     (5) SCALE THE ROWS.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     (5) SCALE THE ROWS.
+!
+!///////////////////////////////////////////////////////////////////////
 
       count = 0
       do 5030 row = 1, n
@@ -4269,7 +4179,7 @@ C///////////////////////////////////////////////////////////////////////
             sum = sum + abs (a(offset - col + lda * (col - 1)))
 5010     continue
 
-         if (sum .eq. 0.0) then
+         if (sum == 0.0) then
             count = count + 1
             a(row) = sum
          else
@@ -4283,28 +4193,28 @@ C///////////////////////////////////////////////////////////////////////
          endif
 5030  continue
 
-      error = .not. (count .eq. 0)
+      error = .not. (count == 0)
       if (error) go to 9005
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     (6) FACTOR THE MATRIX.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     (6) FACTOR THE MATRIX.
+!
+!///////////////////////////////////////////////////////////////////////
 
       call twgbco
      +  (a(n + 1), lda, n, width, width, pivot, condit, buffer)
 
-      error = condit .eq. 0.0
+      error = condit == 0.0
       if (error) go to 9006
 
       condit = 1.0 / condit
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     INFORMATIVE MESSAGES.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     INFORMATIVE MESSAGES.
+!
+!///////////////////////////////////////////////////////////////////////
 
 80001 format
      +  (10X, a)
@@ -4312,37 +4222,37 @@ C///////////////////////////////////////////////////////////////////////
 80002 format
      +  (10X, '... MORE')
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     ERROR MESSAGES.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     ERROR MESSAGES.
+!
+!///////////////////////////////////////////////////////////////////////
 
       go to 99999
 
-9001  if (0 .lt. text) write (text, 99001) id, route
+9001  if (0 < text) write (text, 99001) id, route
       if (.not. mess) go to 99999
 
-9002  if (0 .lt. text) write (text, 99002) id,
+9002  if (0 < text) write (text, 99002) id,
      +   comps, points, groupa, groupb, n
       if (.not. mess) go to 99999
 
-9003  if (0 .lt. text) write (text, 99003) id,
+9003  if (0 < text) write (text, 99003) id,
      +   comps, points, groupa, groupb, n, width,
      +   (3 * width + 2) * n, asize
       if (.not. mess) go to 99999
 
-9004  if (0 .lt. text) then
+9004  if (0 < text) then
          write (text, 99004) id, comps, points, groupa, groupb,
      +      groupa + comps * points + groupb, count
          count = 0
          do 8010 j = 1, groupa + comps * points + groupb
-            if (a(j) .eq. 0.0 .or. mess) then
+            if (a(j) == 0.0 .or. mess) then
                count = count + 1
-               if (count .le. lines) then
-                  if (j .le. groupa) then
+               if (count <= lines) then
+                  if (j <= groupa) then
                      write (string, '(A, I10)') 'GROUP A ', j
-                  else if (j .le. groupa + comps * points) then
+                  else if (j <= groupa + comps * points) then
                      write (string, '(A, I10, A, I10)')
      +                  ' COMPONENT ', mod (j - groupa - 1, comps) + 1,
      +                  ' AT POINT ', int ((j - groupa - 1) / comps) + 1
@@ -4355,21 +4265,21 @@ C///////////////////////////////////////////////////////////////////////
                end if
             end if
 8010     continue
-         if (lines .lt. count) write (text, 80002)
+         if (lines < count) write (text, 80002)
       end if
       if (.not. mess) go to 99999
 
-9005  if (0 .lt. text) then
+9005  if (0 < text) then
          write (text, 99005) id, comps, points, groupa, groupb,
      +      groupa + comps * points + groupb, count
          count = 0
          do 8020 j = 1, groupa + comps * points + groupb
-            if (a(j) .eq. 0.0 .or. mess) then
+            if (a(j) == 0.0 .or. mess) then
                count = count + 1
-               if (count .le. lines) then
-                  if (j .le. groupa) then
+               if (count <= lines) then
+                  if (j <= groupa) then
                      write (string, '(A, I10)') 'GROUP A ', j
-                  else if (j .le. groupa + comps * points) then
+                  else if (j <= groupa + comps * points) then
                      write (string, '(A, I10, A, I10)')
      +                  ' COMPONENT ', mod (j - groupa - 1, comps) + 1,
      +                  ' AT POINT ', int ((j - groupa - 1) / comps) + 1
@@ -4382,11 +4292,11 @@ C///////////////////////////////////////////////////////////////////////
                end if
             end if
 8020     continue
-         if (lines .lt. count) write (text, 80002)
+         if (lines < count) write (text, 80002)
       end if
       if (.not. mess) go to 99999
 
-9006  if (0 .lt. text) write (text, 99006) id
+9006  if (0 < text) write (text, 99006) id
       if (.not. mess) go to 99999
 
 99001 format
@@ -4440,7 +4350,7 @@ C///////////////////////////////////////////////////////////////////////
 99006 format
      +  (/1X, a9, 'ERROR.  THE JACOBIAN MATRIX IS SINGULAR.')
 
-C///  EXIT.
+!///  EXIT.
 
       stop
 99999 continue
@@ -4448,15 +4358,15 @@ C///  EXIT.
       end
       subroutine twseti (error, text, contrl, value)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWSETI
-C
-C     SET A CONTROL THAT TAKES AN INTEGER VALUE.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWSETI
+!
+!     SET A CONTROL THAT TAKES AN INTEGER VALUE.
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - z)
       character
@@ -4476,216 +4386,216 @@ C///////////////////////////////////////////////////////////////////////
       common / twcomi / ivalue
       common / twcoml / lvalue
 
-C///  WRITE ALL MESSAGES.
+!///  WRITE ALL MESSAGES.
 
-C     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
+!     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
       mess = .false.
 
-      if (mess .and. 0 .lt. text) go to 9001
+      if (mess .and. 0 < text) go to 9001
 
-C///  INITIALIZE THE CONTROLS.
+!///  INITIALIZE THE CONTROLS.
 
       call twinit (error, text, .false.)
       if (error) go to 9001
 
-C///  SET THE CONTROLS.
+!///  SET THE CONTROLS.
 
       count = 0
       found = .false.
 
-C     ADAPT
+!     ADAPT
 
       count = count + 1
-      if (contrl .eq. 'ADAPT') then
+      if (contrl == 'ADAPT') then
          error = .true.
          go to 9002
       end if
 
-C     LEVELD
+!     LEVELD
 
       count = count + 1
-      if (contrl .eq. 'LEVELD') then
+      if (contrl == 'LEVELD') then
          found = .true.
          ivalue(count) = value
       end if
 
-C     LEVELM
+!     LEVELM
 
       count = count + 1
-      if (contrl .eq. 'LEVELM') then
+      if (contrl == 'LEVELM') then
          found = .true.
          ivalue(count) = value
       end if
 
-C     PADD
+!     PADD
 
       count = count + 1
-      if (contrl .eq. 'PADD') then
+      if (contrl == 'PADD') then
          found = .true.
          ivalue(count) = value
          lvalue(count) = .true.
       end if
 
-C     SSABS
+!     SSABS
 
       count = count + 1
-      if (contrl .eq. 'SSABS') then
+      if (contrl == 'SSABS') then
          error = .true.
          go to 9003
       end if
 
-C     SSAGE
+!     SSAGE
 
       count = count + 1
-      if (contrl .eq. 'SSAGE') then
+      if (contrl == 'SSAGE') then
          found = .true.
          ivalue(count) = value
       end if
 
-C     SSREL
+!     SSREL
 
       count = count + 1
-      if (contrl .eq. 'SSREL') then
+      if (contrl == 'SSREL') then
          error = .true.
          go to 9003
       end if
 
-C     STEADY
+!     STEADY
 
       count = count + 1
-      if (contrl .eq. 'STEADY') then
+      if (contrl == 'STEADY') then
          error = .true.
          go to 9002
       end if
 
-C     STEPS0
+!     STEPS0
 
       count = count + 1
-      if (contrl .eq. 'STEPS0') then
+      if (contrl == 'STEPS0') then
          found = .true.
          ivalue(count) = value
       end if
 
-C     STEPS1
+!     STEPS1
 
       count = count + 1
-      if (contrl .eq. 'STEPS1') then
+      if (contrl == 'STEPS1') then
          found = .true.
          ivalue(count) = value
       end if
 
-C     STEPS2
+!     STEPS2
 
       count = count + 1
-      if (contrl .eq. 'STEPS2') then
+      if (contrl == 'STEPS2') then
          found = .true.
          ivalue(count) = value
       end if
 
-C     STRID0
+!     STRID0
 
       count = count + 1
-      if (contrl .eq. 'STRID0') then
+      if (contrl == 'STRID0') then
          error = .true.
          go to 9003
       end if
 
-C     TDABS
+!     TDABS
 
       count = count + 1
-      if (contrl .eq. 'TDABS') then
+      if (contrl == 'TDABS') then
          error = .true.
          go to 9003
       end if
 
-C     TDAGE
+!     TDAGE
 
       count = count + 1
-      if (contrl .eq. 'TDAGE') then
+      if (contrl == 'TDAGE') then
          found = .true.
          ivalue(count) = value
       end if
 
-C     TDEC
+!     TDEC
 
       count = count + 1
-      if (contrl .eq. 'TDEC') then
+      if (contrl == 'TDEC') then
          error = .true.
          go to 9003
       end if
 
-C     TDREL
+!     TDREL
 
       count = count + 1
-      if (contrl .eq. 'TDREL') then
+      if (contrl == 'TDREL') then
          error = .true.
          go to 9003
       end if
 
-C     TINC
+!     TINC
 
       count = count + 1
-      if (contrl .eq. 'TINC') then
+      if (contrl == 'TINC') then
          error = .true.
          go to 9003
       end if
 
-C     TMAX
+!     TMAX
 
       count = count + 1
-      if (contrl .eq. 'TMAX') then
+      if (contrl == 'TMAX') then
          error = .true.
          go to 9003
       end if
 
-C     TMIN
+!     TMIN
 
       count = count + 1
-      if (contrl .eq. 'TMIN') then
+      if (contrl == 'TMIN') then
          error = .true.
          go to 9003
       end if
 
-C     TOLER0
+!     TOLER0
 
       count = count + 1
-      if (contrl .eq. 'TOLER0') then
+      if (contrl == 'TOLER0') then
          error = .true.
          go to 9003
       end if
 
-C     TOLER1
+!     TOLER1
 
       count = count + 1
-      if (contrl .eq. 'TOLER1') then
+      if (contrl == 'TOLER1') then
          error = .true.
          go to 9003
       end if
 
-C     TOLER2
+!     TOLER2
 
       count = count + 1
-      if (contrl .eq. 'TOLER2') then
+      if (contrl == 'TOLER2') then
          error = .true.
          go to 9003
       end if
 
-      error = .not. (count .eq. cntrls)
+      error = .not. (count == cntrls)
       if (error) go to 9004
 
       error = .not. found
       if (error) go to 9005
 
-C///  ERROR MESSAGES.
+!///  ERROR MESSAGES.
 
       go to 99999
 
-9001  if (0 .lt. text) write (text, 99001) id
+9001  if (0 < text) write (text, 99001) id
       if (.not. mess) go to 99999
 
-9002  if (0 .lt. text) then
+9002  if (0 < text) then
          call twlast (length, contrl)
-         if (length .le. 40) then
+         if (length <= 40) then
             string = contrl
          else
             length = 40
@@ -4695,9 +4605,9 @@ C///  ERROR MESSAGES.
       end if
       if (.not. mess) go to 99999
 
-9003  if (0 .lt. text) then
+9003  if (0 < text) then
          call twlast (length, contrl)
-         if (length .le. 40) then
+         if (length <= 40) then
             string = contrl
          else
             length = 40
@@ -4707,12 +4617,12 @@ C///  ERROR MESSAGES.
       end if
       if (.not. mess) go to 99999
 
-9004  if (0 .lt. text) write (text, 99004) id, cntrls, count
+9004  if (0 < text) write (text, 99004) id, cntrls, count
       if (.not. mess) go to 99999
 
-9005  if (0 .lt. text) then
+9005  if (0 < text) then
          call twlast (length, contrl)
-         if (length .le. 40) then
+         if (length <= 40) then
             string = contrl
          else
             length = 40
@@ -4744,7 +4654,7 @@ C///  ERROR MESSAGES.
      +  (/1X, a9, 'ERROR.  THE CONTROL IS NOT RECOGNIZED.'
      + //10X, '     CONTROL:  ', a)
 
-C///  EXIT.
+!///  EXIT.
 
       stop
 99999 continue
@@ -4752,15 +4662,15 @@ C///  EXIT.
       end
       subroutine twsetl (error, text, contrl, value)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWSETL
-C
-C     SET A CONTROL THAT TAKES A LOGICAL VALUE.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWSETL
+!
+!     SET A CONTROL THAT TAKES A LOGICAL VALUE.
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - z)
       character
@@ -4779,215 +4689,215 @@ C///////////////////////////////////////////////////////////////////////
 
       common / twcoml / lvalue
 
-C///  WRITE ALL MESSAGES.
+!///  WRITE ALL MESSAGES.
 
-C     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
+!     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
       mess = .false.
 
-      if (mess .and. 0 .lt. text) go to 9001
+      if (mess .and. 0 < text) go to 9001
 
-C///  INITIALIZE THE CONTROLS.
+!///  INITIALIZE THE CONTROLS.
 
       call twinit (error, text, .false.)
       if (error) go to 9001
 
-C///  SET THE CONTROLS.
+!///  SET THE CONTROLS.
 
       count = 0
       found = .false.
 
-C     ADAPT
+!     ADAPT
 
       count = count + 1
-      if (contrl .eq. 'ADAPT') then
+      if (contrl == 'ADAPT') then
          found = .true.
          lvalue(count)= value
       end if
 
-C     LEVELD
+!     LEVELD
 
       count = count + 1
-      if (contrl .eq. 'LEVELD') then
+      if (contrl == 'LEVELD') then
          error = .true.
          go to 9002
       end if
 
-C     LEVELM
+!     LEVELM
 
       count = count + 1
-      if (contrl .eq. 'LEVELM') then
+      if (contrl == 'LEVELM') then
          error = .true.
          go to 9002
       end if
 
-C     PADD
+!     PADD
 
       count = count + 1
-      if (contrl .eq. 'PADD') then
+      if (contrl == 'PADD') then
          error = .true.
          go to 9002
       end if
 
-C     SSABS
+!     SSABS
 
       count = count + 1
-      if (contrl .eq. 'SSABS') then
+      if (contrl == 'SSABS') then
          error = .true.
          go to 9003
       end if
 
-C     SSAGE
+!     SSAGE
 
       count = count + 1
-      if (contrl .eq. 'SSAGE') then
+      if (contrl == 'SSAGE') then
          error = .true.
          go to 9002
       end if
 
-C     SSREL
+!     SSREL
 
       count = count + 1
-      if (contrl .eq. 'SSREL') then
+      if (contrl == 'SSREL') then
          error = .true.
          go to 9003
       end if
 
-C     STEADY
+!     STEADY
 
       count = count + 1
-      if (contrl .eq. 'STEADY') then
+      if (contrl == 'STEADY') then
          found = .true.
          lvalue(count)= value
       end if
 
-C     STEPS0
+!     STEPS0
 
       count = count + 1
-      if (contrl .eq. 'STEPS0') then
+      if (contrl == 'STEPS0') then
          error = .true.
          go to 9002
       end if
 
-C     STEPS1
+!     STEPS1
 
       count = count + 1
-      if (contrl .eq. 'STEPS1') then
+      if (contrl == 'STEPS1') then
          error = .true.
          go to 9002
       end if
 
-C     STEPS2
+!     STEPS2
 
       count = count + 1
-      if (contrl .eq. 'STEPS2') then
+      if (contrl == 'STEPS2') then
          error = .true.
          go to 9002
       end if
 
-C     STRID0
+!     STRID0
 
       count = count + 1
-      if (contrl .eq. 'STRID0') then
+      if (contrl == 'STRID0') then
          error = .true.
          go to 9003
       end if
 
-C     TDABS
+!     TDABS
 
       count = count + 1
-      if (contrl .eq. 'TDABS') then
+      if (contrl == 'TDABS') then
          error = .true.
          go to 9003
       end if
 
-C     TDAGE
+!     TDAGE
 
       count = count + 1
-      if (contrl .eq. 'TDAGE') then
+      if (contrl == 'TDAGE') then
          error = .true.
          go to 9002
       end if
 
-C     TDEC
+!     TDEC
 
       count = count + 1
-      if (contrl .eq. 'TDEC') then
+      if (contrl == 'TDEC') then
          error = .true.
          go to 9003
       end if
 
-C     TDREL
+!     TDREL
 
       count = count + 1
-      if (contrl .eq. 'TDREL') then
+      if (contrl == 'TDREL') then
          error = .true.
          go to 9003
       end if
 
-C     TINC
+!     TINC
 
       count = count + 1
-      if (contrl .eq. 'TINC') then
+      if (contrl == 'TINC') then
          error = .true.
          go to 9003
       end if
 
-C     TMAX
+!     TMAX
 
       count = count + 1
-      if (contrl .eq. 'TMAX') then
+      if (contrl == 'TMAX') then
          error = .true.
          go to 9003
       end if
 
-C     TMIN
+!     TMIN
 
       count = count + 1
-      if (contrl .eq. 'TMIN') then
+      if (contrl == 'TMIN') then
          error = .true.
          go to 9003
       end if
 
-C     TOLER0
+!     TOLER0
 
       count = count + 1
-      if (contrl .eq. 'TOLER0') then
+      if (contrl == 'TOLER0') then
          error = .true.
          go to 9003
       end if
 
-C     TOLER1
+!     TOLER1
 
       count = count + 1
-      if (contrl .eq. 'TOLER1') then
+      if (contrl == 'TOLER1') then
          error = .true.
          go to 9003
       end if
 
-C     TOLER2
+!     TOLER2
 
       count = count + 1
-      if (contrl .eq. 'TOLER2') then
+      if (contrl == 'TOLER2') then
          error = .true.
          go to 9003
       end if
 
-      error = .not. (count .eq. cntrls)
+      error = .not. (count == cntrls)
       if (error) go to 9004
 
       error = .not. found
       if (error) go to 9005
 
-C///  ERROR MESSAGES.
+!///  ERROR MESSAGES.
 
       go to 99999
 
-9001  if (0 .lt. text) write (text, 99001) id
+9001  if (0 < text) write (text, 99001) id
       if (.not. mess) go to 99999
 
-9002  if (0 .lt. text) then
+9002  if (0 < text) then
          call twlast (length, contrl)
-         if (length .le. 40) then
+         if (length <= 40) then
             string = contrl
          else
             length = 40
@@ -4997,9 +4907,9 @@ C///  ERROR MESSAGES.
       end if
       if (.not. mess) go to 99999
 
-9003  if (0 .lt. text) then
+9003  if (0 < text) then
          call twlast (length, contrl)
-         if (length .le. 40) then
+         if (length <= 40) then
             string = contrl
          else
             length = 40
@@ -5009,12 +4919,12 @@ C///  ERROR MESSAGES.
       end if
       if (.not. mess) go to 99999
 
-9004  if (0 .lt. text) write (text, 99004) id, cntrls, count
+9004  if (0 < text) write (text, 99004) id, cntrls, count
       if (.not. mess) go to 99999
 
-9005  if (0 .lt. text) then
+9005  if (0 < text) then
          call twlast (length, contrl)
-         if (length .le. 40) then
+         if (length <= 40) then
             string = contrl
          else
             length = 40
@@ -5046,7 +4956,7 @@ C///  ERROR MESSAGES.
      +  (/1X, a9, 'ERROR.  THE CONTROL IS NOT RECOGNIZED.'
      + //10X, '     CONTROL:  ', a)
 
-C///  EXIT.
+!///  EXIT.
 
       stop
 99999 continue
@@ -5054,25 +4964,25 @@ C///  EXIT.
       end
       subroutine twsetr (error, text, contrl, value)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWSETR
-C
-C     SET A CONTROL THAT TAKES A REAL VALUE.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWSETR
+!
+!     SET A CONTROL THAT TAKES A REAL VALUE.
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - z)
       character
      +   contrl*(*), id*9, string*80
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+      real(RK)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!      REAL
+!*****END PRECISION > SINGLE
      +   rvalue, value
       external
      +   twinit, twlast
@@ -5088,215 +4998,215 @@ C*****END PRECISION > SINGLE
 
       common / twcomr / rvalue
 
-C///  WRITE ALL MESSAGES.
+!///  WRITE ALL MESSAGES.
 
-C     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
+!     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
       mess = .false.
 
-      if (mess .and. 0 .lt. text) go to 9001
+      if (mess .and. 0 < text) go to 9001
 
-C///  INITIALIZE THE CONTROLS.
+!///  INITIALIZE THE CONTROLS.
 
       call twinit (error, text, .false.)
       if (error) go to 9001
 
-C///  SET THE CONTROLS.
+!///  SET THE CONTROLS.
 
       count = 0
       found = .false.
 
-C     ADAPT
+!     ADAPT
 
       count = count + 1
-      if (contrl .eq. 'ADAPT') then
+      if (contrl == 'ADAPT') then
          error = .true.
          go to 9002
       end if
 
-C     LEVELD
+!     LEVELD
 
       count = count + 1
-      if (contrl .eq. 'LEVELD') then
+      if (contrl == 'LEVELD') then
          error = .true.
          go to 9003
       end if
 
-C     LEVELM
+!     LEVELM
 
       count = count + 1
-      if (contrl .eq. 'LEVELM') then
+      if (contrl == 'LEVELM') then
          error = .true.
          go to 9003
       end if
 
-C     PADD
+!     PADD
 
       count = count + 1
-      if (contrl .eq. 'PADD') then
+      if (contrl == 'PADD') then
          error = .true.
          go to 9003
       end if
 
-C     SSABS
+!     SSABS
 
       count = count + 1
-      if (contrl .eq. 'SSABS') then
+      if (contrl == 'SSABS') then
          found = .true.
          rvalue(count) = value
       end if
 
-C     SSAGE
+!     SSAGE
 
       count = count + 1
-      if (contrl .eq. 'SSAGE') then
+      if (contrl == 'SSAGE') then
          error = .true.
          go to 9003
       end if
 
-C     SSREL
+!     SSREL
 
       count = count + 1
-      if (contrl .eq. 'SSREL') then
+      if (contrl == 'SSREL') then
          found = .true.
          rvalue(count) = value
       end if
 
-C     STEADY
+!     STEADY
 
       count = count + 1
-      if (contrl .eq. 'STEADY') then
+      if (contrl == 'STEADY') then
          error = .true.
          go to 9002
       end if
 
-C     STEPS0
+!     STEPS0
 
       count = count + 1
-      if (contrl .eq. 'STEPS0') then
+      if (contrl == 'STEPS0') then
          error = .true.
          go to 9003
       end if
 
-C     STEPS1
+!     STEPS1
 
       count = count + 1
-      if (contrl .eq. 'STEPS1') then
+      if (contrl == 'STEPS1') then
          error = .true.
          go to 9003
       end if
 
-C     STEPS2
+!     STEPS2
 
       count = count + 1
-      if (contrl .eq. 'STEPS2') then
+      if (contrl == 'STEPS2') then
          error = .true.
          go to 9003
       end if
 
-C     STRID0
+!     STRID0
 
       count = count + 1
-      if (contrl .eq. 'STRID0') then
+      if (contrl == 'STRID0') then
          found = .true.
          rvalue(count) = value
       end if
 
-C     TDABS
+!     TDABS
 
       count = count + 1
-      if (contrl .eq. 'TDABS') then
+      if (contrl == 'TDABS') then
          found = .true.
          rvalue(count) = value
       end if
 
-C     TDAGE
+!     TDAGE
 
       count = count + 1
-      if (contrl .eq. 'TDAGE') then
+      if (contrl == 'TDAGE') then
          error = .true.
          go to 9003
       end if
 
-C     TDEC
+!     TDEC
 
       count = count + 1
-      if (contrl .eq. 'TDEC') then
+      if (contrl == 'TDEC') then
          found = .true.
          rvalue(count) = value
       end if
 
-C     TDREL
+!     TDREL
 
       count = count + 1
-      if (contrl .eq. 'TDREL') then
+      if (contrl == 'TDREL') then
          found = .true.
          rvalue(count) = value
       end if
 
-C     TINC
+!     TINC
 
       count = count + 1
-      if (contrl .eq. 'TINC') then
+      if (contrl == 'TINC') then
          found = .true.
          rvalue(count) = value
       end if
 
-C     TMAX
+!     TMAX
 
       count = count + 1
-      if (contrl .eq. 'TMAX') then
+      if (contrl == 'TMAX') then
          found = .true.
          rvalue(count) = value
       end if
 
-C     TMIN
+!     TMIN
 
       count = count + 1
-      if (contrl .eq. 'TMIN') then
+      if (contrl == 'TMIN') then
          found = .true.
          rvalue(count) = value
       end if
 
-C     TOLER0
+!     TOLER0
 
       count = count + 1
-      if (contrl .eq. 'TOLER0') then
+      if (contrl == 'TOLER0') then
          found = .true.
          rvalue(count) = value
       end if
 
-C     TOLER1
+!     TOLER1
 
       count = count + 1
-      if (contrl .eq. 'TOLER1') then
+      if (contrl == 'TOLER1') then
          found = .true.
          rvalue(count) = value
       end if
 
-C     TOLER2
+!     TOLER2
 
       count = count + 1
-      if (contrl .eq. 'TOLER2') then
+      if (contrl == 'TOLER2') then
          found = .true.
          rvalue(count) = value
       end if
 
-      error = .not. (count .eq. cntrls)
+      error = .not. (count == cntrls)
       if (error) go to 9004
 
       error = .not. found
       if (error) go to 9005
 
-C///  ERROR MESSAGES.
+!///  ERROR MESSAGES.
 
       go to 99999
 
-9001  if (0 .lt. text) write (text, 99001) id
+9001  if (0 < text) write (text, 99001) id
       if (.not. mess) go to 99999
 
-9002  if (0 .lt. text) then
+9002  if (0 < text) then
          call twlast (length, contrl)
-         if (length .le. 40) then
+         if (length <= 40) then
             string = contrl
          else
             length = 40
@@ -5306,9 +5216,9 @@ C///  ERROR MESSAGES.
       end if
       if (.not. mess) go to 99999
 
-9003  if (0 .lt. text) then
+9003  if (0 < text) then
          call twlast (length, contrl)
-         if (length .le. 40) then
+         if (length <= 40) then
             string = contrl
          else
             length = 40
@@ -5318,12 +5228,12 @@ C///  ERROR MESSAGES.
       end if
       if (.not. mess) go to 99999
 
-9004  if (0 .lt. text) write (text, 99004) id, cntrls, count
+9004  if (0 < text) write (text, 99004) id, cntrls, count
       if (.not. mess) go to 99999
 
-9005  if (0 .lt. text) then
+9005  if (0 < text) then
          call twlast (length, contrl)
-         if (length .le. 40) then
+         if (length <= 40) then
             string = contrl
          else
             length = 40
@@ -5355,7 +5265,7 @@ C///  ERROR MESSAGES.
      +  (/1X, a9, 'ERROR.  THE CONTROL IS NOT RECOGNIZED.'
      + //10X, '     CONTROL:  ', a)
 
-C///  EXIT.
+!///  EXIT.
 
       stop
 99999 continue
@@ -5365,24 +5275,24 @@ C///  EXIT.
      +  (error, text,
      +   buffer, comps, grid, groupa, groupb, points, x)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWSHOW
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     T W O P N T
+!
+!     TWSHOW
+!
+!///////////////////////////////////////////////////////////////////////
 
       implicit complex (a - z)
 
       character
      +   id*9, string*80, title*80
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
+!*****PRECISION > DOUBLE
+      real(RK)
+!*****END PRECISION > DOUBLE
+!*****PRECISION > SINGLE
+!      REAL
+!*****END PRECISION > SINGLE
      +   buffer, x
       external
      +   twsqez
@@ -5399,34 +5309,34 @@ C*****END PRECISION > SINGLE
       dimension
      +   buffer(groupa + comps * points + groupb), title(6), x(*)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     (1) PROLOGUE.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     (1) PROLOGUE.
+!
+!///////////////////////////////////////////////////////////////////////
 
-C///  WRITE ALL MESSAGES.
+!///  WRITE ALL MESSAGES.
 
-C     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
+!     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
       mess = .false.
 
-      if (mess .and. 0 .lt. text) go to 9001
+      if (mess .and. 0 < text) go to 9001
 
-C///  CHECK THE ARGUMENTS.
+!///  CHECK THE ARGUMENTS.
 
-      error = .not. (((0 .lt. comps) .eqv. (0 .lt. points)) .and.
-     +   0 .le. comps .and. 0 .le. points .and. 0 .le. groupa .and.
-     +   0 .le. groupb .and. 0 .lt. groupa + comps * points + groupb)
+      error = .not. (((0 < comps) .eqv. (0 < points)) .and.
+     +   0 <= comps .and. 0 <= points .and. 0 <= groupa .and.
+     +   0 <= groupb .and. 0 < groupa + comps * points + groupb)
       if (error) go to 9001
 
-C///  COUNT THE GROUPS.
+!///  COUNT THE GROUPS.
 
       groups = 0
-      if (0 .lt. groupa) groups = groups + 1
-      if (0 .lt. groupb) groups = groups + 1
-      if (0 .lt. comps .and. 0 .lt. points) groups = groups + 1
+      if (0 < groupa) groups = groups + 1
+      if (0 < groupb) groups = groups + 1
+      if (0 < comps .and. 0 < points) groups = groups + 1
 
-C///  CHOOSE NUMBER OF DATA COLUMNS.
+!///  CHOOSE NUMBER OF DATA COLUMNS.
 
       if (grid) then
          cols = 5
@@ -5434,33 +5344,33 @@ C///  CHOOSE NUMBER OF DATA COLUMNS.
          cols = 6
       end if
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     (2) PRINT THE GROUPED DATA.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     (2) PRINT THE GROUPED DATA.
+!
+!///////////////////////////////////////////////////////////////////////
 
-      if (0 .lt. text) then
+      if (0 < text) then
 
-      if (0 .lt. groupa) then
-         if (1 .lt. groups) write (text, 10001) 'GROUP A UNKNOWNS'
+      if (0 < groupa) then
+         if (1 < groups) write (text, 10001) 'GROUP A UNKNOWNS'
          write (text, 10002) (j, buffer(j), j = 1, groupa)
       end if
 
-      if (0 .lt. groupb) then
-         if (1 .lt. groups) write (text, 10001) 'GROUP B UNKNOWNS'
+      if (0 < groupb) then
+         if (1 < groups) write (text, 10001) 'GROUP B UNKNOWNS'
          write (text, 10002)
      +      (j, buffer(groupa + comps * points + j), j = 1, groupb)
       end if
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     (2) PRINT THE COMPONENTS AT POINTS.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     (2) PRINT THE COMPONENTS AT POINTS.
+!
+!///////////////////////////////////////////////////////////////////////
 
-      if (0 .lt. comps .and. 0 .lt. points) then
-         if (1 .lt. groups) write (text, 10001) 'COMPONENTS AT POINTS'
+      if (0 < comps .and. 0 < points) then
+         if (1 < groups) write (text, 10001) 'COMPONENTS AT POINTS'
 
          do 2030 first = 1, comps, cols
             count = 0
@@ -5480,7 +5390,7 @@ C///////////////////////////////////////////////////////////////////////
                write (text, 10003) (title(j), j = 1, count)
             end if
 
-            if (count .eq. cols) then
+            if (count == cols) then
                if (grid) then
                   write (text, 10004) (point, x(point),
      +               (buffer(groupa + comp + comps * (point - 1)),
@@ -5508,11 +5418,11 @@ C///////////////////////////////////////////////////////////////////////
 
       end if
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     INFORMATIVE MESSAGES.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     INFORMATIVE MESSAGES.
+!
+!///////////////////////////////////////////////////////////////////////
 
 10001 format
      +  (/10X, a)
@@ -5529,15 +5439,15 @@ C///////////////////////////////////////////////////////////////////////
 10005 format
      +  (10X, 0p, i3, '>', 1p, 6E11.3)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     ERROR MESSAGES.
-C
-C///////////////////////////////////////////////////////////////////////
+!///////////////////////////////////////////////////////////////////////
+!
+!     ERROR MESSAGES.
+!
+!///////////////////////////////////////////////////////////////////////
 
       go to 99999
 
-9001  if (0 .lt. text) write (text, 99001) id,
+9001  if (0 < text) write (text, 99001) id,
      +   comps, points, groupa, groupb, groupa + comps * points + groupb
       if (.not. mess) go to 99999
 
@@ -5553,183 +5463,12 @@ C///////////////////////////////////////////////////////////////////////
      +  /10X, i10, '  TOTAL UNKNOWNS')
       if (.not. mess) go to 99999
 
-C///  EXIT.
+!///  EXIT.
 
       stop
 99999 continue
       return
       end
-      subroutine twsolv
-     +  (error, text,
-     +   a, asize, buffer, comps, groupa, groupb, pivot, points)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWSOLV
-C
-C     SOLVE A SYSTEM OF LINEAR EQUATIONS USING THE MATRIX PREPARED BY
-C     TWPREP.
-C
-C///////////////////////////////////////////////////////////////////////
 
-      implicit complex (a - z)
-
-      character
-     +   id*9
-C*****PRECISION > DOUBLE
-      double precision
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      REAL
-C*****END PRECISION > SINGLE
-     +   a, buffer
-      external
-     +   twgbsl
-      integer
-     +   asize, comps, groupa, groupb, j, n, pivot, points, text, width
-      intrinsic
-     +   max
-      logical
-     +   error, mess
-
-      parameter (id = 'TWSOLV:  ')
-
-      dimension
-     +   a(asize), buffer(groupa + comps * points + groupb),
-     +   pivot(groupa + comps * points + groupb)
-
-C///////////////////////////////////////////////////////////////////////
-C
-C     (1) PROLOGUE.
-C
-C///////////////////////////////////////////////////////////////////////
-
-C///  WRITE ALL MESSAGES.
-
-C     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
-      mess = .false.
-
-      if (mess .and. 0 .lt. text) go to 9001
-
-C///  CHECK THE ARGUMENTS.
-
-      n = groupa + comps * points + groupb
-      error = .not. (((0 .lt. comps) .eqv. (0 .lt. points)) .and.
-     +   0 .le. comps .and. 0 .le. points .and. 0 .le. groupa .and.
-     +   0 .le. groupb .and. 0 .lt. n)
-      if (error) go to 9001
-
-      width = comps + max (comps, groupa, groupb) - 1
-      error = .not. ((3 * width + 2) * n .le. asize)
-      if (error) go to 9002
-
-C///////////////////////////////////////////////////////////////////////
-C
-C     (2) SCALE AND SOLVE THE EQUATIONS.
-C
-C///////////////////////////////////////////////////////////////////////
-
-      do 2010 j = 1, n
-         buffer(j) = buffer(j) * a(j)
-2010  continue
-
-      call twgbsl
-     +  (a(n + 1), 3 * width + 1, n, width, width, pivot, buffer)
-
-C///////////////////////////////////////////////////////////////////////
-C
-C     ERROR MESSAGES.
-C
-C///////////////////////////////////////////////////////////////////////
-
-      go to 99999
-
-9001  if (0 .lt. text) write (text, 99001) id,
-     +   comps, points, groupa, groupb, n
-      if (.not. mess) go to 99999
-
-9002  if (0 .lt. text) write (text, 99002) id,
-     +   comps, points, groupa, groupb, n, width,
-     +   (3 * width + 2) * n, asize
-      if (.not. mess) go to 99999
-
-99001 format
-     +  (/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE'
-     +  /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE, NUMBERS OF ALL TYPES'
-     +  /10X, 'OF UNKNOWNS MUST BE AT LEAST ZERO, AND TOTAL UNKNOWNS'
-     +  /10X, 'MUST BE POSITIVE.'
-     + //10X, i10, '  COMPS, COMPONENTS'
-     +  /10X, i10, '  POINTS'
-     +  /10X, i10, '  GROUPA, GROUP A UNKNOWNS'
-     +  /10X, i10, '  GROUPB, GROUP B UNKNOWNS'
-     +  /10X, i10, '  TOTAL UNKNOWNS')
-
-99002 format
-     +  (/1X, a9, 'ERROR.  THE MATRIX SPACE IS TOO SMALL.'
-     + //10X, i10, '  COMPS, COMPONENTS'
-     +  /10X, i10, '  POINTS'
-     +  /10X, i10, '  GROUPA, GROUP A UNKNOWNS'
-     +  /10X, i10, '  GROUPB, GROUP B UNKNOWNS'
-     +  /10X, i10, '  MATRIX ORDER'
-     +  /10X, i10, '  STRICT HALF BANDWIDTH'
-     + //10X, i10, '  SPACE EXPECTED'
-     +  /10X, i10, '  ASIZE, PROVIDED')
-
-C///  EXIT.
-
-      stop
-99999 continue
-      return
-      end
-      subroutine twsqez (length, string)
-
-C///////////////////////////////////////////////////////////////////////
-C
-C     T W O P N T
-C
-C     TWSQEZ
-C
-C     SQUEEZE LEADING BLANKS AND MULTIPLE BLANKS FROM A CHARACTER
-C     STRING.  RETURN THE LENGTH OF THE SQUEEZED STRING.
-C
-C///////////////////////////////////////////////////////////////////////
-
-      implicit complex (a - z)
-      character
-     +   char*1, string*(*)
-      integer
-     +   j, length
-      intrinsic
-     +   len
-      logical
-     +   blank
-
-C///  SQUEEZE THE STRING.
-
-      length = 0
-      blank = .true.
-      do 0100 j = 1, len (string)
-         char = string (j : j)
-         if (.not. blank .or. char .ne. ' ') then
-            blank = char .eq. ' '
-            length = length + 1
-            string (length : length) = char
-         end if
-0100  continue
-
-C///  ADJUST THE LENGTH AND PAD THE STRING.
-
-      if (0 .lt. length) then
-         if (string (length : length) .eq. ' ') length = length - 1
-         if (length .lt. len (string)) string (length + 1 : ) = ' '
-      else
-         length = 1
-      end if
-
-C///  EXIT.
-
-      return
-      end
 
