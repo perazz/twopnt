@@ -23,17 +23,320 @@
 ! *************************************************************************************************
 module twopnt_core
     use iso_fortran_env, only: real64
-    implicit none (type, external)
+    implicit none
     private
 
     integer, parameter :: RK = real64
 
     ! Numeric constants
-    real(RK), parameter :: eps = epsilon(0.0_RK)
+    real(RK), parameter :: zero = 0.0_RK
+    real(RK), parameter :: eps  = epsilon(0.0_RK)
 
     logical, parameter :: DEBUG = .true.
 
+    ! Settings structure (formerly a common block)
+    integer, parameter :: cntrls = 22
+    type, public :: twcom
+
+        real(RK) :: rvalue(cntrls) = zero
+
+
+    end type twcom
+
+    ! Global settings (common for now)
+    type(twcom) :: settings
+
     contains
+
+      ! SET A CONTROL THAT TAKES A REAL VALUE.
+      subroutine twsetr (error, text, contrl, value)
+
+          logical,          intent(out) :: error
+          integer,          intent(in)  :: text  ! output unit
+          character(len=*), intent(in)  :: contrl
+          real(RK),         intent(in)  :: value
+
+          ! Local variables
+          character(len=80) :: string
+          real(RK) :: rvalue(cntrls)
+          external :: twinit, twlast
+          integer  :: count, length
+          logical  :: error, found, mess
+
+          character(len=*), parameter :: id = 'TWSETR:  '
+
+    !///  WRITE ALL MESSAGES.
+
+    !     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
+          mess = .false.
+
+          if (mess .and. 0 < text) go to 9001
+
+    !///  INITIALIZE THE CONTROLS.
+          call twinit (error, text, .false.)
+          if (error) go to 9001
+
+    !///  SET THE CONTROLS.
+
+          count = 0
+          found = .false.
+
+    !     ADAPT
+
+          count = count + 1
+          if (contrl == 'ADAPT') then
+             error = .true.
+             go to 9002
+          end if
+
+    !     LEVELD
+
+          count = count + 1
+          if (contrl == 'LEVELD') then
+             error = .true.
+             go to 9003
+          end if
+
+    !     LEVELM
+
+          count = count + 1
+          if (contrl == 'LEVELM') then
+             error = .true.
+             go to 9003
+          end if
+
+    !     PADD
+
+          count = count + 1
+          if (contrl == 'PADD') then
+             error = .true.
+             go to 9003
+          end if
+
+    !     SSABS
+
+          count = count + 1
+          if (contrl == 'SSABS') then
+             found = .true.
+             rvalue(count) = value
+          end if
+
+    !     SSAGE
+
+          count = count + 1
+          if (contrl == 'SSAGE') then
+             error = .true.
+             go to 9003
+          end if
+
+    !     SSREL
+
+          count = count + 1
+          if (contrl == 'SSREL') then
+             found = .true.
+             rvalue(count) = value
+          end if
+
+    !     STEADY
+
+          count = count + 1
+          if (contrl == 'STEADY') then
+             error = .true.
+             go to 9002
+          end if
+
+    !     STEPS0
+
+          count = count + 1
+          if (contrl == 'STEPS0') then
+             error = .true.
+             go to 9003
+          end if
+
+    !     STEPS1
+
+          count = count + 1
+          if (contrl == 'STEPS1') then
+             error = .true.
+             go to 9003
+          end if
+
+    !     STEPS2
+
+          count = count + 1
+          if (contrl == 'STEPS2') then
+             error = .true.
+             go to 9003
+          end if
+
+    !     STRID0
+
+          count = count + 1
+          if (contrl == 'STRID0') then
+             found = .true.
+             rvalue(count) = value
+          end if
+
+    !     TDABS
+
+          count = count + 1
+          if (contrl == 'TDABS') then
+             found = .true.
+             rvalue(count) = value
+          end if
+
+    !     TDAGE
+
+          count = count + 1
+          if (contrl == 'TDAGE') then
+             error = .true.
+             go to 9003
+          end if
+
+    !     TDEC
+
+          count = count + 1
+          if (contrl == 'TDEC') then
+             found = .true.
+             rvalue(count) = value
+          end if
+
+    !     TDREL
+
+          count = count + 1
+          if (contrl == 'TDREL') then
+             found = .true.
+             rvalue(count) = value
+          end if
+
+    !     TINC
+
+          count = count + 1
+          if (contrl == 'TINC') then
+             found = .true.
+             rvalue(count) = value
+          end if
+
+    !     TMAX
+
+          count = count + 1
+          if (contrl == 'TMAX') then
+             found = .true.
+             rvalue(count) = value
+          end if
+
+    !     TMIN
+
+          count = count + 1
+          if (contrl == 'TMIN') then
+             found = .true.
+             rvalue(count) = value
+          end if
+
+    !     TOLER0
+
+          count = count + 1
+          if (contrl == 'TOLER0') then
+             found = .true.
+             rvalue(count) = value
+          end if
+
+    !     TOLER1
+
+          count = count + 1
+          if (contrl == 'TOLER1') then
+             found = .true.
+             rvalue(count) = value
+          end if
+
+    !     TOLER2
+
+          count = count + 1
+          if (contrl == 'TOLER2') then
+             found = .true.
+             rvalue(count) = value
+          end if
+
+          error = .not. (count == cntrls)
+          if (error) go to 9004
+
+          error = .not. found
+          if (error) go to 9005
+
+    !///  ERROR MESSAGES.
+
+          go to 99999
+
+    9001  if (0 < text) write (text, 99001) id
+          if (.not. mess) go to 99999
+
+    9002  if (0 < text) then
+             call twlast (length, contrl)
+             if (length <= 40) then
+                string = contrl
+             else
+                length = 40
+                string = contrl (1 : 37) // '...'
+             end if
+             write (text, 99002) id, string (1 : length)
+          end if
+          if (.not. mess) go to 99999
+
+    9003  if (0 < text) then
+             call twlast (length, contrl)
+             if (length <= 40) then
+                string = contrl
+             else
+                length = 40
+                string = contrl (1 : 37) // '...'
+             end if
+             write (text, 99003) id, string (1 : length)
+          end if
+          if (.not. mess) go to 99999
+
+    9004  if (0 < text) write (text, 99004) id, cntrls, count
+          if (.not. mess) go to 99999
+
+    9005  if (0 < text) then
+             call twlast (length, contrl)
+             if (length <= 40) then
+                string = contrl
+             else
+                length = 40
+                string = contrl (1 : 37) // '...'
+             end if
+             write (text, 99005) id, string (1 : length)
+          end if
+          if (.not. mess) go to 99999
+
+    99001 format &
+            (/1X, a9, 'ERROR.  TWINIT FAILS.')
+
+    99002 format &
+            (/1X, a9, 'ERROR.  THE CONTROL TAKES A LOGICAL VALUE WHICH' &
+            /10X, 'MUST BE SET USING TWSETL.' &
+           //10X, '     CONTROL:  ', a)
+
+    99003 format &
+            (/1X, a9, 'ERROR.  THE CONTROL TAKES AN INTEGER VALUE WHICH' &
+            /10X, 'MUST BE SET USING TWSETI.' &
+           //10X, '     CONTROL:  ', a)
+
+    99004 format &
+            (/1X, a9, 'ERROR.  THE NUMBER OF CONTROLS IS INCONSISTENT.' &
+           //10X, i10, '  CONTROLS' &
+            /10X, i10, '  COUNTED')
+
+    99005 format &
+            (/1X, a9, 'ERROR.  THE CONTROL IS NOT RECOGNIZED.' &
+           //10X, '     CONTROL:  ', a)
+
+    !///  EXIT.
+
+          stop
+    99999 continue
+          return
+      end subroutine twsetr
 
       ! *******************************************************************************************************
       ! MATH
@@ -5144,309 +5447,7 @@ end module twopnt_core
 99999 continue
       return
       end subroutine twsetl
-      subroutine twsetr (error, text, contrl, value)
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     T W O P N T
-!
-!     TWSETR
-!
-!     SET A CONTROL THAT TAKES A REAL VALUE.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      implicit complex (a - z)
-      character &
-         contrl*(*), id*9, string*80
-      double precision    rvalue, value
-      external &
-         twinit, twlast
-      integer &
-         cntrls, count, length, text
-      logical &
-         error, found, mess
-
-      parameter (id = 'TWSETR:  ')
-      parameter (cntrls = 22)
-
-      dimension rvalue(cntrls)
-
-      common / twcomr / rvalue
-
-!///  WRITE ALL MESSAGES.
-
-!     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
-      mess = .false.
-
-      if (mess .and. 0 < text) go to 9001
-
-!///  INITIALIZE THE CONTROLS.
-
-      call twinit (error, text, .false.)
-      if (error) go to 9001
-
-!///  SET THE CONTROLS.
-
-      count = 0
-      found = .false.
-
-!     ADAPT
-
-      count = count + 1
-      if (contrl == 'ADAPT') then
-         error = .true.
-         go to 9002
-      end if
-
-!     LEVELD
-
-      count = count + 1
-      if (contrl == 'LEVELD') then
-         error = .true.
-         go to 9003
-      end if
-
-!     LEVELM
-
-      count = count + 1
-      if (contrl == 'LEVELM') then
-         error = .true.
-         go to 9003
-      end if
-
-!     PADD
-
-      count = count + 1
-      if (contrl == 'PADD') then
-         error = .true.
-         go to 9003
-      end if
-
-!     SSABS
-
-      count = count + 1
-      if (contrl == 'SSABS') then
-         found = .true.
-         rvalue(count) = value
-      end if
-
-!     SSAGE
-
-      count = count + 1
-      if (contrl == 'SSAGE') then
-         error = .true.
-         go to 9003
-      end if
-
-!     SSREL
-
-      count = count + 1
-      if (contrl == 'SSREL') then
-         found = .true.
-         rvalue(count) = value
-      end if
-
-!     STEADY
-
-      count = count + 1
-      if (contrl == 'STEADY') then
-         error = .true.
-         go to 9002
-      end if
-
-!     STEPS0
-
-      count = count + 1
-      if (contrl == 'STEPS0') then
-         error = .true.
-         go to 9003
-      end if
-
-!     STEPS1
-
-      count = count + 1
-      if (contrl == 'STEPS1') then
-         error = .true.
-         go to 9003
-      end if
-
-!     STEPS2
-
-      count = count + 1
-      if (contrl == 'STEPS2') then
-         error = .true.
-         go to 9003
-      end if
-
-!     STRID0
-
-      count = count + 1
-      if (contrl == 'STRID0') then
-         found = .true.
-         rvalue(count) = value
-      end if
-
-!     TDABS
-
-      count = count + 1
-      if (contrl == 'TDABS') then
-         found = .true.
-         rvalue(count) = value
-      end if
-
-!     TDAGE
-
-      count = count + 1
-      if (contrl == 'TDAGE') then
-         error = .true.
-         go to 9003
-      end if
-
-!     TDEC
-
-      count = count + 1
-      if (contrl == 'TDEC') then
-         found = .true.
-         rvalue(count) = value
-      end if
-
-!     TDREL
-
-      count = count + 1
-      if (contrl == 'TDREL') then
-         found = .true.
-         rvalue(count) = value
-      end if
-
-!     TINC
-
-      count = count + 1
-      if (contrl == 'TINC') then
-         found = .true.
-         rvalue(count) = value
-      end if
-
-!     TMAX
-
-      count = count + 1
-      if (contrl == 'TMAX') then
-         found = .true.
-         rvalue(count) = value
-      end if
-
-!     TMIN
-
-      count = count + 1
-      if (contrl == 'TMIN') then
-         found = .true.
-         rvalue(count) = value
-      end if
-
-!     TOLER0
-
-      count = count + 1
-      if (contrl == 'TOLER0') then
-         found = .true.
-         rvalue(count) = value
-      end if
-
-!     TOLER1
-
-      count = count + 1
-      if (contrl == 'TOLER1') then
-         found = .true.
-         rvalue(count) = value
-      end if
-
-!     TOLER2
-
-      count = count + 1
-      if (contrl == 'TOLER2') then
-         found = .true.
-         rvalue(count) = value
-      end if
-
-      error = .not. (count == cntrls)
-      if (error) go to 9004
-
-      error = .not. found
-      if (error) go to 9005
-
-!///  ERROR MESSAGES.
-
-      go to 99999
-
-9001  if (0 < text) write (text, 99001) id
-      if (.not. mess) go to 99999
-
-9002  if (0 < text) then
-         call twlast (length, contrl)
-         if (length <= 40) then
-            string = contrl
-         else
-            length = 40
-            string = contrl (1 : 37) // '...'
-         end if
-         write (text, 99002) id, string (1 : length)
-      end if
-      if (.not. mess) go to 99999
-
-9003  if (0 < text) then
-         call twlast (length, contrl)
-         if (length <= 40) then
-            string = contrl
-         else
-            length = 40
-            string = contrl (1 : 37) // '...'
-         end if
-         write (text, 99003) id, string (1 : length)
-      end if
-      if (.not. mess) go to 99999
-
-9004  if (0 < text) write (text, 99004) id, cntrls, count
-      if (.not. mess) go to 99999
-
-9005  if (0 < text) then
-         call twlast (length, contrl)
-         if (length <= 40) then
-            string = contrl
-         else
-            length = 40
-            string = contrl (1 : 37) // '...'
-         end if
-         write (text, 99005) id, string (1 : length)
-      end if
-      if (.not. mess) go to 99999
-
-99001 format &
-        (/1X, a9, 'ERROR.  TWINIT FAILS.')
-
-99002 format &
-        (/1X, a9, 'ERROR.  THE CONTROL TAKES A LOGICAL VALUE WHICH' &
-        /10X, 'MUST BE SET USING TWSETL.' &
-       //10X, '     CONTROL:  ', a)
-
-99003 format &
-        (/1X, a9, 'ERROR.  THE CONTROL TAKES AN INTEGER VALUE WHICH' &
-        /10X, 'MUST BE SET USING TWSETI.' &
-       //10X, '     CONTROL:  ', a)
-
-99004 format &
-        (/1X, a9, 'ERROR.  THE NUMBER OF CONTROLS IS INCONSISTENT.' &
-       //10X, i10, '  CONTROLS' &
-        /10X, i10, '  COUNTED')
-
-99005 format &
-        (/1X, a9, 'ERROR.  THE CONTROL IS NOT RECOGNIZED.' &
-       //10X, '     CONTROL:  ', a)
-
-!///  EXIT.
-
-      stop
-99999 continue
-      return
-      end subroutine twsetr
 
 
 
