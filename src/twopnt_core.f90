@@ -28,6 +28,9 @@ module twopnt_core
 
     integer, parameter :: RK = real64
 
+    ! Numeric constants
+    real(RK), parameter :: eps = epsilon(0.0_RK)
+
     logical, parameter :: DEBUG = .true.
 
     contains
@@ -35,6 +38,153 @@ module twopnt_core
       ! *******************************************************************************************************
       ! MATH
       ! *******************************************************************************************************
+
+      subroutine twshow(error, text, buffer, comps, grid, groupa, groupb, points, x)
+
+          logical, intent(out) :: error
+          integer, intent(in)  :: text,comps,groupa,groupb,points
+          logical, intent(in)  :: grid
+          real(RK), intent(in) :: buffer(groupa + comps * points + groupb), x(*)
+
+          ! Local variables
+          character(len=80) :: string, title(6)
+          integer :: cols, comp, count, first, groups, j, last, length, point
+          intrinsic :: min
+          character(*), parameter :: id = 'TWSHOW:  '
+
+          ! SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
+          logical, parameter :: mess = .false.
+
+          !///////////////////////////////////////////////////////////////////////
+          !
+          !     (1) PROLOGUE.
+          !
+          !///////////////////////////////////////////////////////////////////////
+
+          !///  WRITE ALL MESSAGES.
+          if (mess .and. 0 < text) then
+              write (text, 1) id, comps, points, groupa, groupb, groupa + comps * points + groupb
+              stop
+          end if
+
+          !///  CHECK THE ARGUMENTS.
+          error = .not. (((0 < comps) .eqv. (0 < points)) .and. &
+                           0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
+                           0 <= groupb .and. 0 < groupa + comps * points + groupb)
+          if (error) then
+              if (0 < text) write (text, 1) id, comps, points, groupa, groupb, &
+                                            groupa + comps * points + groupb
+              return
+          end if
+
+          !///  COUNT THE GROUPS.
+          groups = 0
+          if (0 < groupa) groups = groups + 1
+          if (0 < groupb) groups = groups + 1
+          if (0 < comps .and. 0 < points) groups = groups + 1
+
+          !///  CHOOSE NUMBER OF DATA COLUMNS.
+          cols = merge(5,6,grid)
+
+          !///////////////////////////////////////////////////////////////////////
+          !
+          !
+          !
+          !///////////////////////////////////////////////////////////////////////
+          print_data: if (0 < text) then
+
+              ! (2) PRINT THE GROUPED DATA.
+              if (0 < groupa) then
+                 if (1 < groups) write (text, 11) 'GROUP A UNKNOWNS'
+                 write (text, 12) (j, buffer(j), j = 1, groupa)
+              end if
+
+              if (0 < groupb) then
+                 if (1 < groups) write (text, 11) 'GROUP B UNKNOWNS'
+                 write (text, 12) &
+                    (j, buffer(groupa + comps * points + j), j = 1, groupb)
+              end if
+
+              ! (2) PRINT THE COMPONENTS AT POINTS.
+              if (0 < comps .and. 0 < points) then
+
+                 if (1 < groups) write (text, 11) 'COMPONENTS AT POINTS'
+
+                 components: do first = 1, comps, cols
+                    count = 0
+                    last = min (first + cols - 1, comps)
+                    do comp = first, last
+                        count = count + 1
+                        title(count) = ' '
+                        write (string, '(A5, I5)') 'COMP ', comp
+                        call twsqez (length, string)
+                        title(count) (11 - length : 10) = string
+                    end do
+
+                    if (grid) then
+                       write (text, 13) 'GRID POINT', (title(j), j = 1, count)
+                    else
+                       write (text, 13) (title(j), j = 1, count)
+                    end if
+
+                    if (count == cols) then
+                       if (grid) then
+                          write (text, 14) (point, x(point), &
+                             (buffer(groupa + comp + comps * (point - 1)), &
+                             comp = first, last), point = 1, points)
+                       else
+                          write (text, 15) (point, &
+                             (buffer(groupa + comp + comps * (point - 1)), &
+                             comp = first, last), point = 1, points)
+                       end if
+                    else
+                       do point = 1, points
+                          if (grid) then
+                             write (text, 14) point, x(point), &
+                                (buffer(groupa + comp + comps * (point - 1)), &
+                                comp = first, last)
+                          else
+                             write (text, 15) point, &
+                                (buffer(groupa + comp + comps * (point - 1)), &
+                                comp = first, last)
+                          end if
+                       end do
+                    end if
+                 end do components
+              end if
+
+          end if print_data
+
+
+          ! INFORMATIVE MESSAGES.
+          11 format(/10X, a)
+          12 format(/(10X, 4(i3, '> ', 1pe10.3)))
+          13 format(/14X, 6(1X, a10))
+          14 format(10X, 0p, i3, '>', f11.6, 1p, 5E11.3)
+          15 format(10X, 0p, i3, '>', 1p, 6E11.3)
+
+          ! ERROR MESSAGES.
+          1 format(/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
+                  /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE, NUMBERS OF ALL TYPES' &
+                  /10X, 'OF UNKNOWNS MUST BE AT LEAST ZERO, AND TOTAL UNKNOWNS' &
+                  /10X, 'MUST BE POSITIVE.' &
+                 //10X, i10, '  COMPS, COMPONENTS' &
+                  /10X, i10, '  POINTS' &
+                  /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                  /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                  /10X, i10, '  TOTAL UNKNOWNS')
+
+      end subroutine twshow
+
+
+      ! COPY ONE VECTOR TO ANOTHER.
+      pure subroutine twcopy (n, x, y)
+          integer , intent(in)  :: n
+          real(RK), intent(in)  :: x(n)
+          real(RK), intent(out) ::  y(n)
+          y = x
+          return
+      end subroutine twcopy
 
       ! SOLVE A SYSTEM OF LINEAR EQUATIONS USING THE MATRIX PREPARED BY TWPREP.
       subroutine twsolv(error, text, a, asize, buffer, comps, groupa, groupb, pivot, points)
@@ -1614,95 +1764,7 @@ end module twopnt_core
 
       return
       end
-      subroutine twcopy (n, x, y)
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     T W O P N T
-!
-!     TWCOPY
-!
-!     COPY ONE VECTOR TO ANOTHER.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      implicit complex (a - z)
-      integer j, n
-!**** PRECISION > DOUBLE
-      double precision    x, y
-
-      dimension x(n), y(n)
-
-      do 0100 j = 1, n
-         y(j) = x(j)
-0100  continue
-
-      return
-      end subroutine twcopy
-      subroutine tweps (eps)
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     T W O P N T
-!
-!     TWEPS
-!
-!     FIND MACHINE EPSILON.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      implicit complex (a - z)
-!**** PRECISION > DOUBLE
-      double precision    eps, value
-      integer scrtch
-!**** MACHINE EPSILON > COMPUTED
-!      LOGICAL
-!     +   SAME &
-!**** end MACHINE EPSILON > COMPUTED
-
-      parameter (scrtch = 98)
-
-!///  IEEE STANDARD &
-!***  PRECISION > DOUBLE
-      value = 1.1102230246251565D-16
-!**** END PRECISION > DOUBLE &
-!**** PRECISION > SINGLE
-!      VALUE = 5.9604645E-08 &
-!**** END PRECISION > SINGLE &
-
-!***  MACHINE EPSILON > IEEE STANDARD
-      eps = value
-!**** END MACHINE EPSILON > IEEE STANDARD
-
-!///  COMPUTED &
-
-!***  MACHINE EPSILON > COMPUTED
-!      OPEN (ACCESS = 'SEQUENTIAL', FORM = 'UNFORMATTED',
-!     +   STATUS = 'SCRATCH', UNIT = SCRTCH)
-!
-!      EPS = 1
-!1010  CONTINUE
-!      EPS = 0.5 * EPS
-!
-!      VALUE = 1 + EPS
-!
-!      REWIND (SCRTCH)
-!      WRITE (SCRTCH) VALUE
-!
-!      REWIND (SCRTCH)
-!      READ (SCRTCH) VALUE
-!
-!      SAME = 1 == VALUE
-!
-!      IF (.NOT. SAME) GO TO 1010
-!
-!      CLOSE (UNIT = SCRTCH) &
-!**** END MACHINE EPSILON > COMPUTED
-
-!///  EXIT.
-
-      return
-      end subroutine tweps
       subroutine twgbco (a, lda, n, lower, upper, pivot, rcond, z)
 
 !///////////////////////////////////////////////////////////////////////
@@ -3982,9 +4044,9 @@ end module twopnt_core
       implicit complex (a - z)
 
       character id*9, string*80
-      double precision    a, absol, buffer, condit, delta, eps, relat, sum, temp
+      double precision    a, absol, buffer, condit, delta, relat, sum, temp
       external &
-         tweps, twgbco, twsqez
+         twgbco, twsqez
       integer &
          asize, block, blocks, cfirst, clast, col, comps, count, diag, &
          groupa, groupb, j, lda, length, lines, n, offset, pivot, &
@@ -4044,7 +4106,6 @@ end module twopnt_core
 
 !///  FORM MACHINE EPSILON AND THE ABSOLUTE AND RELATIVE PERTURBATIONS.
 
-      call tweps (eps)
       absol = sqrt (eps)
       relat = sqrt (eps)
 
@@ -5386,196 +5447,6 @@ end module twopnt_core
 99999 continue
       return
       end subroutine twsetr
-      subroutine twshow &
-        (error, text, &
-         buffer, comps, grid, groupa, groupb, points, x)
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     T W O P N T
-!
-!     TWSHOW
-!
-!///////////////////////////////////////////////////////////////////////
-
-      implicit complex (a - z)
-
-      character id*9, string*80, title*80
-      double precision    buffer, x
-      external  twsqez
-      integer &
-         cols, comp, comps, count, first, groupa, groupb, groups, j, &
-         last, length, point, points, text
-      intrinsic &
-         min
-      logical &
-         error, grid, mess
-
-      parameter (id = 'TWSHOW:  ')
-
-      dimension &
-         buffer(groupa + comps * points + groupb), title(6), x(*)
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     (1) PROLOGUE.
-!
-!///////////////////////////////////////////////////////////////////////
-
-!///  WRITE ALL MESSAGES.
-
-!     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
-      mess = .false.
-
-      if (mess .and. 0 < text) go to 9001
-
-!///  CHECK THE ARGUMENTS.
-
-      error = .not. (((0 < comps) .eqv. (0 < points)) .and. &
-         0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
-         0 <= groupb .and. 0 < groupa + comps * points + groupb)
-      if (error) go to 9001
-
-!///  COUNT THE GROUPS.
-
-      groups = 0
-      if (0 < groupa) groups = groups + 1
-      if (0 < groupb) groups = groups + 1
-      if (0 < comps .and. 0 < points) groups = groups + 1
-
-!///  CHOOSE NUMBER OF DATA COLUMNS.
-
-      if (grid) then
-         cols = 5
-      else
-         cols = 6
-      end if
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     (2) PRINT THE GROUPED DATA.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      if (0 < text) then
-
-      if (0 < groupa) then
-         if (1 < groups) write (text, 10001) 'GROUP A UNKNOWNS'
-         write (text, 10002) (j, buffer(j), j = 1, groupa)
-      end if
-
-      if (0 < groupb) then
-         if (1 < groups) write (text, 10001) 'GROUP B UNKNOWNS'
-         write (text, 10002) &
-            (j, buffer(groupa + comps * points + j), j = 1, groupb)
-      end if
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     (2) PRINT THE COMPONENTS AT POINTS.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      if (0 < comps .and. 0 < points) then
-         if (1 < groups) write (text, 10001) 'COMPONENTS AT POINTS'
-
-         do 2030 first = 1, comps, cols
-            count = 0
-            last = min (first + cols - 1, comps)
-            do 2010 comp = first, last
-               count = count + 1
-               title(count) = ' '
-               write (string, '(A5, I5)') 'COMP ', comp
-               call twsqez (length, string)
-               title(count) (11 - length : 10) = string
-2010        continue
-
-            if (grid) then
-               write (text, 10003) &
-                  'GRID POINT', (title(j), j = 1, count)
-            else
-               write (text, 10003) (title(j), j = 1, count)
-            end if
-
-            if (count == cols) then
-               if (grid) then
-                  write (text, 10004) (point, x(point), &
-                     (buffer(groupa + comp + comps * (point - 1)), &
-                     comp = first, last), point = 1, points)
-               else
-                  write (text, 10005) (point, &
-                     (buffer(groupa + comp + comps * (point - 1)), &
-                     comp = first, last), point = 1, points)
-               end if
-            else
-               do 2020 point = 1, points
-                  if (grid) then
-                     write (text, 10004) point, x(point), &
-                        (buffer(groupa + comp + comps * (point - 1)), &
-                        comp = first, last)
-                  else
-                     write (text, 10005) point, &
-                        (buffer(groupa + comp + comps * (point - 1)), &
-                        comp = first, last)
-                  end if
-2020           continue
-            end if
-2030     continue
-      end if
-
-      end if
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     INFORMATIVE MESSAGES.
-!
-!///////////////////////////////////////////////////////////////////////
-
-10001 format &
-        (/10X, a)
-
-10002 format &
-       (/(10X, 4(i3, '> ', 1pe10.3)))
-
-10003 format &
-        (/14X, 6(1X, a10))
-
-10004 format &
-        (10X, 0p, i3, '>', f11.6, 1p, 5E11.3)
-
-10005 format &
-        (10X, 0p, i3, '>', 1p, 6E11.3)
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     ERROR MESSAGES.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      go to 99999
-
-9001  if (0 < text) write (text, 99001) id, &
-         comps, points, groupa, groupb, groupa + comps * points + groupb
-      if (.not. mess) go to 99999
-
-99001 format &
-        (/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
-        /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE, NUMBERS OF ALL TYPES' &
-        /10X, 'OF UNKNOWNS MUST BE AT LEAST ZERO, AND TOTAL UNKNOWNS' &
-        /10X, 'MUST BE POSITIVE.' &
-       //10X, i10, '  COMPS, COMPONENTS' &
-        /10X, i10, '  POINTS' &
-        /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-        /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-        /10X, i10, '  TOTAL UNKNOWNS')
-      if (.not. mess) go to 99999
-
-!///  EXIT.
-
-      stop
-99999 continue
-      return
-      end
 
 
 
