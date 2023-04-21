@@ -41,9 +41,6 @@
 		<Unit filename="../src/twopnt_core.f90">
 			<Option weight="0" />
 		</Unit>
-		<Unit filename="../src/twopnt_old.f">
-			<Option weight="0" />
-		</Unit>
 		<Extensions />
 	</Project>
 </CodeBlocks_project_file>
