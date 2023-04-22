@@ -9,3 +9,5 @@ An object-oriented interface wrapper was also built.
 References
 ----------
 [1] J. F. Grcar, "[The Twopnt Program for Boundary Value Problems](https://citeseerx.ist.psu.edu/document?repid=rep1&type=pdf&doi=dcf780dafc70adedeff9a9348d5e5e2225031326), Sandia National Laboratories Report SAND91-8230, Livermore, California, April 1992.  Reprinted February 1996. 
+
+[2] J.F.Grcar, R.J.Kee, M.D.Smooke and J.A.Miller, "A hybrid Newton/time-integration procedure for the solution of steady, laminar, one-dimensional, premixed flames", in Twenty-first Symposium (International) on Combustion, The Combustion Institute, Pittsburgh, Pennsylvania, 1986, pages 1773–1782.
