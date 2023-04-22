@@ -27,15 +27,7 @@ program TWMAIN
     use iso_fortran_env, only: output_unit
     implicit none
 
-    CHARACTER NAME*16, REPORT*16, SIGNAL*16, VERSIO*80
-    REAL(BK) A, ABOVE, BELOW, BUFFER, CONDIT, F, F0, G, G0, H, K, LAMBDA, &
-             MU, OMEGA, RHO, RWORK, STRIDE, T, T0, TMAX, TZERO, U, U0, &
-             VALUE, WMAX, X, ZMAX
-
-    INTEGER :: ASIZE, COMPS, GROUPA, GROUPB, ISIZE, IWORK, J, LENGTH, N, NAMES, PIVOT, PMAX, &
-               POINTS, RSIZE, TEXT
-    LOGICAL :: ACTIVE, ERROR, MARK, RETURN, TIME
-
+    ! Parameters
     character(len=*), parameter :: ID = 'TWMAIN:  '
     integer, parameter :: TEXT = OUTPUT_UNIT
     integer, parameter :: ISIZE  = 5000, RSIZE = 100000
@@ -45,361 +37,244 @@ program TWMAIN
     integer, parameter :: PMAX   = 200
     integer, parameter :: ASIZE = (6 * COMPS - 1) * COMPS * PMAX
     integer, parameter :: NAMES = COMPS + GROUPA + GROUPB
+    logical, parameter :: RELAXED_TOLERANCES = .false.
 
-      DIMENSION
-     +   A(ASIZE), ABOVE(COMPS), ACTIVE(COMPS), BELOW(COMPS),
-     +   BUFFER(COMPS * PMAX), F(PMAX), F0(PMAX), G(PMAX), G0(PMAX),
-     +   H(PMAX), IWORK(ISIZE), K(PMAX), LAMBDA(PMAX), MARK(PMAX),
-     +   MU(PMAX), NAME(NAMES), PIVOT(COMPS * PMAX), RHO(PMAX),
-     +   RWORK(RSIZE), T(PMAX), T0(PMAX), U(COMPS, PMAX), U0(COMPS *
-     +   PMAX), X(PMAX)
+    character(len=16) :: NAME(NAMES), REPORT, SIGNAL
+    character(len=80) :: VERSIO
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     PROLOGUE.
-C
-C///////////////////////////////////////////////////////////////////////
+    type(twcom) :: settings
+    real(BK) :: A(ASIZE), ABOVE(COMPS), BELOW(COMPS),RWORK(RSIZE)
+    real(BK), dimension(COMPS*PMAX) :: BUFFER,U,U0
+    real(BK), dimension(PMAX) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0,X
+    real(BK) :: CONDIT,STRIDE,VALUE
+    logical  :: ACTIVE(COMPS), MARK(PMAX)
+    integer  :: IWORK(ISIZE), PIVOT(COMPS*PMAX)
 
-C///  OPEN FILES.
+    INTEGER :: J, LENGTH, N, POINTS
+    LOGICAL :: ERROR, return_call, TIME
 
-C      OPEN (FILE = 'twopnt.out', STATUS='UNKNOWN',
-C     1      FORM = 'FORMATTED', UNIT = TEXT)
+    ! PROLOGUE. OPEN FILES.
+!   OPEN (FILE = 'twopnt.out', STATUS='UNKNOWN',FORM = 'FORMATTED', UNIT = TEXT)
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     SET PROBLEM PARAMETERS.
-C
-C///////////////////////////////////////////////////////////////////////
+    ! *** PROBLEM PARAMETERS. ***
 
-C     ROTATION RATE AT POROUS DISK
-      OMEGA = 4.0 * 3.14159
+    ! ROTATION RATE AT POROUS DISK
+    real(BK), parameter :: OMEGA = 4.0_BK * pi
 
-C     GAS TEMPERATURE AT POROUS DISK
-      TMAX = 1000.0
+    ! GAS TEMPERATURE AT POROUS DISK
+    real(BK), parameter :: TMAX = 1000.0_BK
 
-C     GAS TEMPERATURE AT SOLID DISK
-      TZERO = 300.0
+    ! GAS TEMPERATURE AT SOLID DISK
+    real(BK), parameter :: TZERO = 300.0_BK
 
-C     FLOW AT POROUS DISK
-      WMAX = - 2.0
+    ! FLOW AT POROUS DISK
+    real(BK), parameter :: WMAX = - 2.0_BK
 
-C     DISTANCE BETWEEN DISKS
-      ZMAX = 5.0
+    ! DISTANCE BETWEEN DISKS
+    real(BK), parameter :: ZMAX = 5.0_BK
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     SET TWOPNT CONTROLS.
-C
-C///////////////////////////////////////////////////////////////////////
+    ! *** SET TWOPNT CONTROLS. ***
 
-C///  CHOOSE THE INITIAL GRID SIZE.
+    ! CHOOSE THE INITIAL GRID SIZE.
+    POINTS = 6
+    N = GROUPA + COMPS * POINTS + GROUPB
 
-      POINTS = 6
-      N = GROUPA + COMPS * POINTS + GROUPB
+    ! SPECIFY THE CONTROLS.
+    call settings%set(ERROR, TEXT, 'ADAPT', .TRUE.)
+    IF (ERROR) GO TO 9001
 
-C///  SPECIFY THE CONTROLS.
+    call settings%set(ERROR, TEXT, 'LEVELD', 1)
+    IF (ERROR) GO TO 9002
 
-      CALL TWSETL (ERROR, TEXT, 'ADAPT', .TRUE.)
-      IF (ERROR) GO TO 9001
+    call settings%set(ERROR, TEXT, 'LEVELM', 1)
+    IF (ERROR) GO TO 9002
 
-      CALL TWSETI (ERROR, TEXT, 'LEVELD', 1)
-      IF (ERROR) GO TO 9002
+    call settings%set(ERROR, TEXT, 'STEPS1', 50)
+    IF (ERROR) GO TO 9002
 
-      CALL TWSETI (ERROR, TEXT, 'LEVELM', 1)
-      IF (ERROR) GO TO 9002
+    call settings%set(ERROR, TEXT, 'STEPS2', 50)
+    IF (ERROR) GO TO 9002
 
-      CALL TWSETI (ERROR, TEXT, 'STEPS1', 50)
-      IF (ERROR) GO TO 9002
+    call settings%set(ERROR, TEXT, 'STRID0', 1.0e-3_BK)
+    IF (ERROR) GO TO 9003
 
-      CALL TWSETI (ERROR, TEXT, 'STEPS2', 50)
-      IF (ERROR) GO TO 9002
+    call settings%set(ERROR, TEXT, 'TINC', 3.16_BK)
+    IF (ERROR) GO TO 9003
 
-      VALUE = 1.0E-3
-      CALL TWSETR (ERROR, TEXT, 'STRID0', VALUE)
-      IF (ERROR) GO TO 9003
+    call settings%set(ERROR, TEXT, 'TOLER1', 0.1_BK)
+    IF (ERROR) GO TO 9003
 
-      VALUE = 3.16
-      CALL TWSETR (ERROR, TEXT, 'TINC', VALUE)
-      IF (ERROR) GO TO 9003
+    call settings%set(ERROR, TEXT, 'TOLER2', 0.1_BK)
+    IF (ERROR) GO TO 9003
 
-      VALUE = 0.1
-      CALL TWSETR (ERROR, TEXT, 'TOLER1', VALUE)
-      IF (ERROR) GO TO 9003
+    if (RELAXED_TOLERANCES) then
+        call settings%set(ERROR, TEXT, 'SSABS', 1.0e-9_BK)
+        IF (ERROR) GO TO 9003
 
-      VALUE = 0.1
-      CALL TWSETR (ERROR, TEXT, 'TOLER2', VALUE)
-      IF (ERROR) GO TO 9003
+        call settings%set(ERROR, TEXT, 'TDABS', 1.0e-9_BK)
+        IF (ERROR) GO TO 9003
 
-C*****RELAXED TOLERANCES
-C      VALUE = 1.0E-9
-C      CALL TWSETR (ERROR, TEXT, 'SSABS', VALUE)
-C      IF (ERROR) GO TO 9003
-C
-C      VALUE = 1.0E-9
-C      CALL TWSETR (ERROR, TEXT, 'TDABS', VALUE)
-C      IF (ERROR) GO TO 9003
-C
-C      VALUE = 1.0E-4
-C      CALL TWSETR (ERROR, TEXT, 'SSREL', VALUE)
-C      IF (ERROR) GO TO 9003
-C
-C      VALUE = 1.0E-4
-C      CALL TWSETR (ERROR, TEXT, 'TDREL', VALUE)
-C      IF (ERROR) GO TO 9003
-C*****END RELAXED TOLERANCES
+        call settings%set(ERROR, TEXT, 'SSREL', 1.0e-4_BK)
+        IF (ERROR) GO TO 9003
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     INITIALIZE ARRAYS FOR TWOPNT.
-C
-C///////////////////////////////////////////////////////////////////////
+        call settings%set(ERROR, TEXT, 'TDREL', 1.0e-4_BK)
+        IF (ERROR) GO TO 9003
+    endif
 
-C///  FORM THE INITIAL GRID.
+    ! INITIALIZE ARRAYS FOR TWOPNT.
 
-      DO 0100 J = 1, POINTS
-         X(J) = (REAL (J - 1) / REAL (POINTS - 1)) * ZMAX
-0100  CONTINUE
+    ! FORM THE INITIAL GRID.
+    FORALL(J=1:POINTS) X(J) = ZMAX*(REAL(J-1,BK)/REAL(POINTS-1,BK))
 
-C///  CHOOSE GUESSES FOR UNKNOWNS.
+    ! CHOOSE GUESSES FOR THE UNKNOWNS.
+    init_unknowns: DO J = 1, POINTS
 
-      DO 0200 J = 1, POINTS
-C        F
-         U(1, J) = 0.0
+         ! F
+         U(1, J) = zero
 
-C        G
+         ! G
          U(2, J) = OMEGA * X(J) / ZMAX
 
-C        H
-         U(3, J) = WMAX * (1.0 - X(J) / ZMAX)
+         ! H
+         U(3, J) = WMAX * (one - X(J) / ZMAX)
 
-C        LAMBDA
-         U(4, J) = 0.0
+         ! LAMBDA
+         U(4, J) = zero
 
-C        T
-         U(5, J) = (1.0 - X(J) / ZMAX) * TZERO + (X(J) / ZMAX) * TMAX
-0200  CONTINUE
+         ! T
+         U(5, J) = (one - X(J) / ZMAX) * TZERO + (X(J) / ZMAX) * TMAX
 
-C///  ASSIGN LIMITS FOR UNKNOWNS.
+    end do init_unknowns
 
-      ABOVE(1) = 4.0
-      BELOW(1) = - 4.0
-      ABOVE(2) = 1.0E4
-      BELOW(2) = - 1.0E4
-      ABOVE(3) = 1.0E4
-      BELOW(3) = - 1.0E4
-      ABOVE(4) = 1.0E4
-      BELOW(4) = - 1.0E4
-      ABOVE(5) = 2.0 * TMAX
-      BELOW(5) = 0.5 * TZERO
+    ! ASSIGN LIMITS FOR THE UNKNOWNS.
+    ABOVE(1) = 4.0
+    BELOW(1) = - 4.0
+    ABOVE(2) = 1.0E4
+    BELOW(2) = - 1.0E4
+    ABOVE(3) = 1.0E4
+    BELOW(3) = - 1.0E4
+    ABOVE(4) = 1.0E4
+    BELOW(4) = - 1.0E4
+    ABOVE(5) = 2.0 * TMAX
+    BELOW(5) = 0.5 * TZERO
 
-C///  ASSIGN NAMES FOR UNKNOWNS.
+    ! ASSIGN NAMES FOR THE UNKNOWNS.
+    NAME(1) = 'F'
+    NAME(2) = 'G'
+    NAME(3) = 'H'
+    NAME(4) = 'LAMBDA'
+    NAME(5) = 'T'
 
-      NAME(1) = 'F'
-      NAME(2) = 'G'
-      NAME(3) = 'H'
-      NAME(4) = 'LAMBDA'
-      NAME(5) = 'T'
+    ! CHOOSE UNKNOWNS TO EXAMINE FOR GRID ADAPTION.
+    ACTIVE(1) = .TRUE.
+    ACTIVE(2) = .TRUE.
+    ACTIVE(3) = .TRUE.
+    ACTIVE(4) = .FALSE.
+    ACTIVE(5) = .TRUE.
 
-C///  CHOOSE UNKNOWNS TO EXAMINE FOR GRID ADAPTION.
+    ! CALL TWOPNT.
+    VERSIO = 'DOUBLE PRECISION VERSION 3.22'
+    SIGNAL = ' '
 
-      ACTIVE(1) = .TRUE.
-      ACTIVE(2) = .TRUE.
-      ACTIVE(3) = .TRUE.
-      ACTIVE(4) = .FALSE.
-      ACTIVE(5) = .TRUE.
+    ITERATE: DO
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     CALL TWOPNT.
-C
-C///////////////////////////////////////////////////////////////////////
+          ! Call driver
+          CALL TWOPNT(ERROR, TEXT, VERSIO, &
+                      ABOVE, ACTIVE, BELOW, BUFFER, COMPS, CONDIT, GROUPA, GROUPB, &
+                      ISIZE, IWORK, MARK, NAME, NAMES, PMAX, POINTS, REPORT, RSIZE, &
+                      RWORK, SIGNAL, STRIDE, TIME, U, X)
+          IF (ERROR) GO TO 9004
 
-C*****PRECISION > DOUBLE
-      VERSIO = 'DOUBLE PRECISION VERSION 3.22'
-C*****END PRECISION > DOUBLE
-C*****PRECISION > SINGLE
-C      VERSIO = 'SINGLE PRECISION VERSION 3.22'
-C*****END PRECISION > SINGLE
+          ! SERVICE REQUESTS FROM TWOPNT.
+          select case (SIGNAL)
 
-C     SUBROUTINE TWOPNT
-C    +  (ERROR, TEXT, VERSIO,
-C    +   ABOVE, ACTIVE, BELOW, BUFFER, COMPS, CONDIT, GROUPA, GROUPB,
-C    +   ISIZE, IWORK, MARK, NAME, NAMES, PMAX, POINTS, REPORT, RSIZE,
-C    +   RWORK, SIGNAL, STRIDE, TIME, U, X)
+             case ('RESIDUAL')
 
-      SIGNAL = ' '
-0300  CONTINUE
-      CALL TWOPNT
-     +  (ERROR, TEXT, VERSIO,
-     +   ABOVE, ACTIVE, BELOW, BUFFER, COMPS, CONDIT, GROUPA, GROUPB,
-     +   ISIZE, IWORK, MARK, NAME, NAMES, PMAX, POINTS, REPORT, RSIZE,
-     +   RWORK, SIGNAL, STRIDE, TIME, U, X)
-      IF (ERROR) GO TO 9004
+                ! EVALUATE THE FUNCTION
+                CALL TWFUNC(ERROR, TEXT, &
+                            BUFFER, F, F0, G, G0, H, K, LAMBDA, MU, OMEGA, POINTS, RHO, &
+                            STRIDE, T, T0, TIME, TMAX, TZERO, U0, WMAX, X)
+                IF (ERROR) GO TO 9005
 
-C///////////////////////////////////////////////////////////////////////
-C
-C     SERVICE REQUESTS FROM TWOPNT.
-C
-C///////////////////////////////////////////////////////////////////////
+             case ('PREPARE')
 
-C///  EVALUATE THE FUNCTION.
+                ! EVALUATE AND FACTOR THE JACOBIAN
+                return_call = .FALSE.
 
-      IF (SIGNAL .EQ. 'RESIDUAL') THEN
+                evaluate_jacobian: do
 
-C     SUBROUTINE TWFUNC
-C    +  (ERROR, TEXT,
-C    +   BUFFER, F, F0, G, G0, H, K, LAMBDA, MU, OMEGA, POINTS, RHO,
-C    +   STRIDE, T, T0, TIME, TMAX, TZERO, U0, WMAX, X)
+                    CALL TWPREP(ERROR, TEXT, A, ASIZE, BUFFER, COMPS, CONDIT, &
+                                GROUPA, GROUPB, PIVOT, POINTS, return_call)
+                    IF (ERROR) GO TO 9006
 
-      CALL TWFUNC
-     +  (ERROR, TEXT,
-     +   BUFFER, F, F0, G, G0, H, K, LAMBDA, MU, OMEGA, POINTS, RHO,
-     +   STRIDE, T, T0, TIME, TMAX, TZERO, U0, WMAX, X)
-      IF (ERROR) GO TO 9005
+                    IF (return_call) THEN
+                        CALL TWFUNC(ERROR, TEXT, &
+                                    BUFFER, F, F0, G, G0, H, K, LAMBDA, MU, OMEGA, POINTS, RHO, &
+                                    STRIDE, T, T0, TIME, TMAX, TZERO, U0, WMAX, X)
+                        IF (ERROR) GO TO 9005
 
-C///  EVALUATE AND FACTOR THE JACOBIAN.
+                    else
+                        exit evaluate_jacobian
+                    endif
 
-      ELSE IF (SIGNAL .EQ. 'PREPARE') THEN
+                end do evaluate_jacobian
 
-      RETURN = .FALSE.
-0400  CONTINUE
+             case ('SHOW')
 
-C     SUBROUTINE TWPREP
-C    +  (ERROR, TEXT,
-C    +   A, ASIZE, BUFFER, COMPS, CONDIT, GROUPA, GROUPB, PIVOT, POINTS,
-C    +   RETURN)
+                 ! SHOW THE SOLUTION.
+                 CALL TWSHOW(ERROR, TEXT, BUFFER, COMPS, .TRUE., GROUPA, GROUPB, POINTS, X)
+                 IF (ERROR) GO TO 9007
 
-      CALL TWPREP
-     +  (ERROR, TEXT,
-     +   A, ASIZE, BUFFER, COMPS, CONDIT, GROUPA, GROUPB, PIVOT, POINTS,
-     +   RETURN)
-      IF (ERROR) GO TO 9006
+             case ('SOLVE')
 
-      IF (RETURN) THEN
+                 ! SOLVE THE LINEAR EQUATIONS.
+                 CALL TWSOLV(ERROR, TEXT, A, ASIZE, BUFFER, COMPS, GROUPA, GROUPB, PIVOT, POINTS)
+                 IF (ERROR) GO TO 9008
 
-C     SUBROUTINE TWFUNC
-C    +  (ERROR, TEXT,
-C    +   BUFFER, F, F0, G, G0, H, K, LAMBDA, MU, OMEGA, POINTS, RHO,
-C    +   STRIDE, T, T0, TIME, TMAX, TZERO, U0, WMAX, X)
+             case ('RETAIN')
 
-      CALL TWFUNC
-     +  (ERROR, TEXT,
-     +   BUFFER, F, F0, G, G0, H, K, LAMBDA, MU, OMEGA, POINTS, RHO,
-     +   STRIDE, T, T0, TIME, TMAX, TZERO, U0, WMAX, X)
-      IF (ERROR) GO TO 9005
+                 ! RETAIN THE SOLUTION FOR TIME INTEGRATION.
+                 CALL TWCOPY (N,BUFFER,U0)
 
-      GO TO 0400
-      END IF
+             case ('UPDATE')
 
-C///  SHOW THE SOLUTION.
+                 ! UPDATE THE GRID.
+                 N = GROUPA + COMPS * POINTS + GROUPB
 
-C     SUBROUTINE TWSHOW
-C    +  (ERROR, TEXT,
-C    +   BUFFER, COMPS, GRID, GROUPA, GROUPB, POINTS, X)
+             case (' ')
 
-      ELSE IF (SIGNAL .EQ. 'SHOW') THEN
-         CALL TWSHOW
-     +     (ERROR, TEXT, BUFFER, COMPS, .TRUE., GROUPA, GROUPB,
-     +      POINTS, X)
-         IF (ERROR) GO TO 9007
+                 ! Iteration finished
+                 exit ITERATE
 
-C///  SOLVE THE LINEAR EQUATIONS.
+          end select
 
-      ELSE IF (SIGNAL .EQ. 'SOLVE') THEN
+    END DO ITERATE
 
-C     SUBROUTINE TWSOLV
-C    +  (ERROR, TEXT,
-C    +   A, ASIZE, BUFFER, COMPS, GROUPA, GROUPB, PIVOT, POINTS)
+    ! CHECK FOR SUCCESS.
+    ERROR = REPORT == 'NONE FOUND'
+    IF (ERROR) GO TO 9009
 
-      CALL TWSOLV
-     +  (ERROR, TEXT,
-     +   A, ASIZE, BUFFER, COMPS, GROUPA, GROUPB, PIVOT, POINTS)
-      IF (ERROR) GO TO 9008
+    ! WRITE A SUMMARY.
+    WRITE (TEXT, 10001) ID, U(4, 1), OMEGA, TZERO, TMAX, WMAX
 
-C///  RETAIN THE SOLUTION FOR TIME INTEGRATION.
+    ! SUCCESSFUL RETURN.
+    return
 
-      ELSE IF (SIGNAL .EQ. 'RETAIN') THEN
-         CALL TWCOPY (N, BUFFER, U0)
-
-C///  UPDATE THE GRID.
-
-      ELSE IF (SIGNAL .EQ. 'UPDATE') THEN
-         N = GROUPA + COMPS * POINTS + GROUPB
-
-C///  BOTTOM OF THE BLOCK TO SERVICE REQUESTS.
-
-      END IF
-      IF (SIGNAL .NE. ' ') GO TO 0300
-
-C///////////////////////////////////////////////////////////////////////
-C
-C     EPILOGUE.
-C
-C///////////////////////////////////////////////////////////////////////
-
-C///  CHECK FOR SUCCESS.
-
-      ERROR = REPORT .EQ. 'NONE FOUND'
-      IF (ERROR) GO TO 9009
-
-C///  WRITE A SUMMARY.
-
-      WRITE (TEXT, 10001) ID, U(4, 1), OMEGA, TZERO, TMAX, WMAX
-
-C///  WRITE THE DATA FOR PLOTTING.
-
-C     SUBROUTINE TWPLOT
-C    +  (ERROR, TEXT,
-C    +   COMPS, DATA, POINTS, U, X)
-
-C      CALL TWPLOT
-C     +  (ERROR, TEXT,
-C     +   COMPS, 16, POINTS, U, X)
-      IF (ERROR) GO TO 9010
-
-
-
-C///////////////////////////////////////////////////////////////////////
-C
-C     ERROR MESSAGES.
-C
-C///////////////////////////////////////////////////////////////////////
-
-      GO TO 99999
-
-9001  IF (0 .LT. TEXT) WRITE (TEXT, 99001) ID
-      GO TO 99999
-
-9002  IF (0 .LT. TEXT) WRITE (TEXT, 99002) ID
-      GO TO 99999
-
-9003  IF (0 .LT. TEXT) WRITE (TEXT, 99003) ID
-      GO TO 99999
-
-9004  IF (0 .LT. TEXT) WRITE (TEXT, 99004) ID
-      GO TO 99999
-
-9005  IF (0 .LT. TEXT) WRITE (TEXT, 99005) ID
-      GO TO 99999
-
-9006  IF (0 .LT. TEXT) WRITE (TEXT, 99006) ID
-      GO TO 99999
-
-9007  IF (0 .LT. TEXT) WRITE (TEXT, 99007) ID
-      GO TO 99999
-
-9008  IF (0 .LT. TEXT) WRITE (TEXT, 99008) ID
-      GO TO 99999
-
-9009  IF (0 .LT. TEXT) THEN
-         CALL twlast(LENGTH, REPORT)
-         WRITE (TEXT, 99009) ID, REPORT(1:LENGTH)
-      END IF
-      GO TO 99999
-
-9010  IF (0 .LT. TEXT) WRITE (TEXT, 99010) ID
-      GO TO 99999
-
+    ! ERROR HANDLING.
+    9001  IF (0 .LT. TEXT) WRITE (TEXT, 99001) ID; return
+    9002  IF (0 .LT. TEXT) WRITE (TEXT, 99002) ID; return
+    9003  IF (0 .LT. TEXT) WRITE (TEXT, 99003) ID; return
+    9004  IF (0 .LT. TEXT) WRITE (TEXT, 99004) ID; return
+    9005  IF (0 .LT. TEXT) WRITE (TEXT, 99005) ID; return
+    9006  IF (0 .LT. TEXT) WRITE (TEXT, 99006) ID; return
+    9007  IF (0 .LT. TEXT) WRITE (TEXT, 99007) ID; return
+    9008  IF (0 .LT. TEXT) WRITE (TEXT, 99008) ID; return
+    9009  IF (0 .LT. TEXT) THEN
+             CALL twlast(LENGTH, REPORT)
+             WRITE (TEXT, 99009) ID, REPORT(1:LENGTH)
+          END IF
+          return
+    9010  IF (0 .LT. TEXT) WRITE (TEXT, 99010) ID; return
 
     return
 

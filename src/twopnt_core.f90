@@ -26,19 +26,18 @@ module twopnt_core
     implicit none
     private
 
-    public :: twlast
+    public :: twlast,twcopy,twcom
 
     integer, parameter, public :: RK = real64
 
     ! Numeric constants
-    real(RK), parameter :: zero = 0.0_RK
-    real(RK), parameter :: one  = 1.0_RK
+    real(RK), parameter, public :: zero = 0.0_RK
+    real(RK), parameter, public :: one  = 1.0_RK
 
     ! Machine epsilon and the absolute and relative perturbations.
-    real(RK), parameter :: eps   = epsilon(0.0_RK)
-    real(RK), parameter :: absol = sqrt(eps)
-    real(RK), parameter :: relat = sqrt(eps)
-
+    real(RK), parameter, public :: eps   = epsilon(0.0_RK)
+    real(RK), parameter, public :: absol = sqrt(eps)
+    real(RK), parameter, public :: relat = sqrt(eps)
 
     logical, parameter :: DEBUG = .true.
     integer, parameter :: CONTRL_MAX_LEN = 40
@@ -48,27 +47,28 @@ module twopnt_core
 
     type, public :: twcom
 
-        logical  :: adapt  = .false.    ! count =  1
+        ! Adaptive grid size
+        logical  :: adapt  = .false.
         integer  :: leveld = 1
         integer  :: levelm = 1
         logical  :: padd   = .false.
         integer  :: ipadd  = 0
-        real(RK) :: ssabs  = 1.0e-9_RK  ! count =  5
+        real(RK) :: ssabs  = 1.0e-9_RK
         integer  :: ssage  = 10
         real(RK) :: ssrel  = 1.0e-6_RK
         logical  :: steady = .true.
         integer  :: steps0 = 0
-        integer  :: steps1 = 200        ! count = 10
+        integer  :: steps1 = 200
         integer  :: steps2 = 100
         real(RK) :: strid0 = 1.0e-4_RK
         real(RK) :: tdabs  = 1.0e-9_RK
         integer  :: tdage  = 20
-        real(RK) :: tdec   = 3.1623_RK  ! count = 15
+        real(RK) :: tdec   = 3.1623_RK
         real(RK) :: tdrel  = 1.0e-6_RK
         real(RK) :: tinc   = 10.0_RK
         real(RK) :: tmax   = 1.0e-2_RK
         real(RK) :: tmin   = 1.0e-20_RK
-        real(RK) :: toler0 = 1.0e-9_RK  ! count = 20
+        real(RK) :: toler0 = 1.0e-9_RK
         real(RK) :: toler1 = 0.2_RK
         real(RK) :: toler2 = 0.2_RK
 
@@ -94,27 +94,27 @@ module twopnt_core
           character(len=9), parameter :: id = 'TWINIT:  '
 
           ! SET THE CONTROLS.
-          this%adapt  = .false.    ! count =  1
+          this%adapt  = .false.
           this%leveld = 1
           this%levelm = 1
           this%padd   = .false.
           this%ipadd  = 0
-          this%ssabs  = 1.0e-9_RK  ! count =  5
+          this%ssabs  = 1.0e-9_RK
           this%ssage  = 10
           this%ssrel  = 1.0e-6_RK
           this%steady = .true.
           this%steps0 = 0
-          this%steps1 = 200        ! count = 10
+          this%steps1 = 200
           this%steps2 = 100
           this%strid0 = 1.0e-4_RK
           this%tdabs  = 1.0e-9_RK
           this%tdage  = 20
-          this%tdec   = 3.1623_RK  ! count = 15
+          this%tdec   = 3.1623_RK
           this%tdrel  = 1.0e-6_RK
           this%tinc   = 10.0_RK
           this%tmax   = 1.0e-2_RK
           this%tmin   = 1.0e-20_RK
-          this%toler0 = 1.0e-9_RK  ! count = 20
+          this%toler0 = 1.0e-9_RK
           this%toler1 = 0.2_RK
           this%toler2 = 0.2_RK
 
