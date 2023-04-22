@@ -749,9 +749,10 @@ module twopnt_core
       ! Factor a banded matrix and estimate the reciprocal of its condition number.
       ! Based on _GBCO from the LINPACK library.
       subroutine twgbco (a, lda, n, lower, upper, pivot, rcond, z)
-          integer, intent(in) :: lda, n, lower, upper, pivot(n)
+          integer, intent(in)     :: lda, n, lower, upper
+          integer, intent(inout)  :: pivot(n)
           real(RK), intent(inout) :: a(lda,n),z(n)
-          real(RK), intent(out) :: rcond
+          real(RK), intent(out)   :: rcond
 
           real(RK)  :: dsum, anorm, ek, s, sm, t, wk, wkm, ynorm
           integer   :: first, info, j, jdiag, ju, k, last, mm
@@ -899,6 +900,97 @@ module twopnt_core
 
           return
       end subroutine twgbco
+
+      ! Factor a banded matrix for twgbco. Based on _GBFA from the LINPACK library.
+      subroutine twgbfa (a, lda, n, lower, upper, pivot, info)
+          real(RK), intent(inout) :: a(lda, n)
+          integer , intent(inout) :: pivot(n)
+          integer , intent(in)    :: lda, n, lower, upper
+          integer , intent(out)   :: info
+
+          ! Local variables
+          real(RK)  :: t, value
+          integer   :: i, j, jk, k, pdiag, pjk, save
+          intrinsic :: abs, max, min
+
+          ! Initialize packed row position of the diagonal
+          pdiag = lower + upper + 1
+
+          ! Info stores the value of a zero diagonal
+          info = 0
+
+          ! Loop over columns
+          columns: do k = 1, n
+
+             ! Initialize fill-in space
+             a(:lower, k) = zero
+
+             ! Loop over the previous columns
+             previous: do j = max (1, k - lower - upper), k - 1
+                pjk = packed(pivot(j), k)
+                jk  = packed(j, k)
+                t   = a(pjk, k)
+                if (pjk /= jk) then
+                   a(pjk, k) = a(jk, k)
+                   a(jk, k) = t
+                end if
+
+                if (t /= zero) &
+                forall (i = 1: min (lower, n - j)) a(jk + i, k) = t * a(pdiag + i, j) + a(jk + i, k)
+
+             end do previous
+
+             ! Find the pivot
+             save = pdiag
+             value = abs (a(pdiag, k))
+             do i = pdiag + 1, pdiag + min (lower, n - k)
+                if (value < abs (a(i, k))) then
+                   save = i
+                   value = abs (a(i, k))
+                end if
+             end do
+             pivot(k) = true (save, k)
+
+             ! Interchange if necessary
+             if (save /= pdiag) then
+                t = a(save, k)
+                a(save, k) = a(pdiag, k)
+                a(pdiag, k) = t
+             end if
+
+             ! Scale the lower column
+             if (a(save, k) /= zero) then
+                t = -one/ a(pdiag, k)
+                forall (i = pdiag + 1: pdiag + min (lower, n - k)) a(i, k) = t * a(i, k)
+             else
+                info = k
+             end if
+
+          end do columns
+
+          ! The final column is trivial
+          pivot(n) = n
+          if (a(pdiag, n) == zero) info = n
+
+          return
+
+          contains
+
+              ! Statement functions
+
+              ! Packed row position of entry J in column K
+              elemental integer function packed(j, k)
+                 integer, intent(in) :: j, k
+                 packed = j - k + pdiag
+              end function packed
+
+              ! True row position of entry J packed in column K
+              elemental integer function true(j, k)
+                 integer, intent(in) :: j, k
+                 true = j - pdiag + k
+              end function true
+
+      end subroutine twgbfa
 
       ! *******************************************************************************************************
       ! UTILITIES
@@ -2333,119 +2425,6 @@ end module twopnt_core
 
       return
       end
-
-
-      subroutine twgbfa (a, lda, n, lower, upper, pivot, info)
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     T W O P N T
-!
-!     TWGBFA
-!
-!     FACTOR A BANDED MATRIX FOR TWGBCO. BASED ON _GBFA FROM THE LINPACK
-!     LIBRARY.
-!
-!/////////////////////////////////////////////////////////////////////// &
-
-!***  PRECISION > DOUBLE
-      double precision    a, t, value
-      integer &
-         i, info, j, jk, k, lda, lower, n, pack, pdiag, pivot, pjk, &
-         save, true, upper
-      intrinsic &
-         abs, max, min
-
-      dimension &
-         a(lda, n), pivot(n)
-
-!///  STATEMENT FUNTIONS
-
-!     PACKED ROW POSITION OF ENTRY J IN COLUMN K
-      pack (j, k) = j - k + pdiag
-
-!     TRUE ROW POSITION OF ENTRY J PACKED IN COLUMN K
-      true (j, k) = j - pdiag + k
-
-!///  INITIALIZE
-
-!     PACKED ROW POSITION OF THE DIAGONAL
-      pdiag = lower + upper + 1
-
-      info = 0
-
-!///  TOP OF THE LOOP OVER COLUMNS
-
-      do 2060 k = 1, n
-
-!///  INITIALIZE THE FILL-IN SPACE
-
-         do 2010 i = 1, lower
-            a(i, k) = 0.0
-2010     continue
-
-!///  LOOP OVER THE PREVIOUS COLUMNS
-
-         do 2030 j = max (1, k - lower - upper), k - 1
-            pjk = pack (pivot(j), k)
-            jk = pack (j, k)
-            t = a(pjk, k)
-            if (pjk /= jk) then
-               a(pjk, k) = a(jk, k)
-               a(jk, k) = t
-            end if
-
-            if (t /= 0.0) then
-               do 2020 i = 1, min (lower, n - j)
-                  a(jk + i, k) = t * a(pdiag + i, j) + a(jk + i, k)
-2020           continue
-            end if
-2030     continue
-
-!///  FIND THE PIVOT
-
-         save = pdiag
-         value = abs (a(pdiag, k))
-         do 2040 i = pdiag + 1, pdiag + min (lower, n - k)
-            if (value < abs (a(i, k))) then
-               save = i
-               value = abs (a(i, k))
-            end if
-2040     continue
-         pivot(k) = true (save, k)
-
-!///  INTERCHANGE IF NECESSARY
-
-         if (save /= pdiag) then
-            t = a(save, k)
-            a(save, k) = a(pdiag, k)
-            a(pdiag, k) = t
-         end if
-
-!///  SCALE THE LOWER COLUMN
-
-         if (a(save, k) /= 0.0) then
-            t = - 1.0 / a(pdiag, k)
-            do 2050 i = pdiag + 1, pdiag + min (lower, n - k)
-               a(i, k) = t * a(i, k)
-2050        continue
-         else
-            info = k
-         end if
-
-!///  BOTTOM OF THE LOOP OVER COLUMNS
-
-2060  continue
-
-!///  THE FINAL COLUMN IS TRIVIAL
-
-      pivot(n) = n
-      if (a(pdiag, n) == 0.0) info = n
-
-!///  EXIT
-
-      return
-      end subroutine twgbfa
 
 
 
