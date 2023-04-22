@@ -26,7 +26,7 @@ module twopnt_core
     implicit none
     private
 
-    public :: twlast,twcopy,twcom
+    public :: twlast,twcopy,twcom,twsolv,twshow,twprep,twopnt
 
     integer, parameter, public :: RK = real64
 
@@ -83,9 +83,6 @@ module twopnt_core
 
     end type twcom
 
-    ! Global settings (common for now)
-    type(twcom) :: settings
-
     contains
 
        ! Initialize the control structure
@@ -131,8 +128,6 @@ module twopnt_core
           real(RK),         intent(in)  :: value
 
           ! Local variables
-          character(len=80) :: string
-          integer  :: count, length
           logical  :: found
 
           ! SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
@@ -226,8 +221,6 @@ module twopnt_core
           integer,          intent(in)  :: value
 
           ! Local variables
-          character(len=80) :: string
-          integer  :: count, length
           logical  :: found
 
           ! SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
@@ -312,8 +305,6 @@ module twopnt_core
 
 
           ! Local variables
-          character(len=80) :: string
-          integer  :: count, length
           logical  :: found
 
           ! SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
@@ -1499,7 +1490,7 @@ module twopnt_core
 !
 !///////////////////////////////////////////////////////////////////////
 
-      implicit complex (a - p, r - z), integer (q)
+      !implicit complex (a - p, r - z), integer (q)
       character &
          cword*80, header*80, id*9, jword*80, name*(*), remark*80, &
          signal*(*), yword*80
@@ -2093,7 +2084,7 @@ module twopnt_core
 !
 !///////////////////////////////////////////////////////////////////////
 
-      implicit complex (a - z)
+      !implicit complex (a - z)
 
       character &
          column*16, ctemp1*80, ctemp2*80, header*80, id*9, name*(*), &
@@ -2885,35 +2876,34 @@ module twopnt_core
 !
 !///////////////////////////////////////////////////////////////////////
 
-      implicit complex (a - z)
+      !implicit complex (a - z)
       character &
          column*80, ctemp1*80, ctemp2*80, header*80, id*9, name*(*), &
          report*(*), signal*(*), string*80, versio*(*), vnmbr*8
 !**** PRECISION > DOUBLE
-      double precision    above, below, buffer, condit, detail, maxcon, ratio, rvalue, &
-         rwork, ssabs, ssrel, strid0, stride, tdabs, tdec, tdrel, temp, &
-         timer, tinc, tmax, tmin, toler0, toler1, toler2, total, u, x, &
-         ynorm
+      real(RK) ::  above, below, buffer, condit, detail, maxcon, ratio, rwork, stride, temp, timer, total, u, x, ynorm
       integer &
          age, cntrls, comps, count, desire, event, gmax, grid, groupa, &
-         groupb, ilast, isize, ivalue, iwork, j, jacobs, k, label, len1, &
-         len2, length, leveld, levelm, lines, names, nsteps, padd, pmax, &
+         groupb, ilast, isize, iwork, j, jacobs, k, label, len1, &
+         len2, length, lines, names, nsteps, pmax, &
          points, psave, qabove, qbelow, qbnds, qdvrg, qentry, qexit, &
          qfunct, qgrid, qjacob, qnull, qother, qrat1, qrat2, qrefin, &
          qs0, qs1, qsearc, qsolve, qtask, qtimst, qtotal, qtype, qusave, &
          qv1, qvary, qvary1, qvary2, qvsave, qxsave, qy0, qy1, return, &
-         rlast, route, rsize, size, ssage, step, steps, steps0, steps1, &
-         steps2, tdage, text, vnmbrs, xrepor
+         rlast, route, rsize, size, step, steps, text, vnmbrs, xrepor
       intrinsic :: max
       logical &
-         active, adapt, allow, error, exist, first, flag, found, lvalue, &
-         mark, mess, satisf, steady, time
+         active, allow, error, exist, first, flag, found, &
+         mark, mess, satisf, time
+
+      ! Need to find a prototype for this one
+      external :: refine
 
       parameter (id = 'TWOPNT:  ')
-      parameter (cntrls = 22)
       parameter (gmax = 100)
       parameter (lines = 20)
       parameter (vnmbrs = 12)
+      type(twcom) :: setup
 
 !     REPORT CODES
       parameter (qnull = 0, qbnds = 1, qdvrg = 2)
@@ -2940,14 +2930,11 @@ module twopnt_core
          above(groupa + comps + groupb), active(*), below(groupa + comps &
          + groupb), buffer(groupa + comps * pmax + groupb), column(3), &
          detail(gmax, qtotal), event(gmax, qtotal), header(6), &
-         ivalue(cntrls), iwork(isize), lvalue(cntrls), mark(*), &
-         name(names), ratio(2), rvalue(cntrls), rwork(rsize), &
+          iwork(isize), mark(*), &
+         name(names), ratio(2), rwork(rsize), &
          size(gmax), timer(qtotal), total(qtotal), u(groupa + comps * &
          pmax + groupb), vnmbr(vnmbrs), x(*)
 
-      common / twcomi / ivalue
-      common / twcoml / lvalue
-      common / twcomr / rvalue
 
 !///  SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
 
@@ -3002,8 +2989,8 @@ module twopnt_core
          write (text, 10001) id, 'double precision', string (1 : length)
          write (text, 10022) id
          write (text, 10021) id
-         write (text, 10011) id, '???', ratio, toler1, toler2
-         write (text, 10013) id, '???', ratio, toler1, toler2
+         write (text, 10011) id, '???', ratio, setup%toler1, setup%toler2
+         write (text, 10013) id, '???', ratio, setup%toler1, setup%toler2
          write (text, 10012) id
          write (text, 10002) id, 'FINAL SOLUTION:'
          write (text, 10002) id, 'INITIAL GUESS:'
@@ -3034,83 +3021,11 @@ module twopnt_core
       if (error) go to 9002
 
 !///  SET THE CONTROLS.
+      stop 'COPY COMMON BLOCK INTO SETUP'
 
 !     SUBROUTINE TWINIT (ERROR, TEXT, FORCE)
+      if (.not.setup%padd) setup%ipadd = pmax
 
-      call twinit (error, text, .false.)
-      if (error) go to 9003
-
-      count = 0
-
-      count = count + 1
-      adapt = lvalue(count)
-
-      count = count + 1
-      leveld = ivalue(count)
-
-      count = count + 1
-      levelm = ivalue(count)
-
-      count = count + 1
-      if (lvalue(count)) then
-         padd = ivalue(count)
-      else
-         padd = pmax
-      end if
-
-      count = count + 1
-      ssabs = rvalue(count)
-
-      count = count + 1
-      ssage = ivalue(count)
-
-      count = count + 1
-      ssrel = rvalue(count)
-
-      count = count + 1
-      steady = lvalue(count)
-
-      count = count + 1
-      steps0 = ivalue(count)
-
-      count = count + 1
-      steps1 = ivalue(count)
-
-      count = count + 1
-      steps2 = ivalue(count)
-
-      count = count + 1
-      strid0 = rvalue(count)
-
-      count = count + 1
-      tdabs = rvalue(count)
-
-      count = count + 1
-      tdage = ivalue(count)
-
-      count = count + 1
-      tdec = rvalue(count)
-
-      count = count + 1
-      tdrel = rvalue(count)
-
-      count = count + 1
-      tinc = rvalue(count)
-
-      count = count + 1
-      tmax = rvalue(count)
-
-      count = count + 1
-      tmin = rvalue(count)
-
-      count = count + 1
-      toler0 = rvalue(count)
-
-      count = count + 1
-      toler1 = rvalue(count)
-
-      count = count + 1
-      toler2 = rvalue(count)
 
       error = .not. (count == cntrls)
       if (error) go to 9004
@@ -3119,12 +3034,12 @@ module twopnt_core
 
       string = vnmbr(vnmbrs)
       call twlast (length, string)
-      if ((0 < levelm .or. mess) .and. 0 < text) &
+      if ((0 < setup%levelm .or. mess) .and. 0 < text) &
          write (text, 10001) id, 'double precision', string (1 : length)
 
 !///  CHECK THE ARGUMENTS.
 
-      error = .not. (leveld <= levelm)
+      error = .not. (setup%leveld <= setup%levelm)
       if (error) go to 9005
 
       error = .not. (0 <= comps .and. 0 <= points .and. &
@@ -3286,7 +3201,7 @@ module twopnt_core
 !///  SAVE THE INITIAL SOLUTION.
 
       psave = points
-      if (adapt .and. 0 < points) &
+      if (setup%adapt .and. 0 < points) &
          call twcopy (points, x, rwork(qxsave))
       call twcopy (groupa + comps * points + groupb, u, rwork(qusave))
 
@@ -3297,7 +3212,7 @@ module twopnt_core
 
 !///  PRINT LEVELS 11, 21, AND 22.
 
-      if (0 < leveld .and. 0 < text) then
+      if (0 < setup%leveld .and. 0 < text) then
          write (text, 10002) id, 'INITIAL GUESS:'
 !        GO TO 1100 WHEN RETURN = 2
          return = 2
@@ -3312,8 +3227,8 @@ module twopnt_core
       header(1) = '            LOG10   LOG10         '
       header(2) = '    TASK   NORM F  COND J   REMARK'
 
-      if (levelm == 1 .and. 0 < text) then
-         if (0 < leveld) write (text, 10002) id, &
+      if (setup%levelm == 1 .and. 0 < text) then
+         if (0 < setup%leveld) write (text, 10002) id, &
             'SOLVE THE PROBLEM.'
          write (text, 10003) (header(j), j = 1, 2)
 !        GO TO 1110 WHEN LABEL = 1
@@ -3333,10 +3248,10 @@ module twopnt_core
 !///  ENTRY WAS THE PREVIOUS TASK.
 
       if (qtask == qentry) then
-         if (0 < steps0) then
+         if (0 < setup%steps0) then
             qtask = qtimst
-            desire = steps0
-         else if (steady) then
+            desire = setup%steps0
+         else if (setup%steady) then
             qtask = qsearc
          else
             error = .true.
@@ -3347,16 +3262,16 @@ module twopnt_core
 
       else if (qtask == qsearc) then
          if (found) then
-            if (adapt) then
+            if (setup%adapt) then
                qtask = qrefin
             else
                qtask = qexit
                report = ' '
             end if
          else
-            if (allow .and. 0 < steps1) then
+            if (allow .and. 0 < setup%steps1) then
                qtask = qtimst
-               desire = steps1
+               desire = setup%steps1
             else
                qtask = qexit
                if (1 < grid) then
@@ -3387,7 +3302,7 @@ module twopnt_core
 
       else if (qtask == qtimst) then
          if (found) then
-            if (steady) then
+            if (setup%steady) then
                qtask = qsearc
             else
                qtask = qexit
@@ -3435,7 +3350,7 @@ module twopnt_core
       if (report /= ' ') then
 !        BE CAREFUL NOT TO ASSIGN A VALUE TO A PARAMETER
          if (points /= psave) points = psave
-         if (adapt .and. 0 < points) &
+         if (setup%adapt .and. 0 < points) &
             call twcopy (points, rwork(qxsave), x)
          call twcopy &
             (groupa + comps * points + groupb, rwork(qusave), u)
@@ -3446,7 +3361,7 @@ module twopnt_core
 !     SAVE THE STATUS REPORTS DURING REVERSE COMMUNICATION
       string = report
 
-      if (leveld == 1 .and. 0 < text) then
+      if (setup%leveld == 1 .and. 0 < text) then
          write (text, 10002) id, 'FINAL SOLUTION:'
 !        GO TO 3020 WHEN RETURN = 3
          return = 3
@@ -3466,7 +3381,7 @@ module twopnt_core
 
 !///  TOP OF THE REPORT BLOCK.
 
-      if (0 < levelm .and. 0 < text) then
+      if (0 < setup%levelm .and. 0 < text) then
          if (0.0 < total(qtotal)) then
 
 !///  REPORT TOTAL COMPUTER TIME.
@@ -3486,7 +3401,7 @@ module twopnt_core
 !///  REPORT PERCENT OF TOTAL COMPUTER TIME.
 
       temp = 100.0 / total(qtotal)
-      if (adapt) then
+      if (setup%adapt) then
 
 !                  123456789_123456789_123456789_12345678
 !                  123456  123456  123456 123456 123456
@@ -3536,7 +3451,7 @@ module twopnt_core
       header(4) = '-------------------------'
       header(6) = ' EVAL F   PREP J    SOLVE'
 
-      if (adapt) write (text, 10009) header, &
+      if (setup%adapt) write (text, 10009) header, &
          (size(j), (detail(j, k) / event(j, k), k = 5, 7), &
          (event(j, k), k = 5, 7), j = 1, grid)
 
@@ -3544,21 +3459,21 @@ module twopnt_core
 
 !///  REPORT THE COMPLETION STATUS.
 
-      if (0 < levelm) then
+      if (0 < setup%levelm) then
          if (report == ' ') then
             write (text, 10010) id
          else if (report == 'NO SPACE') then
             write (string, '(I10)') points
             call twsqez (length, string)
             write (text, 10011) &
-               id, string (1 : length), ratio, toler1, toler2
+               id, string (1 : length), ratio, setup%toler1, setup%toler2
          else if (report == 'NOT SOLVED') then
             write (text, 10012) id
          else if (report == 'SOME SOLVED') then
             write (string, '(I10)') points
             call twsqez (length, string)
             write (text, 10013) &
-               id, string (1 : length), ratio, toler1, toler2
+               id, string (1 : length), ratio, setup%toler1, setup%toler2
          else
             error = .true.
             go to 9016
@@ -3590,7 +3505,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE SEARCH BLOCK.
 
-      if (1 < levelm) then
+      if (1 < setup%levelm) then
          if (0 < text) write (text, 10014) id
       end if
 
@@ -3609,16 +3524,16 @@ module twopnt_core
 !     SUBROUTINE SEARCH &
 !       (ERROR, TEXT, &
 !        ABOVE, AGE, BELOW, BUFFER, COMPS, CONDIT, EXIST, GROUPA, &
-!        GROUPB, LEVELD, LEVELM, NAME, NAMES, POINTS, REPORT, S0, S1, &
+!        GROUPB, setup%leveld, setup%levelm, NAME, NAMES, POINTS, REPORT, S0, S1, &
 !        SIGNAL, STEPS, SUCCES, V0, V1, XXABS, XXAGE, XXREL, Y0, Y0NORM, &
 !        Y1)
 
       call search &
         (error, text, &
          rwork(qabove), age, rwork(qbelow), buffer, comps, condit, &
-         exist, groupa, groupb, leveld - 1, levelm - 1, name, names, &
+         exist, groupa, groupb, setup%leveld - 1, setup%levelm - 1, name, names, &
          points, xrepor, rwork(qs0), rwork(qs1), signal, nsteps, found, &
-         u, rwork(qv1), ssabs, ssage, ssrel, rwork(qy0), ynorm, &
+         u, rwork(qv1), setup%ssabs, setup%ssage, setup%ssrel, rwork(qy0), ynorm, &
          rwork(qy1))
       if (error) go to 9017
 
@@ -3636,7 +3551,7 @@ module twopnt_core
 !        SAVE THE LATEST SOLUTION
 
          psave = points
-         if (adapt .and. 0 < points) &
+         if (setup%adapt .and. 0 < points) &
             call twcopy (points, x, rwork(qxsave))
          call twcopy &
             (groupa + comps * points + groupb, u, rwork(qusave))
@@ -3660,7 +3575,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE SEARCH BLOCK.
 
-      if (levelm == 1 .and. 0 < text) then
+      if (setup%levelm == 1 .and. 0 < text) then
 !        GO TO 4040 WHEN LABEL = 2
          label = 2
          go to 7010
@@ -3669,7 +3584,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE SEARCH BLOCK.
 
-      if (1 < levelm) then
+      if (1 < setup%levelm) then
          if (found) then
             if (0 < text) write (text, 10015) id
          else
@@ -3695,7 +3610,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE REFINE BLOCK.
 
-      if (1 < levelm) then
+      if (1 < setup%levelm) then
          if (0 < text) write (text, 10017) id
       end if
 
@@ -3714,16 +3629,16 @@ module twopnt_core
 
 !     SUBROUTINE REFINE &
 !       (ERROR, TEXT, &
-!        ACTIVE, BUFFER, COMPS, LEVELD, LEVELM, MARK, NEWX, PADD, PMAX, &
+!        ACTIVE, BUFFER, COMPS, setup%leveld, setup%levelm, MARK, NEWX, PADD, PMAX, &
 !        POINTS, RATIO, RATIO1, RATIO2, SIGNAL, SUCCES, TOLER0, TOLER1, &
 !        TOLER2, U, VARY1, VARY2, WEIGHT, X)
 
       call refine &
         (error, text, &
          active, &
-         buffer(groupa + 1), comps, leveld - 1, levelm - 1, mark, &
-         found, padd, pmax, points, ratio, rwork(qrat1), rwork(qrat2), &
-         signal, satisf, toler0, toler1, toler2, u(groupa + 1), &
+         buffer(groupa + 1), comps, setup%leveld - 1, setup%levelm - 1, mark, &
+         found, setup%ipadd, pmax, points, ratio, rwork(qrat1), rwork(qrat2), &
+         signal, satisf, setup%toler0, setup%toler1, setup%toler2, u(groupa + 1), &
          iwork(qvary1), iwork(qvary2), iwork(qvary), x)
       if (error) go to 9018
 
@@ -3731,12 +3646,10 @@ module twopnt_core
 
       if (signal /= ' ') then
 !        INSERT THE GROUP A AND B UNKNOWNS
-         do 5040 j = 1, groupa
-            buffer(j) = u(j)
-5040     continue
-         do 5050 j = 1, groupb
+         buffer(1:groupa) = u(1:groupa)
+         do j = 1, groupb
             buffer(groupa + comps * points + j) = rwork(qvsave - 1 + j)
-5050     continue
+         end do
 
 !        GO TO 5030 WHEN RETURN = 6
          return = 6
@@ -3802,7 +3715,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE REFINE BLOCK.
 
-      if (levelm == 1 .and. 0 < text) then
+      if (setup%levelm == 1 .and. 0 < text) then
          write (text, '()')
 !        GO TO 5120 WHEN LABEL = 3
          label = 3
@@ -3812,7 +3725,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE REFINE BLOCK.
 
-      if (1 < levelm) then
+      if (1 < setup%levelm) then
          if (found) then
             if (0 < text) write (text, 10018) id
          else
@@ -3842,7 +3755,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE EVOLVE BLOCK.
 
-      if (1 < levelm) then
+      if (1 < setup%levelm) then
          if (0 < text) write (text, 10020) id
       end if
 
@@ -3853,17 +3766,17 @@ module twopnt_core
 !     SUBROUTINE EVOLVE &
 !       (ERROR, TEXT, &
 !        ABOVE, BELOW, BUFFER, COMPS, CONDIT, DESIRE, GROUPA, GROUPB, &
-!        LEVELD, LEVELM, NAME, NAMES, POINTS, REPORT, S0, S1, SIGNAL, &
+!        setup%leveld, setup%levelm, NAME, NAMES, POINTS, REPORT, S0, S1, SIGNAL, &
 !        STEP, STEPS2, STRID0, STRIDE, SUCCES, TDABS, TDAGE, TDEC, &
 !        TDREL, TIME, TINC, TMAX, TMIN, V0, V1, VSAVE, Y0, Y1, YNORM)
 
       call evolve &
         (error, text, &
          rwork(qabove), rwork(qbelow), buffer, comps, condit, desire, &
-         groupa, groupb, leveld - 1, levelm - 1, name, names, points, &
-         xrepor, rwork(qs0), rwork(qs1), signal, step, steps2, strid0, &
-         stride, found, tdabs, tdage, tdec, tdrel, time, tinc, tmax, &
-         tmin, u, rwork(qv1), rwork(qvsave), rwork(qy0), rwork(qy1), &
+         groupa, groupb, setup%leveld - 1, setup%levelm - 1, name, names, points, &
+         xrepor, rwork(qs0), rwork(qs1), signal, step, setup%steps2, setup%strid0, &
+         stride, found, setup%tdabs, setup%tdage, setup%tdec, setup%tdrel, time, setup%tinc, setup%tmax, &
+         setup%tmin, u, rwork(qv1), rwork(qvsave), rwork(qy0), rwork(qy1), &
          ynorm)
       if (error) go to 9019
 
@@ -3899,7 +3812,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE EVOLVE BLOCK.
 
-      if (levelm == 1 .and. 0 < text) then
+      if (setup%levelm == 1 .and. 0 < text) then
 !        GO TO 6040 WHEN LABEL = 4
          label = 4
          go to 7010
@@ -3908,7 +3821,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE EVOLVE BLOCK.
 
-      if (1 < levelm) then
+      if (1 < setup%levelm) then
          if (found) then
             if (0 < text) write (text, 10021) id
          else
@@ -3978,7 +3891,7 @@ module twopnt_core
          else
             string = '?'
          end if
-      else if (qtask == qentry .and. adapt) then
+      else if (qtask == qentry .and. setup%adapt) then
          write (string, '(I10, A)') points, ' GRID POINTS'
       else if (qtask == qrefin) then
          if (found) then
@@ -4230,13 +4143,10 @@ module twopnt_core
       end if
       if (.not. mess) go to 99999
 
-9003  if (0 < text) write (text, 99003) id
-      if (.not. mess) go to 99999
-
 9004  if (0 < text) write (text, 99004) id, cntrls, count
       if (.not. mess) go to 99999
 
-9005  if (0 < text) write (text, 99005) id, leveld, levelm
+9005  if (0 < text) write (text, 99005) id, setup%leveld, setup%levelm
       if (.not. mess) go to 99999
 
 9006  if (0 < text) write (text, 99006) id, &
@@ -4346,9 +4256,6 @@ module twopnt_core
        //10X, '     EXPECTS:  ', a &
        //10X, 'THIS VERSION:  double precision VERSION ', a)
 
-99003 format &
-        (/1X, a9, 'ERROR.  TWINIT FAILS.')
-
 99004 format &
         (/1X, a9, 'ERROR.  THE NUMBER OF CONTROLS IS INCONSISTENT.' &
        //10X, i10, '  CONTROLS' &
@@ -4449,6 +4356,585 @@ module twopnt_core
 99999 continue
       return
       end
+
+C  CVS $Revision: 1.1.1.1 $  created $Date: 2006/05/26 19:09:33 $
+      SUBROUTINE REFINE
+     +  (ERROR, TEXT,
+     +   ACTIVE, BUFFER, COMPS, LEVELD, LEVELM, MARK, NEWX, PADD, PMAX,
+     +   POINTS, RATIO, RATIO1, RATIO2, SIGNAL, SUCCES, TOLER0, TOLER1,
+     +   TOLER2, U, VARY1, VARY2, WEIGHT, X)
+
+C///////////////////////////////////////////////////////////////////////
+C
+C     T W O P N T
+C
+C     REFINE
+C
+C     PERFORM AUTOMATIC GRID SELECTION.
+C
+C///////////////////////////////////////////////////////////////////////
+
+      IMPLICIT COMPLEX (A - Z)
+      CHARACTER
+     +   ID*9, SIGNAL*(*), WORD*80
+C*****PRECISION > DOUBLE
+      DOUBLE PRECISION
+C*****END PRECISION > DOUBLE
+C*****PRECISION > SINGLE
+C      REAL
+C*****END PRECISION > SINGLE
+     +   BUFFER, DIFFER, LEFT, LENGTH, LOWER, MAXMAG, MEAN, RANGE,
+     +   RATIO, RATIO1, RATIO2, RIGHT, TEMP, TEMP1, TEMP2, TOLER0,
+     +   TOLER1, TOLER2, U, UPPER, X
+      EXTERNAL
+     +   TWCOPY
+      INTEGER
+     +   ACT, COMPS, COUNT, FORMER, ITEMP, J, K, LEAST, LEVELD, LEVELM,
+     +   MORE, MOST, NEW, OLD, PADD, PMAX, POINTS, ROUTE, SIGNIF, TEXT,
+     +   TOTAL, VARY1, VARY2, WEIGHT
+      INTRINSIC
+     +   ABS, MAX, MIN
+      LOGICAL
+     +   ACTIVE, ERROR, MARK, MESS, NEWX, SUCCES
+
+      PARAMETER (ID = 'REFINE:  ')
+
+      DIMENSION
+     +   ACTIVE(COMPS), BUFFER(COMPS * PMAX), MARK(PMAX), RATIO(2),
+     +   RATIO1(PMAX), RATIO2(PMAX), U(COMPS, PMAX), VARY1(PMAX),
+     +   VARY2(PMAX), WEIGHT(PMAX), X(PMAX)
+
+C///  SAVE LOCAL VARIABLES DURING RETURNS FOR REVERSE COMMUNICATION.
+
+      SAVE
+
+C///////////////////////////////////////////////////////////////////////
+C
+C     PROLOGUE.
+C
+C///////////////////////////////////////////////////////////////////////
+
+C///  EVERY-TIME INITIALIZATION.
+
+C     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
+      MESS = .FALSE.
+
+C     TURN OFF ALL COMPLETION STATUS FLAGS.
+      ERROR = .FALSE.
+      NEWX = .FALSE.
+      SUCCES = .FALSE.
+
+C///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
+
+      IF (SIGNAL .NE. ' ') THEN
+         GO TO (4060, 5040) ROUTE
+         ERROR = .TRUE.
+         GO TO 9001
+      END IF
+
+C///  WRITE ALL MESSAGES.
+
+      IF (MESS .AND. 0 .LT. TEXT) THEN
+         ROUTE = 0
+
+         WRITE (TEXT, 10001) ID
+         WRITE (TEXT, 10002) ID
+         WRITE (TEXT, 10004) ID
+         WRITE (TEXT, 10005) ID
+         WRITE (TEXT, 10010) ID
+
+         GO TO 9001
+      END IF
+
+C///  LEVELM PRINTING.
+
+      IF (0 .LT. LEVELM .AND. 0 .LT. TEXT) WRITE (TEXT, 10001) ID
+
+C///  CHECK THE ARGUMENTS.
+
+      ERROR = .NOT. (1 .LE. COMPS .AND. 2 .LE. POINTS)
+      IF (ERROR) GO TO 9002
+
+      ERROR = .NOT. (0 .LE. PADD)
+      IF (ERROR) GO TO 9003
+
+      ERROR = .NOT. (POINTS .LE. PMAX)
+      IF (ERROR) GO TO 9004
+
+      COUNT = 0
+      DO 1010 J = 1, COMPS
+         IF (ACTIVE(J)) COUNT = COUNT + 1
+1010  CONTINUE
+      ERROR = .NOT. (1 .LE. COUNT)
+      IF (ERROR) GO TO 9005
+
+      ERROR = .NOT. (0.0 .LE. TOLER0)
+      IF (ERROR) GO TO 9006
+
+      ERROR = .NOT. (0.0 .LE. TOLER1 .AND. TOLER1 .LE. 1.0
+     +         .AND. 0.0 .LE. TOLER2 .AND. TOLER2 .LE. 1.0)
+      IF (ERROR) GO TO 9007
+
+      COUNT = 0
+      DO 1020 K = 1, POINTS - 1
+         IF (X(K) .LT. X(K + 1)) COUNT = COUNT + 1
+1020  CONTINUE
+      ERROR = .NOT. (COUNT .EQ. 0 .OR. COUNT .EQ. POINTS - 1)
+      IF (ERROR) GO TO 9008
+
+C///////////////////////////////////////////////////////////////////////
+C
+C     AT EACH INTERVAL, COUNT THE ACTIVE, SIGNIFICANT COMPONENTS THAT
+C     VARY TOO GREATLY.
+C
+C///////////////////////////////////////////////////////////////////////
+
+      ACT = 0
+      SIGNIF = 0
+
+      DO 2010 K = 1, POINTS
+         MARK(K) = .FALSE.
+         RATIO1(K) = 0.0
+         RATIO2(K) = 0.0
+         VARY1(K) = 0
+         VARY2(K) = 0
+2010  CONTINUE
+
+C///  TOP OF THE LOOP OVER THE COMPONENTS.
+
+      DO 2060 J = 1, COMPS
+         IF (ACTIVE(J)) THEN
+            ACT = ACT + 1
+
+C///  FIND THE RANGE AND MAXIMUM MAGNITUDE OF THE COMPONENT.
+
+            LOWER = U(J, 1)
+            UPPER = U(J, 1)
+            DO 2020 K = 2, POINTS
+               LOWER = MIN (LOWER, U(J, K))
+               UPPER = MAX (UPPER, U(J, K))
+2020        CONTINUE
+            RANGE = UPPER - LOWER
+            MAXMAG = MAX (ABS (LOWER), ABS (UPPER))
+
+C///  DECIDE WHETHER THE COMPONENT IS SIGNIFICANT.
+
+            IF (ABS (RANGE) .GT. MAX (TOLER0, TOLER0 * MAXMAG)) THEN
+               SIGNIF = SIGNIF + 1
+
+C///  AT EACH INTERVAL, SEE WHETHER THE COMPONENT'S CHANGE EXCEEDS SOME
+C///  FRACTION OF THE COMPONENT'S GLOBAL CHANGE.
+
+               DO 2030 K = 1, POINTS - 1
+                  DIFFER = ABS (U(J, K + 1) - U(J, K))
+                  IF (0.0 .LT. RANGE)
+     +               RATIO1(K) = MAX (RATIO1(K), DIFFER / RANGE)
+                  IF (TOLER1 * RANGE .LT. DIFFER)
+     +               VARY1(K) = VARY1(K) + 1
+2030           CONTINUE
+
+C///  FIND THE GLOBAL CHANGE OF THE COMPONENT'S DERIVATIVE.
+
+               TEMP = (U(J, 2) - U(J, 1)) / (X(2) - X(1))
+               LOWER = TEMP
+               UPPER = TEMP
+               DO 2040 K = 2, POINTS - 1
+                  TEMP = (U(J, K + 1) - U(J, K))
+     +                 / (X(K + 1) - X(K))
+                  LOWER = MIN (LOWER, TEMP)
+                  UPPER = MAX (UPPER, TEMP)
+2040           CONTINUE
+               RANGE = UPPER - LOWER
+
+C///  AT EACH INTERIOR POINT, SEE WHETHER THE DERIVATIVE'S CHANGE
+C///  EXCEEDS SOME FRACTION OF THE DERIVATIVE'S GLOBAL CHANGE.
+
+               RIGHT = (U(J, 2) - U(J, 1)) / (X(2) - X(1))
+               DO 2050 K = 2, POINTS - 1
+                  LEFT = RIGHT
+                  RIGHT = (U(J, K + 1) - U(J, K)) / (X(K + 1) - X(K))
+                  DIFFER = ABS (LEFT - RIGHT)
+                  IF (0.0 .LT. RANGE)
+     +               RATIO2(K) = MAX (RATIO2(K), DIFFER / RANGE)
+                  IF (TOLER2 * RANGE .LT. DIFFER)
+     +               VARY2(K) = VARY2(K) + 1
+2050           CONTINUE
+
+C///  BOTTOM OF THE LOOP OVER THE COMPONENTS.
+
+            END IF
+         END IF
+2060  CONTINUE
+
+C///  SAVE THE MAXIMUM RATIOS.
+
+      RATIO(1) = 0.0
+      DO 2070 K = 1, POINTS - 1
+         RATIO(1) = MAX (RATIO(1), RATIO1(K))
+2070  CONTINUE
+
+      RATIO(2) = 0.0
+      DO 2080 K = 2, POINTS - 1
+         RATIO(2) = MAX (RATIO(2), RATIO2(K))
+2080  CONTINUE
+
+C///////////////////////////////////////////////////////////////////////
+C
+C     SELECT THE INTERVALS TO HALVE.
+C
+C///////////////////////////////////////////////////////////////////////
+
+C///  WEIGHT THE INTERVALS IN WHICH VARIATIONS THAT ARE TOO LARGE OCCUR.
+
+      MOST = 0
+      DO 3010 K = 1, POINTS - 1
+         WEIGHT(K) = VARY1(K)
+         IF (1 .LT. K) WEIGHT(K) = WEIGHT(K) + VARY2(K)
+         IF (K .LT. POINTS - 1) WEIGHT(K) = WEIGHT(K) + VARY2(K + 1)
+         IF (0 .LT. WEIGHT(K)) MOST = MOST + 1
+3010  CONTINUE
+
+C///  SORT THE WEIGHTS.
+
+      DO 3030 K = 1, POINTS - 1
+         DO 3020 J = K + 1, POINTS - 1
+            IF (WEIGHT(J) .GT. WEIGHT(K)) THEN
+               ITEMP = WEIGHT(J)
+               WEIGHT(J) = WEIGHT(K)
+               WEIGHT(K) = ITEMP
+            END IF
+3020     CONTINUE
+         IF (WEIGHT(K) .EQ. 0) GO TO 3040
+3030  CONTINUE
+3040  CONTINUE
+
+C///  FIND THE LEAST WEIGHT OF INTERVALS TO HALVE.
+
+      MORE = MAX (0, MIN (MOST, PADD, PMAX - POINTS))
+      IF (0 .LT. MORE) THEN
+         LEAST = WEIGHT(MORE)
+      ELSE
+         LEAST = 1 + WEIGHT(1)
+      END IF
+
+C///  RECONSTRUCT THE WEIGHTS.
+
+      DO 3050 K = 1, POINTS - 1
+         WEIGHT(K) = VARY1(K)
+         IF (1 .LT. K) WEIGHT(K) = WEIGHT(K) + VARY2(K)
+         IF (K .LT. POINTS - 1) WEIGHT(K) = WEIGHT(K) + VARY2(K + 1)
+3050  CONTINUE
+
+C///  MARK THE INTERVALS TO HALVE.
+
+      COUNT = 0
+      DO 3060 K = 1, POINTS - 1
+         IF (COUNT .LT. MORE .AND. LEAST .LE. WEIGHT(K)) THEN
+            COUNT = COUNT + 1
+            MARK(K) = .TRUE.
+         END IF
+3060  CONTINUE
+
+c HACK  if one point is marked, mark them all
+c      if (COUNT .GT. 0) then
+c         COUNT = 0
+c         DO K = 1, POINTS - 1
+c            COUNT = COUNT + 1
+c            MARK(K) = .TRUE.
+c         ENDDO
+c      endif
+
+      MORE = COUNT
+
+C///////////////////////////////////////////////////////////////////////
+C
+C     HALVE THE INTERVALS, IF ANY.
+C
+C///////////////////////////////////////////////////////////////////////
+
+C///  FORM THE TOTAL NUMBER OF POINTS IN THE NEW GRID.
+
+      TOTAL = POINTS + MORE
+      IF (0 .EQ. MORE) GO TO 4070
+
+C///  TOP OF THE BLOCK TO CREATE THE NEW GRID.  CHECK THE ORDER.
+
+      COUNT = 0
+      LENGTH = ABS (X(POINTS) - X(1))
+      DO 4010 K = 1, POINTS - 1
+         IF (MARK(K)) THEN
+            MEAN = 0.5 * (X(K) + X(K + 1))
+            IF (.NOT. ((X(K) .LT. MEAN .AND. MEAN .LT. X(K + 1))
+     +         .OR. (X(K + 1) .LT. MEAN .AND. MEAN .LT. X(K))))
+     +         COUNT = COUNT + 1
+         END IF
+4010  CONTINUE
+      ERROR = .NOT. (COUNT .EQ. 0)
+      IF (ERROR) GO TO 9009
+
+C///  ADD THE NEW POINTS.  INTERPOLATE X AND THE BOUNDS.
+
+      NEW = TOTAL
+      DO 4040 OLD = POINTS, 2, - 1
+         X(NEW) = X(OLD)
+         DO 4020 J = 1, COMPS
+            U(J, NEW) = U(J, OLD)
+4020     CONTINUE
+         NEW = NEW - 1
+
+         IF (MARK(OLD - 1)) THEN
+            X(NEW) = 0.5 * (X(OLD) + X(OLD - 1))
+            DO 4030 J = 1, COMPS
+               U(J, NEW) = 0.5 * (U(J, OLD) + U(J, OLD - 1))
+4030        CONTINUE
+            NEW = NEW - 1
+         END IF
+4040  CONTINUE
+
+C///  MARK THE NEW POINTS.
+
+      NEW = TOTAL
+      DO 4050 OLD = POINTS, 2, - 1
+         MARK(NEW) = .FALSE.
+         NEW = NEW - 1
+         IF (MARK(OLD - 1)) THEN
+            MARK(NEW) = .TRUE.
+            NEW = NEW - 1
+         END IF
+4050  CONTINUE
+      MARK(NEW) = .FALSE.
+
+C///  UPDATE THE NUMBER OF POINTS.
+
+      FORMER = POINTS
+      POINTS = TOTAL
+
+C///  ALLOW THE USER TO UPDATE THE SOLUTION.
+
+      CALL TWCOPY (COMPS * POINTS, U, BUFFER)
+      SIGNAL = 'UPDATE'
+C     GO TO 4060 WHEN ROUTE = 1
+      ROUTE = 1
+      GO TO 99999
+4060  CONTINUE
+      SIGNAL = ' '
+      CALL TWCOPY (COMPS * POINTS, BUFFER, U)
+
+C///  BOTTOM OF THE BLOCK TO CREATE A NEW GRID.
+
+4070  CONTINUE
+
+C///////////////////////////////////////////////////////////////////////
+C
+C     EPILOGUE.
+C
+C///////////////////////////////////////////////////////////////////////
+
+C///  PRINT.
+
+      IF (0 .LT. LEVELM .AND. 0 .LT. TEXT) THEN
+         TEMP1 = RATIO1(1)
+         DO 5010 K = 2, FORMER - 1
+            TEMP1 = MAX (TEMP1, RATIO1(K))
+5010     CONTINUE
+
+         TEMP2 = RATIO2(2)
+         DO 5020 K = 3, FORMER - 1
+            TEMP2 = MAX (TEMP2, RATIO2(K))
+5020     CONTINUE
+
+         IF (SIGNIF .EQ. 0) THEN
+            WRITE (TEXT, 10002) ID
+         ELSE
+            WRITE (TEXT, 10003) TEMP1, TEMP2, TOLER1, TOLER2
+            IF (MOST .EQ. 0) THEN
+               WRITE (TEXT, 10004) ID
+            ELSE IF (MORE .EQ. 0) THEN
+               WRITE (TEXT, 10005) ID
+            ELSE
+               WRITE (TEXT, 10006)
+
+               OLD = 0
+               DO 5030 K = 1, POINTS
+                  IF (.NOT. MARK(K)) THEN
+                     OLD = OLD + 1
+c                     dx = 0.0d0
+                     IF (1 .LT. K) THEN
+c                        dx = x(k)-x(k-1)
+                        IF (VARY1(OLD - 1) .NE. 0.0) THEN
+                           WRITE (WORD, '(F4.2, I4)') RATIO1(OLD - 1),
+     +                        VARY1(OLD - 1)
+                        ELSE
+                           WRITE (WORD, '(F4.2, I4)') RATIO1(OLD - 1)
+                        END IF
+                        IF (MARK(K - 1)) THEN
+                           WRITE (TEXT, 10007) K - 1, X(K - 1), WORD
+                        ELSE
+                           WRITE (TEXT, 10008) WORD
+                        END IF
+                     END IF
+
+                     IF (1 .LT. K .AND. K .LT. POINTS) THEN
+                        IF (VARY2(OLD) .NE. 0.0) THEN
+                           WRITE (WORD, '(F4.2, I4)') RATIO2(OLD),
+     +                        VARY2(OLD)
+                        ELSE
+                           WRITE (WORD, '(F4.2, I4)') RATIO2(OLD)
+                        END IF
+                        WRITE (TEXT, 10009) K, X(K), WORD
+                     ELSE
+                        WRITE (TEXT, 10009) K, X(K)
+                     END IF
+                  END IF
+5030           CONTINUE
+            END IF
+         END IF
+
+         IF (0 .LT. LEVELD .AND. 0 .LT. MORE) THEN
+            WRITE (TEXT, 10010) ID
+            CALL TWCOPY (COMPS * POINTS, U, BUFFER)
+            SIGNAL = 'SHOW'
+C           GO TO 5040 WHEN ROUTE = 2
+            ROUTE = 2
+            GO TO 99999
+         END IF
+      END IF
+5040  CONTINUE
+      SIGNAL = ' '
+
+C///  SET THE COMPLETION STATUS FLAGS.
+
+      NEWX = 0 .LT. MORE
+      SUCCES = 0 .EQ. MOST
+
+C///////////////////////////////////////////////////////////////////////
+C
+C     INFORMATIVE MESSAGES.
+C
+C///////////////////////////////////////////////////////////////////////
+
+10001 FORMAT
+     +  (/1X, A9, 'SELECT A GRID.')
+
+10002 FORMAT
+     +  (/1X, A9, 'SUCCESS.  THE GRID IS ADEQUATE BECAUSE ALL ACTIVE'
+     +  /10X, 'COMPONENTS ARE INSIGNIFICANT.')
+
+10003 FORMAT
+C              123456789-   1234567   1234567
+     + (/15X, '             RATIO 1   RATIO 2'
+     +  /15X, '             -------   -------'
+     +  /15X, '    ACTUAL', 2F10.3
+     +  /15X, '   DESIRED', 2F10.3)
+
+10004 FORMAT
+     +  (/1X, A9, 'SUCCESS.  THE GRID IS ADEQUATE.')
+
+10005 FORMAT
+     +  (/1X, A9, 'FAILURE.  MORE POINTS ARE NEEDED BUT NONE CAN BE'
+     +  /10X, 'ADDED.')
+
+10006 FORMAT
+     + (/10X, 'THE NEW GRID (* MARKS NEW POINTS):'
+C              123456   123456789-123456   12345678   12345678
+     + //10X, '                             LARGEST RATIOS AND'
+     +  /10X, ' INDEX         GRID POINT      NUMBER TOO LARGE'
+     +  /10X, '------   ----------------   -------------------'
+     +  /10X, '                             RATIO 1    RATIO 2')
+
+10007 FORMAT
+     +  (10X, I6, '*  ', 1P, E16.9, 0P, 3X, A8)
+
+10008 FORMAT
+     +  (38X, A8)
+
+10009 FORMAT
+     +  (10X, I6, '   ', 1P, E16.9, 0P, 14X, A8)
+
+10010 FORMAT
+     +  (/1X, A9, 'THE SOLUTION GUESS FOR THE NEW GRID:')
+
+C///////////////////////////////////////////////////////////////////////
+C
+C     ERROR MESSAGES.
+C
+C///////////////////////////////////////////////////////////////////////
+
+      GO TO 99999
+
+9001  IF (0 .LT. TEXT) WRITE (TEXT, 99001) ID, ROUTE
+      IF (.NOT. MESS) GO TO 99999
+
+9002  IF (0 .LT. TEXT) WRITE (TEXT, 99002) ID, COMPS, POINTS
+      IF (.NOT. MESS) GO TO 99999
+
+9003  IF (0 .LT. TEXT) WRITE (TEXT, 99003) ID, PADD
+      IF (.NOT. MESS) GO TO 99999
+
+9004  IF (0 .LT. TEXT) WRITE (TEXT, 99004) ID, POINTS, PMAX
+      IF (.NOT. MESS) GO TO 99999
+
+9005  IF (0 .LT. TEXT) WRITE (TEXT, 99005) ID
+      IF (.NOT. MESS) GO TO 99999
+
+9006  IF (0 .LT. TEXT) WRITE (TEXT, 99006) ID, TOLER0
+      IF (.NOT. MESS) GO TO 99999
+
+9007  IF (0 .LT. TEXT) WRITE (TEXT, 99007) ID, TOLER1, TOLER2
+      IF (.NOT. MESS) GO TO 99999
+
+9008  IF (0 .LT. TEXT) WRITE (TEXT, 99008) ID
+      IF (.NOT. MESS) GO TO 99999
+
+9009  IF (0 .LT. TEXT) WRITE (TEXT, 99009) ID
+      IF (.NOT. MESS) GO TO 99999
+
+99001 FORMAT
+     +  (/1X, A9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.'
+     + //10X, I10, '  ROUTE')
+
+99002 FORMAT
+     +  (/1X, A9, 'ERROR.  THERE MUST BE AT LEAST ONE COMPONENT AND AT'
+     +  /10X, 'LEAST TWO POINTS.'
+     + //10X, I10, '  COMPS, COMPONENTS'
+     +  /10X, I10, '  POINTS')
+
+99003 FORMAT
+     +  (/1X, A9, 'ERROR.  THE LIMIT ON POINTS ADDED TO A GRID MUST BE'
+     +  /10X, 'ZERO OR POSITIVE.'
+     + //10X, I10, '  PADD, LIMIT ON ADDED POINTS')
+
+99004 FORMAT
+     +  (/1X, A9, 'ERROR.  POINTS IS OUT OF RANGE.'
+     + //10X, I10, '  POINTS'
+     +  /10X, I10, '  PMAX, LIMIT ON POINTS')
+
+99005 FORMAT
+     +  (/1X, A9, 'ERROR.  THERE ARE NO ACTIVE COMPONENTS.')
+
+99006 FORMAT
+     +  (/1X, A9, 'ERROR.  THE BOUNDS ON MAGNITUDE AND RELATIVE CHANGE'
+     +  /10X, 'OF MAGNITUDE FOR INSIGNIFICANT COMPONENTS MUST BE'
+     +  /10X, 'POSITIVE.'
+     + //10X, 1P, E10.2, '  TOLER0, SIGNIFICANCE LEVEL')
+
+99007 FORMAT
+     +  (/1X, A9, 'ERROR.  THE BOUNDS ON RELATIVE CHANGES IN MAGNITUDE'
+     +  /10X, 'AND ANGLE MUST LIE BETWEEN 0 AND 1.'
+     + //10X, 1P, E10.2, '  TOLER1'
+     +  /10X, 1P, E10.2, '  TOLER2')
+
+99008 FORMAT
+     +  (/1X, A9, 'ERROR.  THE GRID IS NOT ORDERED.')
+
+99009 FORMAT
+     +  (/1X, A9, 'ERROR.  SOME INTERVALS IN THE GRID ARE TOO SHORT.'
+     +  /10X, 'THE NEW GRID WOULD NOT BE ORDERED.')
+
+      STOP
+99999 CONTINUE
+      RETURN
+      END
 
 end module twopnt_core
 

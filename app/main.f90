@@ -47,7 +47,7 @@ program TWMAIN
     real(RK), dimension(COMPS*PMAX) :: BUFFER
     real(RK), dimension(COMPS,PMAX) :: U,U0
     real(RK), dimension(PMAX) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0,X
-    real(RK) :: CONDIT,STRIDE,VALUE
+    real(RK) :: CONDIT,STRIDE
     logical  :: ACTIVE(COMPS), MARK(PMAX)
     integer  :: IWORK(ISIZE), PIVOT(COMPS*PMAX)
 
@@ -293,7 +293,6 @@ program TWMAIN
     99007 FORMAT(/1X, A9, 'ERROR.  TWSHOW FAILS.')
     99008 FORMAT(/1X, A9, 'ERROR.  TWSOLV FAILS.')
     99009 FORMAT(/1X, A9, 'ERROR.  TWOPNT DOES NOT SOLVE THE PROBLEM.'//10X, '   REPORT:  ', A)
-    99010 FORMAT(/1X, A9, 'ERROR.  TWPLOT FAILS.')
 
     contains
 
@@ -336,12 +335,24 @@ program TWMAIN
           logical, intent(out) :: ERROR
           logical, intent(in)  :: TIME
 
-          real(RK) :: A0, A1, A2, B0, B1, B2, C0, C1, C2, CP, OMEGA, P, R, STRIDE, TEMP, &
-                      TMAX, TZERO, W, WMAX
+          real(RK) :: A0, A1, A2, B0, B1, B2, C0, C1, C2, OMEGA, STRIDE, TEMP, TMAX, TZERO, WMAX
           real(RK), dimension(POINTS) :: F, F0, G, G0, H, K, LAMBDA, MU, RHO, T, T0, X
           real(RK), dimension(COMPS, POINTS) :: BUFFER, U0(COMPS, POINTS)
           INTEGER :: J
           INTRINSIC :: EXP, LOG
+
+          ! PRESSURE AT 1 STANDARD ATMOSPHERE
+          real(RK), PARAMETER :: P = 1013250.0_RK
+
+          ! MOLECULAR WEIGHT OF ARGON
+          real(RK), PARAMETER :: W = 39.948_RK
+
+          ! UNIVERSAL GAS CONSTANT
+          real(RK), PARAMETER :: R = 83140000.0_RK
+
+          ! SPECIFIC HEAT OF ARGON AT CONSTANT PRESSURE [ERGS / (GM * K)]
+          real(RK), PARAMETER :: CP = R * 2.5_RK / W
+
 
           ! Check the arguments
           ERROR = .NOT. POINTS>=2
