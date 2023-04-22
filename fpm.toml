@@ -8,11 +8,11 @@ copyright = "Copyright 2023, Federico Perini"
 auto-executables = true
 auto-tests = true
 auto-examples = true
-module-naming = false
+module-naming = "twopnt"
 [install]
 library = false
 [fortran]
-implicit-typing = false
-implicit-external = false
+implicit-typing = true
+implicit-external = true
 source-form = "free"
 

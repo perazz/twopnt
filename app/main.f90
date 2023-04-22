@@ -43,10 +43,11 @@ program TWMAIN
     character(len=80) :: VERSIO
 
     type(twcom) :: settings
-    real(BK) :: A(ASIZE), ABOVE(COMPS), BELOW(COMPS),RWORK(RSIZE)
-    real(BK), dimension(COMPS*PMAX) :: BUFFER,U,U0
-    real(BK), dimension(PMAX) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0,X
-    real(BK) :: CONDIT,STRIDE,VALUE
+    real(RK) :: A(ASIZE), ABOVE(COMPS), BELOW(COMPS),RWORK(RSIZE)
+    real(RK), dimension(COMPS*PMAX) :: BUFFER
+    real(RK), dimension(COMPS,PMAX) :: U,U0
+    real(RK), dimension(PMAX) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0,X
+    real(RK) :: CONDIT,STRIDE,VALUE
     logical  :: ACTIVE(COMPS), MARK(PMAX)
     integer  :: IWORK(ISIZE), PIVOT(COMPS*PMAX)
 
@@ -59,19 +60,19 @@ program TWMAIN
     ! *** PROBLEM PARAMETERS. ***
 
     ! ROTATION RATE AT POROUS DISK
-    real(BK), parameter :: OMEGA = 4.0_BK * pi
+    real(RK), parameter :: OMEGA = 4.0_RK * pi
 
     ! GAS TEMPERATURE AT POROUS DISK
-    real(BK), parameter :: TMAX = 1000.0_BK
+    real(RK), parameter :: TMAX = 1000.0_RK
 
     ! GAS TEMPERATURE AT SOLID DISK
-    real(BK), parameter :: TZERO = 300.0_BK
+    real(RK), parameter :: TZERO = 300.0_RK
 
     ! FLOW AT POROUS DISK
-    real(BK), parameter :: WMAX = - 2.0_BK
+    real(RK), parameter :: WMAX = - 2.0_RK
 
     ! DISTANCE BETWEEN DISKS
-    real(BK), parameter :: ZMAX = 5.0_BK
+    real(RK), parameter :: ZMAX = 5.0_RK
 
     ! *** SET TWOPNT CONTROLS. ***
 
@@ -95,36 +96,36 @@ program TWMAIN
     call settings%set(ERROR, TEXT, 'STEPS2', 50)
     IF (ERROR) GO TO 9002
 
-    call settings%set(ERROR, TEXT, 'STRID0', 1.0e-3_BK)
+    call settings%set(ERROR, TEXT, 'STRID0', 1.0e-3_RK)
     IF (ERROR) GO TO 9003
 
-    call settings%set(ERROR, TEXT, 'TINC', 3.16_BK)
+    call settings%set(ERROR, TEXT, 'TINC', 3.16_RK)
     IF (ERROR) GO TO 9003
 
-    call settings%set(ERROR, TEXT, 'TOLER1', 0.1_BK)
+    call settings%set(ERROR, TEXT, 'TOLER1', 0.1_RK)
     IF (ERROR) GO TO 9003
 
-    call settings%set(ERROR, TEXT, 'TOLER2', 0.1_BK)
+    call settings%set(ERROR, TEXT, 'TOLER2', 0.1_RK)
     IF (ERROR) GO TO 9003
 
     if (RELAXED_TOLERANCES) then
-        call settings%set(ERROR, TEXT, 'SSABS', 1.0e-9_BK)
+        call settings%set(ERROR, TEXT, 'SSABS', 1.0e-9_RK)
         IF (ERROR) GO TO 9003
 
-        call settings%set(ERROR, TEXT, 'TDABS', 1.0e-9_BK)
+        call settings%set(ERROR, TEXT, 'TDABS', 1.0e-9_RK)
         IF (ERROR) GO TO 9003
 
-        call settings%set(ERROR, TEXT, 'SSREL', 1.0e-4_BK)
+        call settings%set(ERROR, TEXT, 'SSREL', 1.0e-4_RK)
         IF (ERROR) GO TO 9003
 
-        call settings%set(ERROR, TEXT, 'TDREL', 1.0e-4_BK)
+        call settings%set(ERROR, TEXT, 'TDREL', 1.0e-4_RK)
         IF (ERROR) GO TO 9003
     endif
 
     ! INITIALIZE ARRAYS FOR TWOPNT.
 
     ! FORM THE INITIAL GRID.
-    FORALL(J=1:POINTS) X(J) = ZMAX*(REAL(J-1,BK)/REAL(POINTS-1,BK))
+    FORALL(J=1:POINTS) X(J) = ZMAX*(REAL(J-1,RK)/REAL(POINTS-1,RK))
 
     ! CHOOSE GUESSES FOR THE UNKNOWNS.
     init_unknowns: DO J = 1, POINTS
@@ -273,9 +274,6 @@ program TWMAIN
              CALL twlast(LENGTH, REPORT)
              WRITE (TEXT, 99009) ID, REPORT(1:LENGTH)
           END IF
-          return
-    9010  IF (0 .LT. TEXT) WRITE (TEXT, 99010) ID; return
-
     return
 
     ! INFORMATIVE MESSAGES.
@@ -342,7 +340,7 @@ program TWMAIN
                       TMAX, TZERO, W, WMAX
           real(RK), dimension(POINTS) :: F, F0, G, G0, H, K, LAMBDA, MU, RHO, T, T0, X
           real(RK), dimension(COMPS, POINTS) :: BUFFER, U0(COMPS, POINTS)
-          INTEGER :: J,
+          INTEGER :: J
           INTRINSIC :: EXP, LOG
 
           ! Check the arguments

@@ -33,6 +33,7 @@ module twopnt_core
     ! Numeric constants
     real(RK), parameter, public :: zero = 0.0_RK
     real(RK), parameter, public :: one  = 1.0_RK
+    real(RK), parameter, public :: pi   = acos(-1.0_RK)
 
     ! Machine epsilon and the absolute and relative perturbations.
     real(RK), parameter, public :: eps   = epsilon(0.0_RK)
@@ -1529,11 +1530,14 @@ end module twopnt_core
          above(groupa + comps * points + groupb), &
          below(groupa + comps * points + groupb), &
          buffer(groupa + comps * points + groupb), header(2, 3), &
-         name(names), s0(groupa + comps * points + groupb), &
+         name(names), &
+         s0(groupa + comps * points + groupb), &
+         s1(groupa + comps * points + groupb), &
          v0(groupa + comps * points + groupb), &
          v1(groupa + comps * points + groupb), &
          vsave(groupa + comps * points + groupb), &
-         y0(groupa + comps * points + groupb)
+         y0(groupa + comps * points + groupb), &
+         y1(groupa + comps * points + groupb)
 
 !///  SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
 
@@ -2869,7 +2873,7 @@ end module twopnt_core
       steps = number
 
       return
-      end
+      end subroutine search
 
 
 
