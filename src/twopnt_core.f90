@@ -30,6 +30,7 @@ module twopnt_core
 
     ! Numeric constants
     real(RK), parameter :: zero = 0.0_RK
+    real(RK), parameter :: one  = 1.0_RK
     real(RK), parameter :: eps  = epsilon(0.0_RK)
 
     logical, parameter :: DEBUG = .true.
@@ -394,6 +395,61 @@ module twopnt_core
           end if
       end function twtrim
 
+      ! Write a common logarithm to a character string
+      subroutine twlogr (string, value)
+          character(len=*), intent(inout) :: string
+          real(RK), intent(in) :: value
+
+          intrinsic :: len, log10
+
+          if (len(string)>=6) then
+              if (value<zero) then
+                  string = ' '
+              elseif (value==zero) then
+                  string = '  ZERO'
+              else
+                  write(string,'(F6.2)') log10(value)
+              end if
+          else
+              string = '******'
+          end if
+      end subroutine twlogr
+
+      ! SQUEEZE LEADING BLANKS AND MULTIPLE BLANKS FROM A CHARACTER
+      ! STRING.  RETURN THE LENGTH OF THE SQUEEZED STRING.
+      subroutine twsqez (length, string)
+          integer, intent(out) :: length
+          character(len=*), intent(inout) :: string
+          !implicit complex (a - z)
+
+          character :: char
+          integer :: j
+          intrinsic :: len
+          logical :: blank
+
+          ! SQUEEZE THE STRING.
+          length = 0
+          blank = .true.
+          do j = 1, len (string)
+             char = string (j : j)
+             if (.not. blank .or. char .ne. ' ') then
+                blank = char .eq. ' '
+                length = length + 1
+                string (length : length) = char
+             end if
+          end do
+
+          ! ADJUST THE LENGTH AND PAD THE STRING.
+          if (length>0) then
+             if (string (length : length) .eq. ' ') length = length - 1
+             if (length < len (string)) string (length + 1 : ) = ' '
+          else
+             length = 1
+          end if
+
+          return
+      end subroutine twsqez
+
       ! *******************************************************************************************************
       ! MATH
       ! *******************************************************************************************************
@@ -535,7 +591,6 @@ module twopnt_core
 
       end subroutine twshow
 
-
       ! COPY ONE VECTOR TO ANOTHER.
       pure subroutine twcopy (n, x, y)
           integer , intent(in)  :: n
@@ -544,6 +599,19 @@ module twopnt_core
           y = x
           return
       end subroutine twcopy
+
+      ! Compute the max-norm of a vector
+      pure subroutine twnorm (n, value, x)
+          integer,  intent(in) :: n
+          real(RK), intent(in) :: x(n)
+          real(RK), intent(out) :: value
+
+          intrinsic :: abs, max
+
+          value = zero
+          if (n>0) value = maxval(abs(x),1)
+
+      end subroutine twnorm
 
       ! SOLVE A SYSTEM OF LINEAR EQUATIONS USING THE MATRIX PREPARED BY TWPREP.
       subroutine twsolv(error, text, a, asize, buffer, comps, groupa, groupb, pivot, points)
@@ -678,13 +746,167 @@ module twopnt_core
       return
       end subroutine twgbsl
 
+      ! Factor a banded matrix and estimate the reciprocal of its condition number.
+      ! Based on _GBCO from the LINPACK library.
+      subroutine twgbco (a, lda, n, lower, upper, pivot, rcond, z)
+          integer, intent(in) :: lda, n, lower, upper, pivot(n)
+          real(RK), intent(inout) :: a(lda,n),z(n)
+          real(RK), intent(out) :: rcond
+
+          real(RK)  :: dsum, anorm, ek, s, sm, t, wk, wkm, ynorm
+          integer   :: first, info, j, jdiag, ju, k, last, mm
+          intrinsic :: abs, max, min, sign, sum
+
+          jdiag = lower + upper + 1
+
+          ! Compute the 1-norm of A
+          anorm = zero
+          do k = 1, n
+             first = max(lower + 1, jdiag + 1 - k)
+             last  = min(jdiag + lower, jdiag + n - k)
+             anorm = max(anorm, sum(abs(a(first:last,k))))
+          end do
+
+          ! Factor A
+          call twgbfa (a, lda, n, lower, upper, pivot, info)
+
+          ! Solve transpose(U) * W = E
+          ek = one
+          z  = zero
+
+          ju = 0
+          solve_1: do k = 1, n
+             if (z(k) /= zero) ek = sign(ek, -z(k))
+
+             if (abs (ek - z(k)) > abs (a(jdiag, k))) then
+                s  = abs (a(jdiag, k)) / abs (ek - z(k))
+                ek = s * ek
+                z  = s*z
+             end if
+
+             wk  = ek - z(k)
+             wkm = - ek - z(k)
+             s   = abs (wk)
+             sm  = abs (wkm)
+             if (a(jdiag, k) /= zero) then
+                wk  = wk / a(jdiag, k)
+                wkm = wkm / a(jdiag, k)
+             else
+                wk  = one
+                wkm = one
+             end if
+
+             ju = min (max (ju, upper + pivot(k)), n)
+             mm = jdiag
+             if (k + 1 <= ju) then
+                do j = k + 1, ju
+                   mm = mm - 1
+                   sm = sm + abs (z(j) + wkm * a(mm, j))
+                   z(j) = z(j) + wk * a(mm, j)
+                   s = s + abs (z(j))
+                end do
+
+                if (s < sm) then
+                   t = wkm - wk
+                   wk = wkm
+                   mm = jdiag
+                   do j = k + 1, ju
+                      mm = mm - 1
+                      z(j) = z(j) + t * a(mm, j)
+                   end do
+                end if
+             end if
+
+             z(k) = wk
+
+          end do solve_1
+
+          s = one/sum(abs(z))
+          z = s*z
+
+          ! Solve transpose(L) * Y = W
+          solve_2: do k = n, 1, - 1
+             dsum = zero
+             do j = 1, min (lower, n - k)
+                dsum = dsum + dble (a(jdiag + j, k)) * dble (z(k + j))
+             end do
+             z(k) = z(k) + dsum
+
+             if (one < abs (z(k))) then
+                s = one / abs (z(k))
+                z = s*z
+             end if
+
+             j    = pivot(k)
+             t    = z(j)
+             z(j) = z(k)
+             z(k) = t
+          end do solve_2
+
+          s = one / sum(abs(z))
+          z = s*z
+          ynorm = one
+
+          ! Solve L * V = Y
+          solve_3: do k = 1, n
+             j = pivot(k)
+             t = z(j)
+             z(j) = z(k)
+             z(k) = t
+
+             do j = 1, min (lower, n - k)
+                z(k + j) = t * a(jdiag + j, k) + z(k + j)
+             end do
+
+             if (one < abs (z(k))) then
+                s = one / abs (z(k))
+                z = s*z
+                ynorm = s * ynorm
+             end if
+
+          end do solve_3
+
+          s = one / sum(abs(z))
+          z = s*z
+          ynorm = s * ynorm
+
+          ! Solve U * Z = W
+          solve_4: do k = n, 1, - 1
+             if (abs (z(k)) > abs (a(jdiag, k))) then
+                s = abs (a(jdiag, k)) / abs (z(k))
+                z = s*z
+                ynorm = s*ynorm
+             end if
+
+             if (a(jdiag, k) /= zero) then
+                z(k) = z(k) / a(jdiag, k)
+             else
+                z(k) = one
+             end if
+
+             t = - z(k)
+             do j = 1, min (k, jdiag) - 1
+                z(k - j) = t * a(jdiag - j, k) + z(k - j)
+             end do
+          end do solve_4
+
+          s = one / sum(abs(z))
+          z = s*z
+          ynorm = s * ynorm
+
+          ! FORM RCOND
+          rcond = merge(ynorm/anorm,zero,anorm/=zero)
+
+          return
+      end subroutine twgbco
+
       ! *******************************************************************************************************
       ! UTILITIES
       ! *******************************************************************************************************
 
       ! Obtain computing time in seconds.
       subroutine twtime(timer)
-         double precision, intent(out) :: timer
+         real(RK), intent(out) :: timer
          real :: temp
 
          call cpu_time(temp)
@@ -692,49 +914,37 @@ module twopnt_core
 
       end subroutine twtime
 
-      ! SQUEEZE LEADING BLANKS AND MULTIPLE BLANKS FROM A CHARACTER
-      ! STRING.  RETURN THE LENGTH OF THE SQUEEZED STRING.
-      subroutine twsqez (length, string)
-          integer, intent(out) :: length
-          character(len=*), intent(inout) :: string
-          !implicit complex (a - z)
+      ! Obtain elapset computing time in seconds.
+      subroutine twlaps (timer)
+         real(RK), intent(inout) :: timer
 
-          character :: char
-          integer :: j
-          intrinsic :: len
-          logical :: blank
+         real(RK) :: temp
 
-          ! SQUEEZE THE STRING.
-          length = 0
-          blank = .true.
-          do j = 1, len (string)
-             char = string (j : j)
-             if (.not. blank .or. char .ne. ' ') then
-                blank = char .eq. ' '
-                length = length + 1
-                string (length : length) = char
-             end if
-          end do
+         call twtime(temp)
+         timer = temp - timer
 
-          ! ADJUST THE LENGTH AND PAD THE STRING.
-          if (length>0) then
-             if (string (length : length) .eq. ' ') length = length - 1
-             if (length < len (string)) string (length + 1 : ) = ' '
-          else
-             length = 1
-          end if
+      end subroutine twlaps
 
-          return
-      end subroutine twsqez
+      ! Reserve space in an array
+      subroutine twgrab (error, last, first, number)
+          integer, intent(inout) :: first,last
+          integer, intent(in)    :: number
+          logical, intent(out)   :: error
+
+          intrinsic :: max
+
+          ! Check the arguments.
+          error = .not. (0 <= last);   if (error) return
+          error = .not. (0 <= number); if (error) return
+
+          ! Grab the space.
+          first = last + 1
+          last  = last + max (1, number)
+
+      end subroutine twgrab
 
 end module twopnt_core
 
-!     cvs $revision: 1.1.1.1 $ reposited $date: 2006/05/26 19:09:34 $
-
-!///////////////////////////////////////////////////////////////////////
-
-!
-!///////////////////////////////////////////////////////////////////////
 
       subroutine evolve &
         (error, text, &
@@ -2124,232 +2334,7 @@ end module twopnt_core
       return
       end
 
-      subroutine twgbco (a, lda, n, lower, upper, pivot, rcond, z)
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     T W O P N T
-!
-!     TWGBCO
-!
-!     FACTOR A BANDED MATRIX AND ESTIMATE THE RECIPROCAL OF ITS
-!     CONDITION NUMBER.  BASED ON _GBCO FROM THE LINPACK LIBRARY.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      double precision dsum
-!**** PRECISION > DOUBLE
-      double precision a, anorm, ek, rcond, s, sm, sum, t, wk, wkm, ynorm, z
-      external &
-         twgbfa
-      integer &
-         first, info, j, jdiag, ju, k, last, lda, lower, mm, n, pivot, &
-         upper
-      intrinsic &
-         abs, dble, max, min, sign
-
-      dimension &
-         a(lda,n), pivot(n), z(n)
-
-      jdiag = lower + upper + 1
-
-!///  COMPUTE THE 1-NORM OF A
-
-      anorm = 0.0
-      do 1020 k = 1, n
-         first = max (lower + 1, jdiag + 1 - k)
-         last = min (jdiag + lower, jdiag + n - k)
-         sum = 0.0
-         do 1010 j = first, last
-            sum = sum + abs (a(j, k))
-1010     continue
-         anorm = max (anorm, sum)
-1020  continue
-
-!///  FACTOR A
-
-      call twgbfa (a, lda, n, lower, upper, pivot, info)
-
-!///  SOLVE TRANSPOSE(U) * W = E
-
-      ek = 1.0
-      do 2010 j = 1, n
-         z(j) = 0.0
-2010  continue
-
-      ju = 0
-      do 2050 k = 1, n
-         if (z(k) /= 0.0) ek = sign (ek, - z(k))
-
-         if (abs (ek - z(k)) > abs (a(jdiag, k))) then
-            s = abs (a(jdiag, k)) / abs (ek - z(k))
-            ek = s * ek
-            do 2020 j = 1, n
-               z(j) = s * z(j)
-2020        continue
-         end if
-
-         wk = ek - z(k)
-         wkm = - ek - z(k)
-         s = abs (wk)
-         sm = abs (wkm)
-         if (a(jdiag, k) /= 0.0) then
-            wk = wk / a(jdiag, k)
-            wkm = wkm / a(jdiag, k)
-         else
-            wk = 1.0
-            wkm = 1.0
-         end if
-
-         ju = min (max (ju, upper + pivot(k)), n)
-         mm = jdiag
-         if (k + 1 <= ju) then
-            do 2030 j = k + 1, ju
-               mm = mm - 1
-               sm = sm + abs (z(j) + wkm * a(mm, j))
-               z(j) = z(j) + wk * a(mm, j)
-               s = s + abs (z(j))
-2030        continue
-
-            if (s < sm) then
-               t = wkm - wk
-               wk = wkm
-               mm = jdiag
-               do 2040 j = k + 1, ju
-                  mm = mm - 1
-                  z(j) = z(j) + t * a(mm, j)
-2040           continue
-            end if
-         end if
-
-         z(k) = wk
-2050  continue
-
-      sum = 0.0
-      do 2060 j = 1, n
-         sum = sum + abs (z(j))
-2060  continue
-      s = 1.0 / sum
-
-      do 2070 j = 1, n
-         z(j) = s * z(j)
-2070  continue
-
-!///  SOLVE TRANSPOSE(L) * Y = W
-
-      do 3030 k = n, 1, - 1
-         dsum = 0.0
-         do 3010 j = 1, min (lower, n - k)
-            dsum = dsum + dble (a(jdiag + j, k)) * dble (z(k + j))
-3010     continue
-         z(k) = z(k) + dsum
-
-         if (1.0 < abs (z(k))) then
-            s = 1.0 / abs (z(k))
-            do 3020 j = 1, n
-               z(j) = s * z(j)
-3020        continue
-         end if
-
-         j = pivot(k)
-         t = z(j)
-         z(j) = z(k)
-         z(k) = t
-3030  continue
-
-      sum = 0.0
-      do 3040 j = 1, n
-         sum = sum + abs (z(j))
-3040  continue
-      s = 1.0 / sum
-
-      do 3050 j = 1, n
-         z(j) = s * z(j)
-3050  continue
-
-      ynorm = 1.0
-
-!///  SOLVE L * V = Y
-
-      do 4030 k = 1, n
-         j = pivot(k)
-         t = z(j)
-         z(j) = z(k)
-         z(k) = t
-
-         do 4010 j = 1, min (lower, n - k)
-            z(k + j) = t * a(jdiag + j, k) + z(k + j)
-4010     continue
-
-         if (1.0 < abs (z(k))) then
-            s = 1.0 / abs (z(k))
-            do 4020 j = 1, n
-               z(j) = s * z(j)
-4020        continue
-
-            ynorm = s * ynorm
-         end if
-4030  continue
-
-      sum = 0.0
-      do 4040 j = 1, n
-         sum = sum + abs (z(j))
-4040  continue
-      s = 1.0 / sum
-
-      do 4050 j = 1, n
-         z(j) = s * z(j)
-4050  continue
-
-      ynorm = s * ynorm
-
-!///  SOLVE U * Z = W
-
-      do 5030 k = n, 1, - 1
-         if (abs (z(k)) > abs (a(jdiag, k))) then
-            s = abs (a(jdiag, k)) / abs (z(k))
-            do 5010 j = 1, n
-               z(j) = s * z(j)
-5010        continue
-            ynorm = s*ynorm
-         end if
-
-         if (a(jdiag, k) /= 0.0) then
-            z(k) = z(k) / a(jdiag, k)
-         else
-            z(k) = 1.0
-         end if
-
-         t = - z(k)
-         do 5020 j = 1, min (k, jdiag) - 1
-            z(k - j) = t * a(jdiag - j, k) + z(k - j)
-5020     continue
-5030  continue
-
-      sum = 0.0
-      do 5040 j = 1, n
-         sum = sum + abs (z(j))
-5040  continue
-      s = 1.0 / sum
-
-      do 5050 j = 1, n
-         z(j) = s * z(j)
-5050  continue
-
-      ynorm = s * ynorm
-
-!///  FORM RCOND
-
-      if (anorm /= 0.0) then
-         rcond = ynorm / anorm
-      else
-         rcond = 0.0
-      end if
-
-!///  EXIT
-
-      return
-      end subroutine twgbco
       subroutine twgbfa (a, lda, n, lower, upper, pivot, info)
 
 !///////////////////////////////////////////////////////////////////////
@@ -2462,131 +2447,8 @@ end module twopnt_core
       return
       end subroutine twgbfa
 
-      subroutine twgrab (error, last, first, number)
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     T W O P N T
-!
-!     TWGRAB
-!
-!     RESERVE SPACE IN AN ARRAY.
-!
-!///////////////////////////////////////////////////////////////////////
 
-      implicit complex (a - z)
-
-      integer &
-         first, last, number
-      intrinsic &
-         max
-      logical &
-         error
-
-!///  CHECK THE ARGUMENTS.
-
-      error = .not. (0 <= last)
-      if (error) go to 99999
-
-      error = .not. (0 <= number)
-      if (error) go to 99999
-
-!///  GRAB THE SPACE.
-
-      first = last + 1
-      last = last + max (1, number)
-
-!///  EXIT.
-
-99999 continue
-      return
-      end subroutine twgrab
-      subroutine twlaps (timer)
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     T W O P N T
-!
-!     TWLAPS
-!
-!     OBTAIN ELAPSED COMPUTING TIME IN SECONDS.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      implicit complex (a - z)
-      external twtime
-!**** PRECISION > DOUBLE
-      double precision    temp, timer
-
-      call twtime (temp)
-      timer = temp - timer
-
-      return
-      end subroutine twlaps
-
-      subroutine twlogr (string, value)
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     T W O P N T
-!
-!     TWLOGR
-!
-!     WRITE A COMMON LOGARITHM TO A CHARACTER STRING.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      implicit complex (a - z)
-
-      character string*(*)
-!**** PRECISION > DOUBLE
-      double precision    value
-      intrinsic len, log10
-
-      if (6 <= len (string)) then
-         if (value < 0.0) then
-            string = ' '
-         else if (value == 0.0) then
-            string = '  ZERO'
-         else
-            write (string, '(F6.2)') log10 (value)
-         end if
-      else
-         string = '******'
-      end if
-
-      return
-      end subroutine twlogr
-      subroutine twnorm (n, value, x)
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     T W O P N T
-!
-!     TWNORM
-!
-!     COMPUTE THE MAX-NORM OF A VECTOR.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      implicit complex (a - z)
-
-!***  PRECISION > DOUBLE
-      double precision    value, x
-      integer &
-         j, n
-      intrinsic &
-         abs, max
-
-      dimension x(n)
-
-      value = 0.0
-      do 0100 j = 1, n
-         value = max (value, abs (x(j)))
-0100  continue
-
-      return
-      end subroutine twnorm
       subroutine twopnt &
         (error, text, versio, &
          above, active, below, buffer, comps, condit, groupa, groupb, &
