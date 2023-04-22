@@ -26,15 +26,21 @@ module twopnt_core
     implicit none
     private
 
-    integer, parameter :: RK = real64
+    public :: twlast
+
+    integer, parameter, public :: RK = real64
 
     ! Numeric constants
     real(RK), parameter :: zero = 0.0_RK
     real(RK), parameter :: one  = 1.0_RK
-    real(RK), parameter :: eps  = epsilon(0.0_RK)
+
+    ! Machine epsilon and the absolute and relative perturbations.
+    real(RK), parameter :: eps   = epsilon(0.0_RK)
+    real(RK), parameter :: absol = sqrt(eps)
+    real(RK), parameter :: relat = sqrt(eps)
+
 
     logical, parameter :: DEBUG = .true.
-
     integer, parameter :: CONTRL_MAX_LEN = 40
 
     ! Settings structure (formerly a common block)
@@ -991,6 +997,445 @@ module twopnt_core
               end function true
 
       end subroutine twgbfa
+
+      ! Evaluate a block tridiagonal Jacobian matrix by one-sided finite differences and reverse
+      ! communication, pack the matrix into the LINPACK banded form, scale the rows, and factor the
+      ! matrix using LINPACK's SGBCO
+      subroutine twprep(error, text, a, asize, buffer, comps, condit, groupa, groupb, pivot, points, return_call)
+
+          integer,  intent(in)    :: text ! output unit
+          integer,  intent(in)    :: asize,groupa,groupb,comps,points
+          integer,  intent(inout) :: pivot (groupa + comps * points + groupb)
+          real(RK), intent(inout) :: buffer(groupa + comps * points + groupb)
+          real(RK), intent(inout) :: a(asize), condit
+          logical , intent(inout) :: return_call
+
+          real(RK) :: delta, temp
+          integer :: block, blocks, cfirst, clast, col, count, diag, j, lda, length, n, offset, &
+                     rfirst, rlast, route, row, skip, width
+          intrinsic :: abs, int, max, min, mod, sqrt
+          logical :: error, found
+          character(len=80) :: string
+
+          ! Parameters
+          integer, parameter :: lines = 20
+          character(len=*), parameter :: id = 'TWPREP:  '
+
+          ! SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
+          logical, parameter :: mess = .false.
+
+          save
+
+          ! ***** (1) PROLOGUE *****
+
+          ! Every-time initialization
+
+          ! IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
+          if (return_call) then
+             return_call = .false.
+             go to (2030, 3050) route
+             error = .true.
+             go to 9001
+          endif
+
+          ! CHECK THE ARGUMENTS.
+          n = groupa + comps * points + groupb
+          error = .not. (((0 < comps) .eqv. (0 < points)) .and. &
+                  0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
+                  0 <= groupb .and. 0 < n)
+          if (error) go to 9002
+
+          width = comps + max (comps, groupa, groupb) - 1
+          error = .not. ((3 * width + 2) * n <= asize)
+          if (error) go to 9003
+
+          ! WRITE ALL MESSAGES.
+          if (mess .and. 0 < text) then
+             route = 0
+             go to 9001
+          end if
+
+          ! Initialize counters and pointers
+
+          ! Main diagonal row in the packing which places diagonals in rows
+          diag = 2 * width + 1
+
+          ! Packed row dimension
+          lda  = 3 * width + 1
+          skip = 2 * width + 1
+
+          ! BLOCKS AND BLOCK SIZES
+          ! Temporarily store block sizes and pointers in array "pivot"
+          blocks = 0
+          if (0 < groupa) then
+             blocks = blocks + 1
+             pivot(blocks) = groupa
+          end if
+
+          do j = 1, points
+             blocks = blocks + 1
+             pivot(blocks) = comps
+          end do
+
+          if (0 < groupb) then
+             blocks = blocks + 1
+             pivot(blocks) = groupb
+          end if
+
+          ! ***** (2) INITIALIZE THE COLUMNS OF THE MATRIX *****
+
+          ! Store evaluation vector
+          a(:n) = buffer(:n)
+
+          ! Clear matrix
+          a(n+1:n+lda*n) = zero
+
+          ! EVALUATE THE FUNCTION AT THE UNPERTURBED X.
+
+    !     GO TO 2030 WHEN ROUTE = 1
+          route = 1
+          return_call = .true.
+          go to 99999
+    2030  continue
+
+          ! Place function values into the matrix.
+          clast = 0
+          do block = 1, blocks
+             cfirst = clast + 1
+             clast  = clast + pivot(block)
+
+             if (block > 1) then
+                rfirst = cfirst - pivot(block - 1)
+             else
+                rfirst = cfirst
+             end if
+
+             if (block < blocks) then
+                rlast = clast + pivot(block + 1)
+             else
+                rlast = clast
+             end if
+
+             do col = cfirst, clast
+                offset = n + diag - col + lda * (col - 1)
+                do row = rfirst, rlast
+                   a(offset + row) = buffer(row)
+                end do
+             end do
+          end do
+
+          ! ***** (3) Form the columns of the matrix. *****
+
+          column_groups: do
+
+              found = .false.
+
+              ! Restore the evaluation vector
+              buffer(:n) = a(:n)
+
+              ! Perturb vector at independent positions.
+              block = 1
+              cfirst = 1
+              perturb_vector: do while (block<=blocks)
+                   if (0 < pivot(block)) then
+                       found = .true.
+                       col = cfirst - 1 + pivot(block)
+                       delta = relat * a(col) + sign(absol,a(col))
+                       buffer(col) = buffer(col) + delta
+                       count = 3
+                   else
+                       count = 1
+                   end if
+
+                   do j = 1, count
+                      if (block == 1 .and. 0 < groupa) then
+                         cfirst = cfirst + groupa
+                      else if (block == blocks .and. 0 < groupb) then
+                         cfirst = cfirst + groupb
+                      else
+                         cfirst = cfirst + comps
+                      end if
+                      block = block + 1
+                   end do
+              end do perturb_vector
+
+              if (.not. found) exit column_groups
+
+              ! EVALUATE THE FUNCTION AT THE PERTURBED VALUES.
+              ! GO TO 3050 WHEN ROUTE = 2
+              route = 2
+              return_call = .true.
+              go to 99999
+              3050  continue
+
+              ! DIFFERENCE TO FORM THE COLUMNS OF THE JACOBIAN MATRIX.
+              block  = 1
+              cfirst = 1
+              form_columns: do while (block<=blocks)
+                 if (0 < pivot(block)) then
+                    col = cfirst - 1 + pivot(block)
+                    pivot(block) = pivot(block) - 1
+
+                    delta  = relat * a(col) + sign(absol,a(col))
+                    temp   = one / delta
+                    offset = n + diag - col + lda * (col - 1)
+
+                    if (block == 1 .and. 0 < groupa) then
+                       clast = cfirst + groupa - 1
+                    else if (block == blocks .and. 0 < groupb) then
+                       clast = cfirst + groupb - 1
+                    else
+                       clast = cfirst + comps - 1
+                    end if
+
+                    if (1 < block) then
+                       if (block == 2 .and. 0 < groupa) then
+                          rfirst = cfirst - groupa
+                       else
+                          rfirst = cfirst - comps
+                       end if
+                    else
+                       rfirst = cfirst
+                    end if
+
+                    if (block < blocks) then
+                       if (block == blocks - 1 .and. 0 < groupb) then
+                          rlast = clast + groupb
+                       else
+                          rlast = clast + comps
+                       end if
+                    else
+                       rlast = clast
+                    end if
+
+                    forall(row=rfirst:rlast) a(offset+row) = (buffer(row) - a(offset+row))*temp
+
+                    count = 3
+                 else
+                    count = 1
+                 end if
+
+                 do j = 1, count
+                    if (block == 1 .and. 0 < groupa) then
+                       cfirst = cfirst + groupa
+                    else if (block == blocks .and. 0 < groupb) then
+                       cfirst = cfirst + groupb
+                    else
+                       cfirst = cfirst + comps
+                    end if
+                    block = block + 1
+                 end do
+
+              end do form_columns
+
+          end do column_groups
+
+          ! ***** (4) CHECK FOR ZERO COLUMNS. *****
+          call count_zero_columns(a,n,diag,lda,width,count)
+          error = .not. (count == 0)
+          if (error) go to 9004
+
+          ! ***** (5) SCALE THE ROWS. *****
+          call scale_rows(a,n,diag,lda,width,count)
+          error = .not. (count == 0)
+          if (error) go to 9005
+
+          ! ***** (6) FACTOR THE MATRIX.
+          call twgbco(a(n+1), lda, n, width, width, pivot, condit, buffer)
+          error = condit == zero
+          if (error) go to 9006
+          condit = one/condit
+
+    !///////////////////////////////////////////////////////////////////////
+    !
+    !     INFORMATIVE MESSAGES.
+    !
+    !///////////////////////////////////////////////////////////////////////
+
+    80001 format(10X, a)
+    80002 format(10X, '... MORE')
+
+    !///////////////////////////////////////////////////////////////////////
+    !
+    !     ERROR MESSAGES.
+    !
+    !///////////////////////////////////////////////////////////////////////
+
+          go to 99999
+
+    9001  if (0 < text) write (text, 99001) id, route
+          if (.not. mess) go to 99999
+
+    9002  if (0 < text) write (text, 99002) id, &
+             comps, points, groupa, groupb, n
+          if (.not. mess) go to 99999
+
+    9003  if (0 < text) write (text, 99003) id, &
+             comps, points, groupa, groupb, n, width, &
+             (3 * width + 2) * n, asize
+          if (.not. mess) go to 99999
+
+    9004  if (0 < text) then
+             write (text, 99004) id, comps, points, groupa, groupb, &
+                groupa + comps * points + groupb, count
+             count = 0
+             do 8010 j = 1, groupa + comps * points + groupb
+                if (a(j) == 0.0 .or. mess) then
+                   count = count + 1
+                   if (count <= lines) then
+                      if (j <= groupa) then
+                         write (string, '(A, I10)') 'GROUP A ', j
+                      else if (j <= groupa + comps * points) then
+                         write (string, '(A, I10, A, I10)') &
+                            ' COMPONENT ', mod (j - groupa - 1, comps) + 1, &
+                            ' AT POINT ', int ((j - groupa - 1) / comps) + 1
+                      else
+                         write (string, '(A, I10)') &
+                            'GROUP B ', j - groupa - comps * points
+                      end if
+                      call twsqez (length, string)
+                      write (text, 80001) string (1 : length)
+                   end if
+                end if
+    8010     continue
+             if (lines < count) write (text, 80002)
+          end if
+          if (.not. mess) go to 99999
+
+    9005  if (0 < text) then
+             write (text, 99005) id, comps, points, groupa, groupb, &
+                groupa + comps * points + groupb, count
+             count = 0
+             do 8020 j = 1, groupa + comps * points + groupb
+                if (a(j) == 0.0 .or. mess) then
+                   count = count + 1
+                   if (count <= lines) then
+                      if (j <= groupa) then
+                         write (string, '(A, I10)') 'GROUP A ', j
+                      else if (j <= groupa + comps * points) then
+                         write (string, '(A, I10, A, I10)') &
+                            ' COMPONENT ', mod (j - groupa - 1, comps) + 1, &
+                            ' AT POINT ', int ((j - groupa - 1) / comps) + 1
+                      else
+                         write (string, '(A, I10)') &
+                            'GROUP B ', j - groupa - comps * points
+                      end if
+                      call twsqez (length, string)
+                      write (text, 80001) string (1 : length)
+                   end if
+                end if
+    8020     continue
+             if (lines < count) write (text, 80002)
+          end if
+          if (.not. mess) go to 99999
+
+        9006  if (0 < text) write (text, 99006) id
+              if (.not. mess) go to 99999
+
+        ! Formats section
+        99001 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
+                   //10X, i10, '  ROUTE')
+
+        99002 format(/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
+                    /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE, NUMBERS OF ALL TYPES' &
+                    /10X, 'OF UNKNOWNS MUST BE AT LEAST ZERO, AND TOTAL UNKNOWNS' &
+                    /10X, 'MUST BE POSITIVE.' &
+                   //10X, i10, '  COMPS, COMPONENTS' &
+                    /10X, i10, '  POINTS' &
+                    /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                    /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                    /10X, i10, '  TOTAL UNKNOWNS')
+
+        99003 format(/1X, a9, 'ERROR.  THE MATRIX SPACE IS TOO SMALL.' &
+                   //10X, i10, '  COMPS, COMPONENTS' &
+                    /10X, i10, '  POINTS' &
+                    /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                    /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                    /10X, i10, '  MATRIX ORDER' &
+                    /10X, i10, '  STRICT HALF BANDWIDTH' &
+                   //10X, i10, '  SPACE REQUIRED' &
+                    /10X, i10, '  ASIZE, PROVIDED')
+
+        99004 format(/1X, a9, 'ERROR.  SOME COLUMNS ARE ZERO.' &
+                   //10X, i10, '  COMPS, COMPONENTS' &
+                    /10X, i10, '  POINTS' &
+                    /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                    /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                    /10X, i10, '  TOTAL COLUMNS' &
+                    /10X, i10, '  ZERO COLUMNS' &
+                   //10X, 'UNKNOWNS WITH ZERO COLUMNS:'/)
+
+        99005 format(/1X, a9, 'ERROR.  SOME ROWS ARE ZERO.' &
+                   //10X, i10, '  COMPS, COMPONENTS' &
+                    /10X, i10, '  POINTS' &
+                    /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                    /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                    /10X, i10, '  TOTAL ROWS' &
+                    /10X, i10, '  ZERO ROWS' &
+                   //10X, 'ZERO ROWS:'/)
+
+        99006 format(/1X, a9, 'ERROR.  THE JACOBIAN MATRIX IS SINGULAR.')
+
+        stop
+        99999 continue
+        return
+      end subroutine twprep
+
+      !> Sum columns, put result in a(1:n), return count of zero columns
+      pure subroutine count_zero_columns(a,n,diag,lda,width,count)
+          real(RK), intent(inout) :: a(*)
+          integer , intent(in)    :: n,diag,lda,width
+          integer, intent(out)    :: count
+
+          integer :: col,row,offset
+          real(RK) :: col_sum
+
+          count = 0
+          do col = 1, n
+             offset = n + diag - col + lda * (col - 1)
+             col_sum = zero
+             do row = max (col - width, 1), min (col + width, n)
+                col_sum = col_sum + abs (a(offset + row))
+             end do
+             a(col) = col_sum
+             if (col_sum == zero) count = count + 1
+          end do
+
+      end subroutine count_zero_columns
+
+      !>
+      pure subroutine scale_rows(a,n,diag,lda,width,count)
+          real(RK), intent(inout) :: a(*)
+          integer , intent(in)    :: n,diag,lda,width
+          integer, intent(out)    :: count
+
+          integer :: col,row,offset
+          real(RK) :: col_sum,temp
+          intrinsic :: min, abs, max
+
+          count = 0
+          rows: do row = 1, n
+             offset = n + diag + row
+             col_sum = zero
+             do col = max (row - width, 1), min (row + width, n)
+                col_sum = col_sum + abs (a(offset - col + lda * (col - 1)))
+             end do
+
+             if (col_sum == zero) then
+                count = count + 1
+                a(row) = col_sum
+             else
+                temp = one / col_sum
+                a(row) = temp
+
+                do col = max (row - width, 1), min (row + width, n)
+                     a(offset - col + lda * (col - 1)) = &
+                     a(offset - col + lda * (col - 1)) * temp
+                end do
+             endif
+          end do rows
+
+      end subroutine scale_rows
 
       ! *******************************************************************************************************
       ! UTILITIES
@@ -4009,521 +4454,7 @@ end module twopnt_core
 99999 continue
       return
       end
-      subroutine twprep &
-        (error, text, &
-         a, asize, buffer, comps, condit, groupa, groupb, pivot, points, &
-         return)
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     T W O P N T
-!
-!     TWPREP
-!
-!     EVALUATE A BLOCK TRIDIAGONAL JACOBIAN MATRIX BY ONE-SIDED FINITE
-!     DIFFERENCES AND REVERSE COMMUNICATION, PACK THE MATRIX INTO THE
-!     LINPACK BANDED FORM, SCALE THE ROWS, AND FACTOR THE MATRIX USING
-!     LINPACK'S SGBCO.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      implicit complex (a - z)
-
-      character id*9, string*80
-      double precision    a, absol, buffer, condit, delta, relat, sum, temp
-      external &
-         twgbco, twsqez
-      integer &
-         asize, block, blocks, cfirst, clast, col, comps, count, diag, &
-         groupa, groupb, j, lda, length, lines, n, offset, pivot, &
-         points, rfirst, rlast, route, row, skip, text, width
-      intrinsic &
-         abs, int, max, min, mod, sqrt
-      logical &
-         error, found, mess, return
-
-      parameter (id = 'TWPREP:  ')
-      parameter (lines = 20)
-
-      dimension &
-         a(asize), pivot(groupa + comps * points + groupb), &
-         buffer(groupa + comps * points + groupb)
-
-      save
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     (1) PROLOGUE.
-!
-!///////////////////////////////////////////////////////////////////////
-
-!///  EVERY-TIME INITIALIZATION.
-
-!     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
-      mess = .false.
-
-!///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
-
-      if (return) then
-         return = .false.
-         go to (2030, 3050) route
-         error = .true.
-         go to 9001
-      endif
-
-!///  CHECK THE ARGUMENTS.
-
-      n = groupa + comps * points + groupb
-      error = .not. (((0 < comps) .eqv. (0 < points)) .and. &
-         0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
-         0 <= groupb .and. 0 < n)
-      if (error) go to 9002
-
-      width = comps + max (comps, groupa, groupb) - 1
-      error = .not. ((3 * width + 2) * n <= asize)
-      if (error) go to 9003
-
-!///  WRITE ALL MESSAGES.
-
-      if (mess .and. 0 < text) then
-         route = 0
-         go to 9001
-      end if
-
-!///  FORM MACHINE EPSILON AND THE ABSOLUTE AND RELATIVE PERTURBATIONS.
-
-      absol = sqrt (eps)
-      relat = sqrt (eps)
-
-!///  INITIALIZE COUNTERS AND POINTERS.
-
-!     MAIN DIAGONAL ROW IN THE PACKING WHICH PLACES DIAGONALS IN ROWS
-
-      diag = 2 * width + 1
-
-!     PACKED ROW DIMENSION
-
-      lda = 3 * width + 1
-      skip = 2 * width + 1
-
-!     BLOCKS AND BLOCK SIZES
-!     ARRAY PIVOT HOLDS BLOCK SIZES AND POINTERS TEMPORARILY
-
-      blocks = 0
-      if (0 < groupa) then
-         blocks = blocks + 1
-         pivot(blocks) = groupa
-      end if
-
-      do 1020 j = 1, points
-         blocks = blocks + 1
-         pivot(blocks) = comps
-1020  continue
-
-      if (0 < groupb) then
-         blocks = blocks + 1
-         pivot(blocks) = groupb
-      end if
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     (2) INITIALIZE THE COLUMNS OF THE MATRIX.
-!
-!///////////////////////////////////////////////////////////////////////
-
-!///  STORE THE EVALUATION VECTOR.
-
-      do 2010 j = 1, n
-         a(j) = buffer(j)
-2010  continue
-
-!///  CLEAR THE MATRIX.
-
-       do 2020 j = n + 1, (3 * width + 2) * n
-          a(j) = 0.0
-2020  continue
-
-!///  EVALUATE THE FUNCTION AT THE UNPERTURBED X.
-
-!     GO TO 2030 WHEN ROUTE = 1
-      route = 1
-      return = .true.
-      go to 99999
-2030  continue
-
-!///  PLACE THE FUNCTION VALUES IN THE MATRIX.
-
-      clast = 0
-      do 2060 block = 1, blocks
-         cfirst = clast + 1
-         clast = clast + pivot(block)
-
-         if (1 < block) then
-            rfirst = cfirst - pivot(block - 1)
-         else
-            rfirst = cfirst
-         end if
-
-         if (block < blocks) then
-            rlast = clast + pivot(block + 1)
-         else
-            rlast = clast
-         end if
-
-         do 2050 col = cfirst, clast
-            offset = n + diag - col + lda * (col - 1)
-            do 2040 row = rfirst, rlast
-               a(offset + row) = buffer(row)
-2040        continue
-2050     continue
-2060  continue
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     (3) FORM THE COLUMNS OF THE MATRIX.
-!
-!///////////////////////////////////////////////////////////////////////
-
-!///  TOP OF THE LOOP OVER GROUPS OF COLUMNS.
-
-3010  continue
-      found = .false.
-
-!///  RESTORE THE EVALUATION VECTOR.
-
-      do 3020 j = 1, n
-         buffer(j) = a(j)
-3020  continue
-
-!///  PERTURB THE VECTOR AT INDEPENDENT POSITIONS.
-
-      block = 1
-      cfirst = 1
-3030  continue
-         if (0 < pivot(block)) then
-            found = .true.
-            col = cfirst - 1 + pivot(block)
-            if (0 <= a(col)) then
-               delta = relat * a(col) + absol
-            else
-               delta = relat * a(col) - absol
-            end if
-            buffer(col) = buffer(col) + delta
-
-            count = 3
-         else
-            count = 1
-         end if
-
-         do 3040 j = 1, count
-            if (block == 1 .and. 0 < groupa) then
-               cfirst = cfirst + groupa
-            else if (block == blocks .and. 0 < groupb) then
-               cfirst = cfirst + groupb
-            else
-               cfirst = cfirst + comps
-            end if
-            block = block + 1
-3040     continue
-
-      if (block <= blocks) go to 3030
-
-!///  EXIT OF THE LOOP OVER GROUPS OF COLUMNS.
-
-      if (.not. found) go to 3090
-
-!///  EVALUATE THE FUNCTION AT THE PERTURBED VALUES.
-
-!     GO TO 3050 WHEN ROUTE = 2
-      route = 2
-      return = .true.
-      go to 99999
-3050  continue
-
-!///  DIFFERENCE TO FORM THE COLUMNS OF THE JACOBIAN MATRIX.
-
-      block = 1
-      cfirst = 1
-3060  continue
-         if (0 < pivot(block)) then
-            col = cfirst - 1 + pivot(block)
-            pivot(block) = pivot(block) - 1
-
-            if (0 <= a(col)) then
-               delta = relat * a(col) + absol
-            else
-               delta = relat * a(col) - absol
-            end if
-            temp = 1.0 / delta
-            offset = n + diag - col + lda * (col - 1)
-
-            if (block == 1 .and. 0 < groupa) then
-               clast = cfirst + groupa - 1
-            else if (block == blocks .and. 0 < groupb) then
-               clast = cfirst + groupb - 1
-            else
-               clast = cfirst + comps - 1
-            end if
-
-            if (1 < block) then
-               if (block == 2 .and. 0 < groupa) then
-                  rfirst = cfirst - groupa
-               else
-                  rfirst = cfirst - comps
-               end if
-            else
-               rfirst = cfirst
-            end if
-
-            if (block < blocks) then
-               if (block == blocks - 1 .and. 0 < groupb) then
-                  rlast = clast + groupb
-               else
-                  rlast = clast + comps
-               end if
-            else
-               rlast = clast
-            end if
-
-            do 3070 row = rfirst, rlast
-               a(offset + row) = (buffer(row) - a(offset + row)) * temp
-3070        continue
-
-            count = 3
-         else
-            count = 1
-         end if
-
-         do 3080 j = 1, count
-            if (block == 1 .and. 0 < groupa) then
-               cfirst = cfirst + groupa
-            else if (block == blocks .and. 0 < groupb) then
-               cfirst = cfirst + groupb
-            else
-               cfirst = cfirst + comps
-            end if
-            block = block + 1
-3080     continue
-
-      if (block <= blocks) go to 3060
-
-!///  BOTTOM OF THE LOOP OVER GROUPS OF COLUMNS.
-
-      go to 3010
-3090  continue
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     (4) CHECK FOR ZERO COLUMNS.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      count = 0
-      do 4020 col = 1, n
-         offset = n + diag - col + lda * (col - 1)
-         sum = 0.0
-         do 4010 row = max (col - width, 1), min (col + width, n)
-            sum = sum + abs (a(offset + row))
-4010     continue
-         a(col) = sum
-
-         if (sum == 0.0) count = count + 1
-4020  continue
-
-      error = .not. (count == 0)
-      if (error) go to 9004
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     (5) SCALE THE ROWS.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      count = 0
-      do 5030 row = 1, n
-         offset = n + diag + row
-         sum = 0.0
-         do 5010 col = max (row - width, 1), min (row + width, n)
-            sum = sum + abs (a(offset - col + lda * (col - 1)))
-5010     continue
-
-         if (sum == 0.0) then
-            count = count + 1
-            a(row) = sum
-         else
-            temp = 1.0 / sum
-            a(row) = temp
-
-            do 5020 col = max (row - width, 1), min (row + width, n)
-               a(offset - col + lda * (col - 1)) &
-                  = a(offset - col + lda * (col - 1)) * temp
-5020        continue
-         endif
-5030  continue
-
-      error = .not. (count == 0)
-      if (error) go to 9005
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     (6) FACTOR THE MATRIX.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      call twgbco &
-        (a(n + 1), lda, n, width, width, pivot, condit, buffer)
-
-      error = condit == 0.0
-      if (error) go to 9006
-
-      condit = 1.0 / condit
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     INFORMATIVE MESSAGES.
-!
-!///////////////////////////////////////////////////////////////////////
-
-80001 format &
-        (10X, a)
-
-80002 format &
-        (10X, '... MORE')
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     ERROR MESSAGES.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      go to 99999
-
-9001  if (0 < text) write (text, 99001) id, route
-      if (.not. mess) go to 99999
-
-9002  if (0 < text) write (text, 99002) id, &
-         comps, points, groupa, groupb, n
-      if (.not. mess) go to 99999
-
-9003  if (0 < text) write (text, 99003) id, &
-         comps, points, groupa, groupb, n, width, &
-         (3 * width + 2) * n, asize
-      if (.not. mess) go to 99999
-
-9004  if (0 < text) then
-         write (text, 99004) id, comps, points, groupa, groupb, &
-            groupa + comps * points + groupb, count
-         count = 0
-         do 8010 j = 1, groupa + comps * points + groupb
-            if (a(j) == 0.0 .or. mess) then
-               count = count + 1
-               if (count <= lines) then
-                  if (j <= groupa) then
-                     write (string, '(A, I10)') 'GROUP A ', j
-                  else if (j <= groupa + comps * points) then
-                     write (string, '(A, I10, A, I10)') &
-                        ' COMPONENT ', mod (j - groupa - 1, comps) + 1, &
-                        ' AT POINT ', int ((j - groupa - 1) / comps) + 1
-                  else
-                     write (string, '(A, I10)') &
-                        'GROUP B ', j - groupa - comps * points
-                  end if
-                  call twsqez (length, string)
-                  write (text, 80001) string (1 : length)
-               end if
-            end if
-8010     continue
-         if (lines < count) write (text, 80002)
-      end if
-      if (.not. mess) go to 99999
-
-9005  if (0 < text) then
-         write (text, 99005) id, comps, points, groupa, groupb, &
-            groupa + comps * points + groupb, count
-         count = 0
-         do 8020 j = 1, groupa + comps * points + groupb
-            if (a(j) == 0.0 .or. mess) then
-               count = count + 1
-               if (count <= lines) then
-                  if (j <= groupa) then
-                     write (string, '(A, I10)') 'GROUP A ', j
-                  else if (j <= groupa + comps * points) then
-                     write (string, '(A, I10, A, I10)') &
-                        ' COMPONENT ', mod (j - groupa - 1, comps) + 1, &
-                        ' AT POINT ', int ((j - groupa - 1) / comps) + 1
-                  else
-                     write (string, '(A, I10)') &
-                        'GROUP B ', j - groupa - comps * points
-                  end if
-                  call twsqez (length, string)
-                  write (text, 80001) string (1 : length)
-               end if
-            end if
-8020     continue
-         if (lines < count) write (text, 80002)
-      end if
-      if (.not. mess) go to 99999
-
-9006  if (0 < text) write (text, 99006) id
-      if (.not. mess) go to 99999
-
-99001 format &
-        (/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-       //10X, i10, '  ROUTE')
-
-99002 format &
-        (/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
-        /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE, NUMBERS OF ALL TYPES' &
-        /10X, 'OF UNKNOWNS MUST BE AT LEAST ZERO, AND TOTAL UNKNOWNS' &
-        /10X, 'MUST BE POSITIVE.' &
-       //10X, i10, '  COMPS, COMPONENTS' &
-        /10X, i10, '  POINTS' &
-        /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-        /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-        /10X, i10, '  TOTAL UNKNOWNS')
-
-99003 format &
-        (/1X, a9, 'ERROR.  THE MATRIX SPACE IS TOO SMALL.' &
-       //10X, i10, '  COMPS, COMPONENTS' &
-        /10X, i10, '  POINTS' &
-        /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-        /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-        /10X, i10, '  MATRIX ORDER' &
-        /10X, i10, '  STRICT HALF BANDWIDTH' &
-       //10X, i10, '  SPACE REQUIRED' &
-        /10X, i10, '  ASIZE, PROVIDED')
-
-99004 format &
-        (/1X, a9, 'ERROR.  SOME COLUMNS ARE ZERO.' &
-       //10X, i10, '  COMPS, COMPONENTS' &
-        /10X, i10, '  POINTS' &
-        /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-        /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-        /10X, i10, '  TOTAL COLUMNS' &
-        /10X, i10, '  ZERO COLUMNS' &
-       //10X, 'UNKNOWNS WITH ZERO COLUMNS:' &
-        /)
-
-99005 format &
-        (/1X, a9, 'ERROR.  SOME ROWS ARE ZERO.' &
-       //10X, i10, '  COMPS, COMPONENTS' &
-        /10X, i10, '  POINTS' &
-        /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-        /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-        /10X, i10, '  TOTAL ROWS' &
-        /10X, i10, '  ZERO ROWS' &
-       //10X, 'ZERO ROWS:' &
-        /)
-
-99006 format &
-        (/1X, a9, 'ERROR.  THE JACOBIAN MATRIX IS SINGULAR.')
-
-!///  EXIT.
-
-      stop
-99999 continue
-      return
-      end
 
 
 
