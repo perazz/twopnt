@@ -1481,8 +1481,6 @@ module twopnt_core
 
       end subroutine twgrab
 
-end module twopnt_core
-
 
       subroutine evolve &
         (error, text, &
@@ -1509,8 +1507,6 @@ end module twopnt_core
       double precision    above, below, buffer, change, condit, csave, dummy, high, low, &
          s0, s1, strid0, stride, tdabs, tdec, tdrel, tinc, tmax, tmin, &
          v0, v1, vsave, y0, y1, ynorm
-      external &
-         search, twcopy, twlogr, twnorm
       integer &
          age, agej, comps, count, desire, first, groupa, groupb, j, &
          last, length, leveld, levelm, names, number, points, qbnds, &
@@ -2106,8 +2102,6 @@ end module twopnt_core
       double precision    above, abs0, abs1, below, buffer, condit, deltab, deltad, rel0, &
          rel1, s0, s0norm, s1, s1norm, sj, temp, v0, v1, value, vj, &
          xxabs, xxrel, y0, y0norm, y1, y1norm, zero
-      external &
-         twcopy, twlogr, twnorm, twsqez
       integer &
          age, comps, count, entry, expone, groupa, groupb, i, j, k, &
          len1, len2, length, leveld, levelm, lines, names, number, &
@@ -2900,9 +2894,6 @@ end module twopnt_core
          rwork, ssabs, ssrel, strid0, stride, tdabs, tdec, tdrel, temp, &
          timer, tinc, tmax, tmin, toler0, toler1, toler2, total, u, x, &
          ynorm
-      external &
-         evolve, refine, search, twcopy, twgrab, twlaps, twlast, twlogr, &
-         twnorm, twsqez, twtime, twinit
       integer &
          age, cntrls, comps, count, desire, event, gmax, grid, groupa, &
          groupb, ilast, isize, ivalue, iwork, j, jacobs, k, label, len1, &
@@ -4459,7 +4450,5 @@ end module twopnt_core
       return
       end
 
-
-
-
+end module twopnt_core
 
