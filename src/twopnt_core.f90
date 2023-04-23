@@ -32,6 +32,7 @@ module twopnt_core
 
     ! Numeric constants
     real(RK), parameter, public :: zero = 0.0_RK
+    real(RK), parameter, public :: half = 0.5_RK
     real(RK), parameter, public :: one  = 1.0_RK
     real(RK), parameter, public :: pi   = acos(-1.0_RK)
 
@@ -1486,7 +1487,7 @@ module twopnt_core
         (error, text, &
          above, below, buffer, comps, condit, desire, groupa, groupb, &
          leveld, levelm, name, names, points, report, s0, s1, signal, &
-         step, steps2, strid0, stride, succes, tdabs, tdage, tdec, &
+         step, steps2, strid0, stride, success, tdabs, tdage, tdec, &
          tdrel, time, tinc, tmax, tmin, v0, v1, vsave, y0, y1, ynorm)
 
 !///////////////////////////////////////////////////////////////////////
@@ -1515,7 +1516,7 @@ module twopnt_core
       intrinsic &
          log10, max, min
       logical &
-         error, exist, jacob, mess, succes, time, xsucce
+         error, exist, jacob, mess, success, time, xsucce
 
       parameter (id = 'EVOLVE:  ')
 
@@ -1556,7 +1557,7 @@ module twopnt_core
 !     TURN OFF ALL COMPLETION STATUS FLAGS.
       error = .false.
       report = qnull
-      succes = .false.
+      success = .false.
 
 !///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
 
@@ -1735,7 +1736,7 @@ module twopnt_core
 !       (ERROR, TEXT, &
 !        ABOVE, AGE, BELOW, BUFFER, COMPS, CONDIT, EXIST, GROUPA, &
 !        GROUPB, LEVELD, LEVELM, NAME, NAMES, POINTS, REPORT, S0, S1, &
-!        SIGNAL, STEPS, SUCCES, V0, V1, XXABS, XXAGE, XXREL, Y0, Y0NORM, &
+!        SIGNAL, STEPS, success, V0, V1, XXABS, XXAGE, XXREL, Y0, Y0NORM, &
 !        Y1)
 
       call search &
@@ -1897,7 +1898,7 @@ module twopnt_core
 
 !///  SET THE COMPLETION STATUS FLAGS.
 
-      succes = first < step
+      success = first < step
       if (step < last) report = xrepor
 
 !///////////////////////////////////////////////////////////////////////
@@ -2080,7 +2081,7 @@ module twopnt_core
         (error, text, &
          above, age, below, buffer, comps, condit, exist, groupa, &
          groupb, leveld, levelm, name, names, points, report, s0, s1, &
-         signal, steps, succes, v0, v1, xxabs, xxage, xxrel, y0, y0norm, &
+         signal, steps, success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, &
          y1)
 
 !///////////////////////////////////////////////////////////////////////
@@ -2109,7 +2110,7 @@ module twopnt_core
       intrinsic &
          abs, int, log10, max, min, mod
       logical &
-         error, exist, force, mess, succes
+         error, exist, force, mess, success
 
       parameter (id = 'SEARCH:  ')
       parameter (lines = 20)
@@ -2148,7 +2149,7 @@ module twopnt_core
 !     TURN OFF ALL COMPLETION STATUS FLAGS.
       error = .false.
       report = qnull
-      succes = .false.
+      success = .false.
 
 !///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
 
@@ -2460,7 +2461,7 @@ module twopnt_core
          end if
 
          report = qbnds
-         succes = .false.
+         success = .false.
          go to 99999
       end if
 
@@ -2523,7 +2524,7 @@ module twopnt_core
 
       if (s1norm <= s0norm) then
       else
-         deltad = 0.5 * deltad
+         deltad = half * deltad
          expone = expone + 1
          if (expone <= 5) go to 2100
             if (0 < age) go to 2010
@@ -2540,7 +2541,7 @@ module twopnt_core
                   write (text, 10003) id
                end if
                report = qdvrg
-               succes = .false.
+               success = .false.
                go to 99999
       end if
 
@@ -2608,7 +2609,7 @@ module twopnt_core
 2180  continue
       signal = ' '
 
-      succes = .true.
+      success = .true.
 
 !///////////////////////////////////////////////////////////////////////
 !
@@ -3491,7 +3492,7 @@ module twopnt_core
 !       (ERROR, TEXT, &
 !        ABOVE, AGE, BELOW, BUFFER, COMPS, CONDIT, EXIST, GROUPA, &
 !        GROUPB, setup%leveld, setup%levelm, NAME, NAMES, POINTS, REPORT, S0, S1, &
-!        SIGNAL, STEPS, SUCCES, V0, V1, XXABS, XXAGE, XXREL, Y0, Y0NORM, &
+!        SIGNAL, STEPS, success, V0, V1, XXABS, XXAGE, XXREL, Y0, Y0NORM, &
 !        Y1)
 
       call search &
@@ -3593,11 +3594,6 @@ module twopnt_core
 
 5030  continue
 
-!     SUBROUTINE REFINE &
-!       (ERROR, TEXT, &
-!        ACTIVE, BUFFER, COMPS, setup%leveld, setup%levelm, MARK, NEWX, PADD, PMAX, &
-!        POINTS, RATIO, RATIO1, RATIO2, SIGNAL, SUCCES, TOLER0, TOLER1, &
-!        TOLER2, U, VARY1, VARY2, WEIGHT, X)
 
       call refine &
         (error, text, &
@@ -3733,7 +3729,7 @@ module twopnt_core
 !       (ERROR, TEXT, &
 !        ABOVE, BELOW, BUFFER, COMPS, CONDIT, DESIRE, GROUPA, GROUPB, &
 !        setup%leveld, setup%levelm, NAME, NAMES, POINTS, REPORT, S0, S1, SIGNAL, &
-!        STEP, STEPS2, STRID0, STRIDE, SUCCES, TDABS, TDAGE, TDEC, &
+!        STEP, STEPS2, STRID0, STRIDE, success, TDABS, TDAGE, TDEC, &
 !        TDREL, TIME, TINC, TMAX, TMIN, V0, V1, VSAVE, Y0, Y1, YNORM)
 
       call evolve &
@@ -4233,448 +4229,394 @@ module twopnt_core
       end subroutine twopnt
 
       ! Perform automatic grid selection
-      subroutine refine(error, text, &
-                        active, buffer, comps, leveld, levelm, mark, newx, padd, pmax, &
-                        points, ratio, ratio1, ratio2, signal, succes, toler0, toler1, &
-                        toler2, u, vary1, vary2, weight, x)
+      subroutine refine(error, text, active, buffer, comps, leveld, levelm, mark, newx, &
+                        padd, pmax, points, ratio, ratio1, ratio2, signal, success, toler0, &
+                        toler1, toler2, u, vary1, vary2, weight, x)
 
-      character(len=*), parameter :: id = 'REFINE:  '
+          integer, intent(in)     :: pmax
+          integer, intent(in)     :: comps
+          logical, intent(out)    :: error, newx, success
+          logical, intent(in)     :: active(comps)
+          logical, intent(inout)  :: mark(pmax)
+          real(RK), intent(inout) :: ratio1(pmax),ratio2(pmax),ratio(2),x(pmax)
+          real(RK), intent(inout) :: buffer(comps*pmax),u(comps,pmax)
+          integer, intent(inout), dimension(pmax) :: vary1,vary2,weight
 
-      ! set true to print examples of all messages.
-      logical, parameter :: mess = .false.
+          character(len=*), parameter :: id = 'REFINE:  '
 
-      character signal*(*), word*80
-      double precision :: buffer, differ, left, length, lower, maxmag, mean, range, &
-        ratio, ratio1, ratio2, right, temp, temp1, temp2, toler0, toler1, toler2, u, upper, x
-      integer :: act, comps, count, former, itemp, j, k, least, leveld, levelm, &
-        more, most, new, old, padd, pmax, points, route, signif, text, total, vary1, vary2, weight
-      intrinsic :: abs, max, min
-      logical   :: active, error, mark, newx, succes
+          ! set true to print examples of all messages.
+          logical, parameter :: mess = .false.
 
-      dimension active(comps), buffer(comps * pmax), mark(pmax), ratio(2), ratio1(pmax), ratio2(pmax), &
-                u(comps, pmax), vary1(pmax),vary2(pmax), weight(pmax), x(pmax)
+          character signal*(*), word*80
+          real(RK) :: differ, left, length, lower, maxmag, mean, range, &
+            right, temp, temp1, temp2, toler0, toler1, toler2, upper
+          integer :: act, counted, former, itemp, j, k, least, leveld, levelm, &
+            more, most, new, old, padd, points, route, signif, text, total
+          intrinsic :: abs, max, min, count, minval, maxval
 
-!///  save local variables during returns for reverse communication.
+          ! Save local variables during returns for reverse communication.
+          save
 
-      save
+          ! ***** prologue. *****
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     prologue.
-!
-!///////////////////////////////////////////////////////////////////////
+          ! every-time initialization: turn off all completion status flags.
+          error   = .false.
+          newx    = .false.
+          success = .false.
 
-!///  every-time initialization.
+          ! if this is a return call, then continue where the program paused.
+          if (signal/=' ') then
+             go to (4060, 5040) route
+             error = .true.
+             ! invalid route
+             if (text>0) write (text, 101) id, route
+             return
+          end if
 
+          ! write all messages.
+          if (mess .and. text>0) then
+             route = 0
+             write (text, 1) id
+             write (text, 2) id
+             write (text, 4) id
+             write (text, 5) id
+             write (text, 10) id
+             write (text, 101) id, route
+             write (text, 102) id, comps, points
+             write (text, 103) id, padd
+             write (text, 104) id, points, pmax
+             write (text, 105) id
+             write (text, 106) id, toler0
+             write (text, 107) id, toler1, toler2
+             write (text, 108) id
+             write (text, 109) id
+             stop
+          end if
 
-!     turn off all completion status flags.
-      error  = .false.
-      newx   = .false.
-      succes = .false.
+          ! Levelm printing.
+          if (0<levelm .and. text>0) write (text, 1) id
 
-!///  if this is a return call, then continue where the program paused.
+          ! Check the arguments.
+          error = .not. (1<=comps .and. 2<=points)
+          if (error) then
+               if (text>0) write (text, 102) id, comps, points
+               return
+          end if
 
-      if (signal/=' ') then
-         go to (4060, 5040) route
-         error = .true.
+          error = .not. (0<=padd)
+          if (error) then
+               if (text>0) write (text, 103) id, padd
+               return
+          endif
 
-         if (0<text) write (text, 101) id, route
-         return
-      end if
+          error = .not. (points<=pmax)
+          if (error) then
+               if (text>0) write (text, 104) id, points, pmax
+               return
+          end if
 
-      ! write all messages.
-      if (mess .and. 0<text) then
-         route = 0
-         write (text, 1) id
-         write (text, 2) id
-         write (text, 4) id
-         write (text, 5) id
-         write (text, 10) id
-         write (text, 101) id, route
-         write (text, 102) id, comps, points
-         write (text, 103) id, padd
-         write (text, 104) id, points, pmax
-         write (text, 105) id
-         write (text, 106) id, toler0
-         write (text, 107) id, toler1, toler2
-         write (text, 108) id
-         write (text, 109) id
-         stop
-      end if
+          ! Check there is at least one variable that affects grid adaption
+          counted = count(active)
+          error = .not. (counted>=1)
+          if (error) then
+               if (text>0) write (text, 105) id
+               return
+          end if
 
-      ! Levelm printing.
-      if (0<levelm .and. 0<text) write (text, 1) id
+          error = .not. toler0>=zero
+          if (error) then
+              if (text>0) write (text, 106) id, toler0
+              return
+          end if
 
-      ! Check the arguments.
-      error = .not. (1 <= comps .and. 2 <= points)
-      if (error) then
-           if (0<text) write (text, 102) id, comps, points
-           return
-      end if
+          ! Check tolerances in [0,1]
+          error = .not. (zero <= toler1 .and. toler1 <= one &
+                  .and.  zero <= toler2 .and. toler2 <= one)
+          if (error) then
+              if (text>0) write (text, 107) id, toler1, toler2
+              return
+          end if
 
-      error = .not. (0 <= padd)
-      if (error) then
-           if (0<text) write (text, 103) id, padd
-           return
-      endif
+          ! Check monotonic
+          counted = count(x(1:points-1)<x(2:points))
+          error = .not. (counted==0 .or. counted==points-1)
+          if (error) then
+              if (text>0) write (text, 108) id
+              return
+          end if
 
-      error = .not. (points <= pmax)
-      if (error) then
-           if (0<text) write (text, 104) id, points, pmax
-           return
-      end if
+          ! at each interval, count the active, significant components that vary too greatly.
+          act    = 0  ! number of active components
+          signif = 0  ! number of significant components: max(u)-min(u)>=tol*max(|u|)
+          mark(:points) = .false.
+          ratio1(:points) = zero
+          ratio2(:points) = zero
+          vary1 (:points) = 0
+          vary2 (:points) = 0
 
-      count = 0
-      do 1010 j = 1, comps
-         if (active(j)) count = count + 1
-1010  continue
-      error = .not. (1 <= count)
-      if (error) then
-           if (0<text) write (text, 105) id
-           return
-      end if
+          ! top of the loop over the components.
+          active_components: do j = 1, comps
 
-      error = .not. toler0>=zero
-      if (error) then
-          if (0<text) write (text, 106) id, toler0
-          return
-      end if
+             if (.not.active(j)) cycle active_components
 
-      error = .not. (zero <= toler1 .and. toler1 <= one &
-              .and.  zero <= toler2 .and. toler2 <= one)
-      if (error) then
-          if (0<text) write (text, 107) id, toler1, toler2
-          return
-      end if
+             act = act + 1
 
-      count = 0
-      do 1020 k = 1, points - 1
-         if (x(k)<x(k + 1)) count = count + 1
-1020  continue
-      error = .not. (count == 0 .or. count == points - 1)
-      if (error) then
-          if (0<text) write (text, 108) id
-          return
-      end if
+             ! find range and maximum magnitude of this component.
+             lower = u(j, 1)
+             upper = u(j, 1)
+             do k = 2, points
+                lower = min (lower, u(j,k))
+                upper = max (upper, u(j,k))
+             end do
+             range  = upper - lower
+             maxmag = max(abs(lower), abs(upper))
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     at each interval, count the active, significant components that
-!     vary too greatly.
-!
-!///////////////////////////////////////////////////////////////////////
+             ! decide whether the component is significant.
+             if (.not. abs(range)>toler0*max(one,maxmag)) cycle active_components
 
-      act = 0
-      signif = 0
+             ! this is a significant component.
+             signif = signif + 1
 
-      do 2010 k = 1, points
-         mark(k) = .false.
-         ratio1(k) = zero
-         ratio2(k) = zero
-         vary1(k) = 0
-         vary2(k) = 0
-2010  continue
-
-!///  top of the loop over the components.
-
-      do 2060 j = 1, comps
-         if (active(j)) then
-            act = act + 1
-
-!///  find the range and maximum magnitude of the component.
-
-            lower = u(j, 1)
-            upper = u(j, 1)
-            do 2020 k = 2, points
-               lower = min (lower, u(j, k))
-               upper = max (upper, u(j, k))
-2020        continue
-            range = upper - lower
-            maxmag = max (abs (lower), abs (upper))
-
-!///  decide whether the component is significant.
-
-            if (abs (range)>max (toler0, toler0 * maxmag)) then
-               signif = signif + 1
-
-!///  at each interval, see whether the component'S CHANGE EXCEEDS SOME
-!///  fraction of the component'S GLOBAL CHANGE.
-
-               do 2030 k = 1, points - 1
-                  differ = abs (u(j, k + 1) - u(j, k))
+             ! at each interval, see whether the component'S CHANGE EXCEEDS SOME
+             ! fraction of the component'S GLOBAL CHANGE.
+             max_du: do k = 1, points - 1
+                  differ = abs (u(j,k+1)-u(j,k))
                   if (zero<range) ratio1(k) = max (ratio1(k), differ / range)
                   if (toler1 * range<differ) vary1(k) = vary1(k) + 1
-2030           continue
+             end do max_du
 
-!///  find the global change of the component'S DERIVATIVE.
+             ! find the global change of the component'S DERIVATIVE.
+             temp  = grad(u,x,comp=j,point=1)
+             lower = temp
+             upper = temp
+             max_grad: do k = 2, points - 1
+                 temp  = grad(u,x,comp=j,point=k)
+                 lower = min(lower, temp)
+                 upper = max(upper, temp)
+             end do max_grad
+             range = upper - lower
 
-               temp = (u(j, 2) - u(j, 1)) / (x(2) - x(1))
-               lower = temp
-               upper = temp
-               do 2040 k = 2, points - 1
-                  temp  = (u(j, k+1) - u(j, k)) / (x(k+1) - x(k))
-                  lower = min(lower, temp)
-                  upper = max(upper, temp)
-2040           continue
-               range = upper - lower
+             ! at each interior point, see whether the derivative'S CHANGE
+             ! exceeds some fraction of the derivative'S GLOBAL CHANGE.
+             right =  grad(u,x,comp=j,point=1)
+             do k = 2, points - 1
+                 left = right
+                 right = grad(u,x,comp=j,point=k)
+                 differ = abs (left - right)
+                 if (zero<range) ratio2(k) = max (ratio2(k), differ / range)
+                 if (toler2 * range < differ) vary2(k) = vary2(k) + 1
+             end do
 
-!///  at each interior point, see whether the derivative'S CHANGE
-!///  exceeds some fraction of the derivative'S GLOBAL CHANGE.
+          end do active_components
 
-               right = (u(j, 2) - u(j, 1)) / (x(2) - x(1))
-               do 2050 k = 2, points - 1
-                  left = right
-                  right = (u(j, k + 1) - u(j, k)) / (x(k + 1) - x(k))
-                  differ = abs (left - right)
-                  if (zero<range) ratio2(k) = max (ratio2(k), differ / range)
-                  if (toler2 * range < differ) vary2(k) = vary2(k) + 1
-2050           continue
+          ! save the maximum ratios.
+          ratio(1) = max(zero,maxval(ratio1(1:points-1),1))
+          ratio(2) = max(zero,maxval(ratio2(2:points-1),1))
 
-!///  bottom of the loop over the components.
+          ! ***** select the intervals to halve. *****
 
-            end if
-         end if
-2060  continue
+          ! weight the intervals in which variations that are too large occur.
+          most = 0
+          amr_intervals: do k = 1, points - 1
+             weight(k) = vary1(k)
+             if (1<k) weight(k) = weight(k) + vary2(k)
+             if (k<points - 1) weight(k) = weight(k) + vary2(k + 1)
+             if (0<weight(k)) most = most + 1
+          end do amr_intervals
 
-      ! save the maximum ratios.
-      ratio(1) = max(zero,maxval(ratio1(1:points-1),1))
-      ratio(2) = max(zero,maxval(ratio2(2:points-1),1))
+          ! sort the weights using interchange sort.
+          do k = 1, points - 1
+             do j = k + 1, points - 1
+                if (weight(j)>weight(k)) then
+                   itemp = weight(j)
+                   weight(j) = weight(k)
+                   weight(k) = itemp
+                end if
+             end do
+             if (weight(k) == 0) exit
+          end do
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     select the intervals to halve.
-!
-!///////////////////////////////////////////////////////////////////////
+          ! find the least weight of intervals to halve.
+          more = max (0, min (most, padd, pmax - points))
+          if (more>0) then
+             least = weight(more)
+          else
+             least = 1 + weight(1)
+          end if
 
-!///  weight the intervals in which variations that are too large occur.
+          ! reconstruct the weights.
+          do k = 1, points - 1
+             weight(k) = vary1(k)
+             if (k>1)        weight(k) = weight(k) + vary2(k)
+             if (k<points-1) weight(k) = weight(k) + vary2(k + 1)
+          end do
 
-      most = 0
-      do 3010 k = 1, points - 1
-         weight(k) = vary1(k)
-         if (1<k) weight(k) = weight(k) + vary2(k)
-         if (k<points - 1) weight(k) = weight(k) + vary2(k + 1)
-         if (0<weight(k)) most = most + 1
-3010  continue
+          ! mark the intervals to halve.
+          counted = 0
+          to_be_halved: do k = 1, points - 1
+             if (counted<more .and. least <= weight(k)) then
+                counted = counted + 1
+                mark(k) = .true.
+             end if
+          end do to_be_halved
 
-!///  sort the weights.
+    ! hack  if one point is marked, mark them all
+    !      if (counted>0) then
+    !         counted = 0
+    !         do k = 1, points - 1
+    !            counted = counted + 1
+    !            mark(k) = .true.
+    !         enddo
+    !      endif
 
-      do 3030 k = 1, points - 1
-         do 3020 j = k + 1, points - 1
-            if (weight(j)>weight(k)) then
-               itemp = weight(j)
-               weight(j) = weight(k)
-               weight(k) = itemp
-            end if
-3020     continue
-         if (weight(k) == 0) go to 3040
-3030  continue
-3040  continue
+          more = counted
 
-!///  find the least weight of intervals to halve.
+          ! ***** halve the intervals, if any. *****
 
-      more = max (0, min (most, padd, pmax - points))
-      if (0<more) then
-         least = weight(more)
-      else
-         least = 1 + weight(1)
-      end if
+          ! total number of points in the new grid.
+          total = points + more
 
-!///  reconstruct the weights.
+          add_points: if (more>0) then
 
-      do 3050 k = 1, points - 1
-         weight(k) = vary1(k)
-         if (1<k) weight(k) = weight(k) + vary2(k)
-         if (k<points - 1) weight(k) = weight(k) + vary2(k + 1)
-3050  continue
+              counted = 0
+              length  = abs(x(points) - x(1))
+              check_degenerate: do k = 1, points - 1
+                 if (mark(k)) then
+                    mean = half*(x(k)+x(k+1))
+                    ! Check this interval is not degenerate
+                    if (.not. ((x(k)  <mean .and. mean<x(k+1)) .or. &
+                               (x(k+1)<mean .and. mean<x(k)))) counted = counted + 1
+                 end if
+              end do check_degenerate
+              error = counted>0
+              if (error) then
+                  if (text>0) write (text, 109) id
+                  return
+              end if
 
-!///  mark the intervals to halve.
+              ! add the new points, interpolate x and the bounds.
+              new = total
+              new_points: do old = points, 2, - 1
 
-      count = 0
-      do 3060 k = 1, points - 1
-         if (count<more .and. least <= weight(k)) then
-            count = count + 1
-            mark(k) = .true.
-         end if
-3060  continue
+                 ! Copy right boundary
+                 x(new)   = x(old)
+                 u(:,new) = u(:,old)
 
-! hack  if one point is marked, mark them all
-!      if (count>0) then
-!         count = 0
-!         do k = 1, points - 1
-!            count = count + 1
-!            mark(k) = .true.
-!         enddo
-!      endif
+                 new = new - 1
 
-      more = count
+                 ! Interpolate solution and location
+                 if (mark(old-1)) then
+                    x(new)   = half*(x(old)+x(old-1))
+                    u(:,new) = half*(u(:,old)+u(:,old-1))
+                    new = new - 1
+                 end if
+              end do new_points
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     halve the intervals, if any.
-!
-!///////////////////////////////////////////////////////////////////////
+              ! mark the new points.
+              new = total
+              mark_new_points: do old = points, 2, - 1
+                 mark(new) = .false.
+                 new = new - 1
+                 if (mark(old-1)) then
+                    mark(new) = .true.
+                    new = new - 1
+                 end if
+              end do mark_new_points
+              mark(new) = .false.
 
-!///  form the total number of points in the new grid.
+              ! update the number of points.
+              former = points
+              points = total
 
-      total = points + more
-      if (0 == more) go to 4070
+              ! allow the user to update the solution.
+              call twcopy (comps * points, u, buffer)
 
-!///  top of the block to create the new grid.  check the order.
+              ! Request to update the grid
+              signal = 'UPDATE'
+              ! go to 4060 when route = 1
+              route = 1
+              return
 
-      count = 0
-      length = abs (x(points) - x(1))
-      do 4010 k = 1, points - 1
-         if (mark(k)) then
-            mean = 0.5 * (x(k) + x(k + 1))
-            if (.not. ((x(k)<mean .and. mean<x(k + 1)) .or. (x(k + 1)<mean .and. mean<x(k)))) &
-               count = count + 1
-         end if
-4010  continue
-      error = .not. (count == 0)
-      if (error) then
-          if (0<text) write (text, 109) id
+          end if add_points
+
+          ! Restart after grid update
+          4060  continue
+          signal = ' '
+          call twcopy (comps*points,buffer,u)
+
+          ! ***** epilogue. *****
+
+          ! print summary
+          if (levelm>0 .and. text>0) then
+
+             if (signif == 0) then
+                write (text, 2) id
+             else
+
+                temp1 = maxval(ratio1(1:former-1),1)
+                temp2 = maxval(ratio2(2:former-1),1)
+
+                write (text, 3) temp1, temp2, toler1, toler2
+                if (most == 0) then
+                    write (text, 4) id
+                else if (more == 0) then
+                    write (text, 5) id
+                else
+                    write (text, 6)
+
+                    old = 0
+                    do k = 1, points
+                       if (.not. mark(k)) then
+                          old = old + 1
+                          if (1<k) then
+                             if (vary1(old-1)/=zero) then
+                                write (word, '(F4.2, I4)') ratio1(old - 1), vary1(old-1)
+                             else
+                                write (word, '(F4.2, I4)') ratio1(old - 1)
+                             end if
+                             if (mark(k - 1)) then
+                                write (text, 7) k - 1, x(k - 1), word
+                             else
+                                write (text, 8) word
+                             end if
+                          end if
+
+                          if (1<k .and. k<points) then
+                             if (vary2(old)/=zero) then
+                                write (word, '(F4.2, I4)') ratio2(old), vary2(old)
+                             else
+                                write (word, '(F4.2, I4)') ratio2(old)
+                             end if
+                             write (text, 9) k, x(k), word
+                          else
+                             write (text, 9) k, x(k)
+                          end if
+                       end if
+                    end do
+                end if
+             end if
+
+             if (leveld>0 .and. more>0) then
+                write (text, 10) id
+                call twcopy (comps*points, u, buffer)
+                signal = 'SHOW'
+                ! go to 5040 when route = 2
+                route = 2
+                return
+             end if
+          end if
+
+          ! Restart after SHOW request
+          5040 continue
+
+          ! set the completion status flags.
+          signal  = ' '
+          newx    = more > 0
+          success = most == 0
+
           return
-      end if
 
-!///  add the new points.  interpolate x and the bounds.
-
-      new = total
-      do 4040 old = points, 2, - 1
-         x(new) = x(old)
-         u(:,new) = u(:,old)
-         do 4020 j = 1, comps
-            u(j, new) = u(j, old)
-4020     continue
-         new = new - 1
-
-         if (mark(old - 1)) then
-            x(new) = 0.5 * (x(old) + x(old - 1))
-            do 4030 j = 1, comps
-               u(j, new) = 0.5 * (u(j, old) + u(j, old - 1))
-4030        continue
-            new = new - 1
-         end if
-4040  continue
-
-!///  mark the new points.
-
-      new = total
-      do 4050 old = points, 2, - 1
-         mark(new) = .false.
-         new = new - 1
-         if (mark(old - 1)) then
-            mark(new) = .true.
-            new = new - 1
-         end if
-4050  continue
-      mark(new) = .false.
-
-!///  update the number of points.
-
-      former = points
-      points = total
-
-!///  allow the user to update the solution.
-
-      call twcopy (comps * points, u, buffer)
-      signal = 'UPDATE'
-!     go to 4060 when route = 1
-      route = 1
-      return
-4060  continue
-      signal = ' '
-      call twcopy (comps * points, buffer, u)
-
-!///  bottom of the block to create a new grid.
-
-4070  continue
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     epilogue.
-!
-!///////////////////////////////////////////////////////////////////////
-
-!///  print.
-
-      if (0<levelm .and. 0<text) then
-         temp1 = ratio1(1)
-         do 5010 k = 2, former - 1
-            temp1 = max (temp1, ratio1(k))
-5010     continue
-
-         temp2 = ratio2(2)
-         do 5020 k = 3, former - 1
-            temp2 = max (temp2, ratio2(k))
-5020     continue
-
-         if (signif == 0) then
-            write (text, 2) id
-         else
-            write (text, 3) temp1, temp2, toler1, toler2
-            if (most == 0) then
-               write (text, 4) id
-            else if (more == 0) then
-               write (text, 5) id
-            else
-               write (text, 6)
-
-               old = 0
-               do 5030 k = 1, points
-                  if (.not. mark(k)) then
-                     old = old + 1
-!                     dx = zerod0
-                     if (1<k) then
-!                        dx = x(k)-x(k-1)
-                        if (vary1(old-1)/=zero) then
-                           write (word, '(F4.2, I4)') ratio1(old - 1), vary1(old-1)
-                        else
-                           write (word, '(F4.2, I4)') ratio1(old - 1)
-                        end if
-                        if (mark(k - 1)) then
-                           write (text, 7) k - 1, x(k - 1), word
-                        else
-                           write (text, 8) word
-                        end if
-                     end if
-
-                     if (1<k .and. k<points) then
-                        if (vary2(old)/=zero) then
-                           write (word, '(F4.2, I4)') ratio2(old), vary2(old)
-                        else
-                           write (word, '(F4.2, I4)') ratio2(old)
-                        end if
-                        write (text, 9) k, x(k), word
-                     else
-                        write (text, 9) k, x(k)
-                     end if
-                  end if
-5030           continue
-            end if
-         end if
-
-         if (0<leveld .and. 0<more) then
-            write (text, 10) id
-            call twcopy (comps * points, u, buffer)
-            signal = 'SHOW'
-!           go to 5040 when route = 2
-            route = 2
-            return
-         end if
-      end if
-5040  continue
-      signal = ' '
-
-!///  set the completion status flags.
-
-      newx = 0<more
-      succes = 0 == most
-
-      return
-
-
-            ! Formats section.
-
+          ! Formats section.
              ! Informative messages.
               1 format(/1X, a9, 'SELECT A GRID.')
               2 format(/1X, a9, 'SUCCESS.  THE GRID IS ADEQUATE BECAUSE ALL ACTIVE' &
@@ -4699,35 +4641,40 @@ module twopnt_core
 
             ! Error messages.
             101 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-                       //10X, i10, '  ROUTE')
+                     //10X, i10, '  ROUTE')
             102 format(/1X, a9, 'ERROR.  THERE MUST BE AT LEAST ONE COMPONENT AND AT' &
-                        /10X, 'LEAST TWO POINTS.' &
-                       //10X, i10, '  COMPS, COMPONENTS' &
-                        /10X, i10, '  POINTS')
+                      /10X, 'LEAST TWO POINTS.' &
+                     //10X, i10, '  COMPS, COMPONENTS' &
+                      /10X, i10, '  POINTS')
             103 format(/1X, a9, 'ERROR.  THE LIMIT ON POINTS ADDED TO A GRID MUST BE' &
-                        /10X, 'ZERO OR POSITIVE.'&
-                       //10X, i10, '  PADD, LIMIT ON ADDED POINTS')
+                      /10X, 'ZERO OR POSITIVE.'&
+                     //10X, i10, '  PADD, LIMIT ON ADDED POINTS')
             104 format(/1X, a9, 'ERROR.  POINTS IS OUT OF RANGE.' &
-                       //10X, i10, '  POINTS'&
-                        /10X, i10, '  PMAX, LIMIT ON POINTS')
+                     //10X, i10, '  POINTS'&
+                      /10X, i10, '  PMAX, LIMIT ON POINTS')
             105 format(/1X, a9, 'ERROR.  THERE ARE NO ACTIVE COMPONENTS.')
             106 format(/1X, a9, 'ERROR.  THE BOUNDS ON MAGNITUDE AND RELATIVE CHANGE' &
-                        /10X, 'OF MAGNITUDE FOR INSIGNIFICANT COMPONENTS MUST BE'&
-                        /10X, 'POSITIVE.'&
-                       //10X, 1p, e10.2, '  TOLER0, SIGNIFICANCE LEVEL')
+                      /10X, 'OF MAGNITUDE FOR INSIGNIFICANT COMPONENTS MUST BE'&
+                      /10X, 'POSITIVE.'&
+                     //10X, 1p, e10.2, '  TOLER0, SIGNIFICANCE LEVEL')
             107 format(/1X, a9, 'ERROR.  THE BOUNDS ON RELATIVE CHANGES IN MAGNITUDE'&
-                        /10X, 'AND ANGLE MUST LIE BETWEEN 0 AND 1.'&
-                       //10X, 1p, e10.2, '  TOLER1'&
-                        /10X, 1p, e10.2, '  TOLER2')
+                      /10X, 'AND ANGLE MUST LIE BETWEEN 0 AND 1.'&
+                     //10X, 1p, e10.2, '  TOLER1'&
+                      /10X, 1p, e10.2, '  TOLER2')
             108 format(/1X, a9, 'ERROR.  THE GRID IS NOT ORDERED.')
             109 format(/1X, a9, 'ERROR.  SOME INTERVALS IN THE GRID ARE TOO SHORT.'&
-                        /10X, 'THE NEW GRID WOULD NOT BE ORDERED.')
-
-      stop
+                      /10X, 'THE NEW GRID WOULD NOT BE ORDERED.')
 
       return
       end subroutine refine
 
+      !> Return gradient of the solution vector at given location and point
+      pure real(RK) function grad(u,x,comp,point)
+          real(RK), intent(in) :: u(:,:),x(:)
+          integer , intent(in) :: comp  ! ID of the unknown
+          integer , intent(in) :: point ! ID of the finite-difference node (<=points-1)
+          grad = (u(comp,point+1)-u(comp,point)) / (x(point+1)-x(point))
+      end function grad
 
 end module twopnt_core
 
