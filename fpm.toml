@@ -14,5 +14,5 @@ library = false
 [fortran]
 implicit-typing = true
 implicit-external = true
-source-form = "free"
+source-form = "default"
 

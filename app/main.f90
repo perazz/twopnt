@@ -180,10 +180,11 @@ program TWMAIN
     ITERATE: DO
 
           ! Call driver
-          CALL TWOPNT(ERROR, TEXT, VERSIO, &
+          CALL TWOPNT(SETTINGS, ERROR, TEXT, VERSIO, &
                       ABOVE, ACTIVE, BELOW, BUFFER, COMPS, CONDIT, GROUPA, GROUPB, &
                       ISIZE, IWORK, MARK, NAME, NAMES, PMAX, POINTS, REPORT, RSIZE, &
                       RWORK, SIGNAL, STRIDE, TIME, U, X)
+
           IF (ERROR) GO TO 9004
 
           ! SERVICE REQUESTS FROM TWOPNT.
@@ -195,12 +196,13 @@ program TWMAIN
                 CALL TWFUNC(ERROR, TEXT, &
                             BUFFER, F, F0, G, G0, H, K, LAMBDA, MU, OMEGA, POINTS, RHO, &
                             STRIDE, T, T0, TIME, TMAX, TZERO, U0, WMAX, X)
+
                 IF (ERROR) GO TO 9005
 
              case ('PREPARE')
 
                 ! EVALUATE AND FACTOR THE JACOBIAN
-                return_call = .FALSE.
+                return_call = .false.
 
                 evaluate_jacobian: do
 
@@ -352,7 +354,6 @@ program TWMAIN
 
           ! SPECIFIC HEAT OF ARGON AT CONSTANT PRESSURE [ERGS / (GM * K)]
           real(RK), PARAMETER :: CP = R * 2.5_RK / W
-
 
           ! Check the arguments
           ERROR = .NOT. POINTS>=2
