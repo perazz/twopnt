@@ -47,49 +47,49 @@
          go to (4060, 5040) route
          error = .true.
 
-         if (0<text) write (text, 99001) id, route
+         if (0<text) write (text, 101) id, route
          return
       end if
 
       ! write all messages.
       if (mess .and. 0<text) then
          route = 0
-         write (text, 10001) id
-         write (text, 10002) id
-         write (text, 10004) id
-         write (text, 10005) id
-         write (text, 10010) id
-         write (text, 99001) id, route
-         write (text, 99002) id, comps, points
-         write (text, 99003) id, padd
-         write (text, 99004) id, points, pmax
-         write (text, 99005) id
-         write (text, 99006) id, toler0
-         write (text, 99007) id, toler1, toler2
-         write (text, 99008) id
-         write (text, 99009) id
+         write (text, 1) id
+         write (text, 2) id
+         write (text, 4) id
+         write (text, 5) id
+         write (text, 10) id
+         write (text, 101) id, route
+         write (text, 102) id, comps, points
+         write (text, 103) id, padd
+         write (text, 104) id, points, pmax
+         write (text, 105) id
+         write (text, 106) id, toler0
+         write (text, 107) id, toler1, toler2
+         write (text, 108) id
+         write (text, 109) id
          stop
       end if
 
       ! Levelm printing.
-      if (0<levelm .and. 0<text) write (text, 10001) id
+      if (0<levelm .and. 0<text) write (text, 1) id
 
       ! Check the arguments.
       error = .not. (1 <= comps .and. 2 <= points)
       if (error) then
-           if (0<text) write (text, 99002) id, comps, points
+           if (0<text) write (text, 102) id, comps, points
            return
       end if
 
       error = .not. (0 <= padd)
       if (error) then
-           if (0<text) write (text, 99003) id, padd
+           if (0<text) write (text, 103) id, padd
            return
       endif
 
       error = .not. (points <= pmax)
       if (error) then
-           if (0<text) write (text, 99004) id, points, pmax
+           if (0<text) write (text, 104) id, points, pmax
            return
       end if
 
@@ -99,20 +99,20 @@
 1010  continue
       error = .not. (1 <= count)
       if (error) then
-           if (0<text) write (text, 99005) id
+           if (0<text) write (text, 105) id
            return
       end if
 
       error = .not. toler0>=zero
       if (error) then
-          if (0<text) write (text, 99006) id, toler0
+          if (0<text) write (text, 106) id, toler0
           return
       end if
 
       error = .not. (zero <= toler1 .and. toler1 <= one &
               .and.  zero <= toler2 .and. toler2 <= one)
       if (error) then
-          if (0<text) write (text, 99007) id, toler1, toler2
+          if (0<text) write (text, 107) id, toler1, toler2
           return
       end if
 
@@ -122,7 +122,7 @@
 1020  continue
       error = .not. (count == 0 .or. count == points - 1)
       if (error) then
-          if (0<text) write (text, 99008) id
+          if (0<text) write (text, 108) id
           return
       end if
 
@@ -301,7 +301,7 @@
 4010  continue
       error = .not. (count == 0)
       if (error) then
-          if (0<text) write (text, 99009) id
+          if (0<text) write (text, 109) id
           return
       end if
 
@@ -378,15 +378,15 @@
 5020     continue
 
          if (signif == 0) then
-            write (text, 10002) id
+            write (text, 2) id
          else
-            write (text, 10003) temp1, temp2, toler1, toler2
+            write (text, 3) temp1, temp2, toler1, toler2
             if (most == 0) then
-               write (text, 10004) id
+               write (text, 4) id
             else if (more == 0) then
-               write (text, 10005) id
+               write (text, 5) id
             else
-               write (text, 10006)
+               write (text, 6)
 
                old = 0
                do 5030 k = 1, points
@@ -401,9 +401,9 @@
                            write (word, '(F4.2, I4)') ratio1(old - 1)
                         end if
                         if (mark(k - 1)) then
-                           write (text, 10007) k - 1, x(k - 1), word
+                           write (text, 7) k - 1, x(k - 1), word
                         else
-                           write (text, 10008) word
+                           write (text, 8) word
                         end if
                      end if
 
@@ -413,9 +413,9 @@
                         else
                            write (word, '(F4.2, I4)') ratio2(old)
                         end if
-                        write (text, 10009) k, x(k), word
+                        write (text, 9) k, x(k), word
                      else
-                        write (text, 10009) k, x(k)
+                        write (text, 9) k, x(k)
                      end if
                   end if
 5030           continue
@@ -423,7 +423,7 @@
          end if
 
          if (0<leveld .and. 0<more) then
-            write (text, 10010) id
+            write (text, 10) id
             call twcopy (comps * points, u, buffer)
             signal = 'SHOW'
 !           go to 5040 when route = 2
@@ -444,52 +444,52 @@
 
             ! Formats section.
 
-            ! Informative messages.
-            10001 format(/1X, a9, 'SELECT A GRID.')
-            10002 format(/1X, a9, 'SUCCESS.  THE GRID IS ADEQUATE BECAUSE ALL ACTIVE' &
-                        /10X, 'COMPONENTS ARE INSIGNIFICANT.')
-            !                   123456789-   1234567   1234567
-            10003 format(/15X, '             RATIO 1   RATIO 2' &
-                         /15X, '             -------   -------' &
-                         /15X, '    ACTUAL', 2F10.3 &
-                         /15X, '   DESIRED', 2F10.3)
-            10004 format(/1X, a9, 'SUCCESS.  THE GRID IS ADEQUATE.')
-            10005 format(/1X, a9, 'FAILURE.  MORE POINTS ARE NEEDED BUT NONE CAN BE ADDED.')
-            !                   123456   123456789-123456   12345678   12345678
-            10006 format(/10X, 'THE NEW GRID (* MARKS NEW POINTS):' &
-                        //10X, '                             LARGEST RATIOS AND'&
-                         /10X, ' INDEX         GRID POINT      NUMBER TOO LARGE'&
-                         /10X, '------   ----------------   -------------------'&
-                         /10X, '                             RATIO 1    RATIO 2')
-            10007 format(10X, i6, '*  ', 1p, e16.9, 0p, 3X, a8)
-            10008 format(38X, a8)
-            10009 format(10X, i6, '   ', 1p, e16.9, 0p, 14X, a8)
-            10010 format(/1X, a9, 'THE SOLUTION GUESS FOR THE NEW GRID:')
+             ! Informative messages.
+              1 format(/1X, a9, 'SELECT A GRID.')
+              2 format(/1X, a9, 'SUCCESS.  THE GRID IS ADEQUATE BECAUSE ALL ACTIVE' &
+                      /10X, 'COMPONENTS ARE INSIGNIFICANT.')
+             !               123456789-   1234567   1234567
+             3 format(/15X, '             RATIO 1   RATIO 2' &
+                      /15X, '             -------   -------' &
+                      /15X, '    ACTUAL', 2F10.3 &
+                      /15X, '   DESIRED', 2F10.3)
+             4 format(/1X, a9, 'SUCCESS.  THE GRID IS ADEQUATE.')
+             5 format(/1X, a9, 'FAILURE.  MORE POINTS ARE NEEDED BUT NONE CAN BE ADDED.')
+             !               123456   123456789-123456   12345678   12345678
+             6 format(/10X, 'THE NEW GRID (* MARKS NEW POINTS):' &
+                     //10X, '                             LARGEST RATIOS AND'&
+                      /10X, ' INDEX         GRID POINT      NUMBER TOO LARGE'&
+                      /10X, '------   ----------------   -------------------'&
+                      /10X, '                             RATIO 1    RATIO 2')
+             7 format(10X, i6, '*  ', 1p, e16.9, 0p, 3X, a8)
+             8 format(38X, a8)
+             9 format(10X, i6, '   ', 1p, e16.9, 0p, 14X, a8)
+            10 format(/1X, a9, 'THE SOLUTION GUESS FOR THE NEW GRID:')
 
             ! Error messages.
-            99001 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
+            101 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
                        //10X, i10, '  ROUTE')
-            99002 format(/1X, a9, 'ERROR.  THERE MUST BE AT LEAST ONE COMPONENT AND AT' &
+            102 format(/1X, a9, 'ERROR.  THERE MUST BE AT LEAST ONE COMPONENT AND AT' &
                         /10X, 'LEAST TWO POINTS.' &
                        //10X, i10, '  COMPS, COMPONENTS' &
                         /10X, i10, '  POINTS')
-            99003 format(/1X, a9, 'ERROR.  THE LIMIT ON POINTS ADDED TO A GRID MUST BE' &
+            103 format(/1X, a9, 'ERROR.  THE LIMIT ON POINTS ADDED TO A GRID MUST BE' &
                         /10X, 'ZERO OR POSITIVE.'&
                        //10X, i10, '  PADD, LIMIT ON ADDED POINTS')
-            99004 format(/1X, a9, 'ERROR.  POINTS IS OUT OF RANGE.' &
+            104 format(/1X, a9, 'ERROR.  POINTS IS OUT OF RANGE.' &
                        //10X, i10, '  POINTS'&
                         /10X, i10, '  PMAX, LIMIT ON POINTS')
-            99005 format(/1X, a9, 'ERROR.  THERE ARE NO ACTIVE COMPONENTS.')
-            99006 format(/1X, a9, 'ERROR.  THE BOUNDS ON MAGNITUDE AND RELATIVE CHANGE' &
+            105 format(/1X, a9, 'ERROR.  THERE ARE NO ACTIVE COMPONENTS.')
+            106 format(/1X, a9, 'ERROR.  THE BOUNDS ON MAGNITUDE AND RELATIVE CHANGE' &
                         /10X, 'OF MAGNITUDE FOR INSIGNIFICANT COMPONENTS MUST BE'&
                         /10X, 'POSITIVE.'&
                        //10X, 1p, e10.2, '  TOLER0, SIGNIFICANCE LEVEL')
-            99007 format(/1X, a9, 'ERROR.  THE BOUNDS ON RELATIVE CHANGES IN MAGNITUDE'&
+            107 format(/1X, a9, 'ERROR.  THE BOUNDS ON RELATIVE CHANGES IN MAGNITUDE'&
                         /10X, 'AND ANGLE MUST LIE BETWEEN 0 AND 1.'&
                        //10X, 1p, e10.2, '  TOLER1'&
                         /10X, 1p, e10.2, '  TOLER2')
-            99008 format(/1X, a9, 'ERROR.  THE GRID IS NOT ORDERED.')
-            99009 format(/1X, a9, 'ERROR.  SOME INTERVALS IN THE GRID ARE TOO SHORT.'&
+            108 format(/1X, a9, 'ERROR.  THE GRID IS NOT ORDERED.')
+            109 format(/1X, a9, 'ERROR.  SOME INTERVALS IN THE GRID ARE TOO SHORT.'&
                         /10X, 'THE NEW GRID WOULD NOT BE ORDERED.')
 
       stop
