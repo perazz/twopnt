@@ -2174,21 +2174,20 @@ module twopnt_core
       if (error) go to 9003
 
       count = 0
-      do 1010 j = 1, groupa + comps * points + groupb
+      do j = 1, groupa + comps * points + groupb
          if (.not. (below(j) < above(j))) count = count + 1
-1010  continue
+      end do
       error = count /= 0
       if (error) go to 9004
 
       count = 0
-      do 1020 j = 1, groupa + comps * points + groupb
-         if (.not. (below(j) <= v0(j) .and. v0(j) <= above(j))) &
-            count = count + 1
-1020  continue
+      do j = 1, groupa + comps * points + groupb
+         if (.not. (below(j) <= v0(j) .and. v0(j) <= above(j))) count = count + 1
+      end do
       error = count /= 0
       if (error) go to 9005
 
-      error = .not. (0.0 <= xxabs .and. 0.0 <= xxrel)
+      error = .not. (zero<=xxabs .and. zero<=xxrel)
       if (error) go to 9006
 
       error = .not. (0 < xxage)
@@ -2893,12 +2892,15 @@ module twopnt_core
       intrinsic :: max
       logical &
          active, allow, error, exist, first, flag, found, &
-         mark, mess, satisf, time
+         mark, satisf, time
 
       character(*), parameter :: id = 'TWOPNT:  '
       integer,      parameter :: gmax = 100
       integer,      parameter :: lines = 20
       integer,      parameter :: vnmbrs = 12
+
+      ! SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
+      logical,      parameter :: mess = .false.
 
       ! Need to find a prototype for this one
       external :: refine
@@ -2924,9 +2926,6 @@ module twopnt_core
 !///////////////////////////////////////////////////////////////////////
 
 !///  EVERY-TIME INITIALIZATION.
-
-!     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
-      mess = .false.
 
 !     TURN OFF ALL REVERSE COMMUNICATION FLAGS.
       time = .false.
@@ -2961,9 +2960,7 @@ module twopnt_core
          write (text, 10020) id
          write (text, 10017) id
          write (text, 10014) id
-         string = vnmbr(vnmbrs)
-         call twlast (length, string)
-         write (text, 10001) id, 'double precision', string (1 : length)
+         write (text, 10001) id, 'DOUBLE PRECISION', twtrim(vnmbr(vnmbrs),CONTRL_MAX_LEN)
          write (text, 10022) id
          write (text, 10021) id
          write (text, 10011) id, '???', ratio, setup%toler1, setup%toler2
@@ -2975,9 +2972,7 @@ module twopnt_core
          write (text, 10018) id
          write (text, 10016) id
          write (text, 10015) id
-         string = vnmbr(vnmbrs)
-         call twlast (length, string)
-         write (text, 10001) id, 'SINGLE PRECISION', string (1 : length)
+         write (text, 10001) id, 'SINGLE PRECISION', twtrim(vnmbr(vnmbrs),CONTRL_MAX_LEN)
          write (text, 10002) id, 'SOLVE THE PROBLEM.'
          write (text, 10010) id
 
@@ -3460,7 +3455,7 @@ module twopnt_core
 
 !///  BOTTOM OF THE EXIT BLOCK.
 
-      go to 99999
+      return
 
 !///////////////////////////////////////////////////////////////////////
 !
@@ -3899,7 +3894,7 @@ module twopnt_core
       signal = 'SAVE'
 !     GO TO 9912 WHEN ROUTE = 1
       route = 1
-      go to 99999
+      return
 9912  continue
       signal = ' '
 
@@ -3916,7 +3911,7 @@ module twopnt_core
       signal = 'SHOW'
 !     GO TO 9922 WHEN ROUTE = 2
       route = 2
-      go to 99999
+      return
 9922  continue
       signal = ' '
 
@@ -3949,7 +3944,7 @@ module twopnt_core
 
 !     GO TO 9932 WHEN ROUTE = 3
       route = 3
-      go to 99999
+      return
 9932  continue
 
 !     SAVE THE CONDITION NUMBER
@@ -3977,7 +3972,7 @@ module twopnt_core
       time = .false.
 !     GO TO 9942 WHEN ROUTE = 4
       route = 4
-      go to 99999
+      return
 9942  continue
       signal = ' '
 
@@ -3999,102 +3994,51 @@ module twopnt_core
 !
 !///////////////////////////////////////////////////////////////////////
 
-10001 format &
-         (/1X, a9, a, ' (TWO POINT BOUNDARY VALUE PROBLEM) SOLVER,' &
-         /10X, 'VERSION ', a, &
-         ' OF APRIL 1998 BY DR. JOSEPH F. GRCAR.')
-
-10002 format &
-         (/1X, a9, a)
-
-10003 format &
-         (3(/10X, a35)/)
-
-10004 format &
-        (/1X, a9, a, ' TOTAL COMPUTER TIME (SEE BREAKDOWN BELOW).')
-
-10005 format &
-        (/10X, 'PERCENT OF TOTAL COMPUTER TIME FOR VARIOUS TASKS:' &
-         /3(/10X, a38, a27) &
-        //(10X, i6, 2X, f6.1, 1X, 3(1X, f6.1), 1X, 4(1X, f6.1)))
-
-10006 format &
-        (/12X, 'TASK TOTALS:', 1X, 3(1X, f6.1), 1X, 4(1X, f6.1))
-
-10007 format &
-        (/10X, 'SOME GRIDS ARE OMITTED, BUT THE TOTALS ARE FOR ALL.')
-
-10008 format &
-        (3(/24X, a51) &
-        //10X, a12, f8.1, 5F9.1 &
-         /10X, a12, f8.3, 2F9.3 &
-         /10X, a12, i8, 2i9)
-
-10009 format &
-        (/10X, 'AVERAGE COMPUTER TIMES FOR, AND NUMBERS OF, SUBTASKS:' &
-         /3(/10X, a37, a25) &
-        //(10X, i6, 3X, f7.3, 2X, f7.3, 2X, f7.3, 1X, 3(2X, i7)))
-
-10010 format &
-        (/1X, a9, 'SUCCESS.  PROBLEM SOLVED.')
-
-10011 format &
-        (/1X, a9, 'FAILURE.  A SOLUTION WAS FOUND FOR A GRID WITH ', a &
-        /10X, 'POINTS, BUT ONE OR BOTH RATIOS ARE TOO LARGE.' &
-        //22X, '   RATIO 1     RATIO 2' &
-        //10X, '     FOUND', 2F12.2 &
-         /10X, '   DESIRED', 2F12.2 &
-        //10X, 'A LARGER GRID COULD NOT BE FORMED.')
-
-10012 format &
-        (/1X, a9, 'FAILURE.  NO SOLUTION WAS FOUND.')
-
-10013 format &
-        (/1X, a9, 'FAILURE.  A SOLUTION WAS FOUND FOR A GRID WITH ', a &
-        /10X, 'POINTS, BUT ONE OR BOTH RATIOS ARE TOO LARGE.' &
-        //22X, '   RATIO 1     RATIO 2' &
-        //10X, '     FOUND', 2F12.2 &
-         /10X, '   DESIRED', 2F12.2 &
-        //10X, 'A SOLUTION COULD NOT BE FOUND FOR A LARGER GRID.')
-
-10014 format &
-        (/1X, a9, 'CALLING SEARCH TO SOLVE THE STEADY STATE PROBLEM.')
-
-10015 format &
-        (/1X, a9, 'SEARCH FOUND THE STEADY STATE.')
-
-10016 format &
-        (/1X, a9, 'SEARCH DID NOT FIND THE STEADY STATE.')
-
-10017 format &
-        (/1X, a9, 'CALLING REFINE TO PRODUCE A NEW GRID.')
-
-10018 format &
-        (/1X, a9, 'REFINE SELECTED A NEW GRID.')
-
-10019 format &
-        (/1X, a9, 'REFINE DID NOT SELECT A NEW GRID.')
-
-10020 format &
-        (/1X, a9, 'CALLING EVOLVE TO PERFORM TIME EVOLUTION.')
-
-10021 format &
-        (/1X, a9, 'EVOLVE PERFORMED A TIME EVOLUTION.')
-
-10022 format &
-        (/1X, a9, 'EVOLVE DID NOT PERFORM A TIME EVOLUTION.')
-
-10023 format &
-         (10X, a8, 3X, a6, 2X, a6, 3X, a)
-
-80001 format &
-         ('(', a, ' ', i10, ')')
-
-80002 format &
-         (10X, 1p, e10.2, 2X, e10.2, 3X, a)
-
-80003 format &
-         (10X, '  ... MORE')
+10001 format(/1X, a9, a, ' (TWO POINT BOUNDARY VALUE PROBLEM) SOLVER,' &
+             /10X, 'VERSION ', a, &
+             ' OF APRIL 1998 BY DR. JOSEPH F. GRCAR.')
+10002 format(/1X, a9, a)
+10003 format(3(/10X, a35)/)
+10004 format(/1X, a9, a, ' TOTAL COMPUTER TIME (SEE BREAKDOWN BELOW).')
+10005 format(/10X, 'PERCENT OF TOTAL COMPUTER TIME FOR VARIOUS TASKS:' &
+             /3(/10X, a38, a27) &
+            //(10X, i6, 2X, f6.1, 1X, 3(1X, f6.1), 1X, 4(1X, f6.1)))
+10006 format(/12X, 'TASK TOTALS:', 1X, 3(1X, f6.1), 1X, 4(1X, f6.1))
+10007 format(/10X, 'SOME GRIDS ARE OMITTED, BUT THE TOTALS ARE FOR ALL.')
+10008 format(3(/24X, a51) &
+            //10X, a12, f8.1, 5F9.1 &
+             /10X, a12, f8.3, 2F9.3 &
+             /10X, a12, i8, 2i9)
+10009 format(/10X, 'AVERAGE COMPUTER TIMES FOR, AND NUMBERS OF, SUBTASKS:' &
+            /3(/10X, a37, a25) &
+            //(10X, i6, 3X, f7.3, 2X, f7.3, 2X, f7.3, 1X, 3(2X, i7)))
+10010 format(/1X, a9, 'SUCCESS.  PROBLEM SOLVED.')
+10011 format(/1X, a9, 'FAILURE.  A SOLUTION WAS FOUND FOR A GRID WITH ', a &
+            /10X, 'POINTS, BUT ONE OR BOTH RATIOS ARE TOO LARGE.' &
+           //22X, '   RATIO 1     RATIO 2' &
+           //10X, '     FOUND', 2F12.2 &
+            /10X, '   DESIRED', 2F12.2 &
+           //10X, 'A LARGER GRID COULD NOT BE FORMED.')
+10012 format(/1X, a9, 'FAILURE.  NO SOLUTION WAS FOUND.')
+10013 format(/1X, a9, 'FAILURE.  A SOLUTION WAS FOUND FOR A GRID WITH ', a &
+            /10X, 'POINTS, BUT ONE OR BOTH RATIOS ARE TOO LARGE.' &
+           //22X, '   RATIO 1     RATIO 2' &
+           //10X, '     FOUND', 2F12.2 &
+            /10X, '   DESIRED', 2F12.2 &
+           //10X, 'A SOLUTION COULD NOT BE FOUND FOR A LARGER GRID.')
+10014 format(/1X, a9, 'CALLING SEARCH TO SOLVE THE STEADY STATE PROBLEM.')
+10015 format(/1X, a9, 'SEARCH FOUND THE STEADY STATE.')
+10016 format(/1X, a9, 'SEARCH DID NOT FIND THE STEADY STATE.')
+10017 format(/1X, a9, 'CALLING REFINE TO PRODUCE A NEW GRID.')
+10018 format(/1X, a9, 'REFINE SELECTED A NEW GRID.')
+10019 format(/1X, a9, 'REFINE DID NOT SELECT A NEW GRID.')
+10020 format(/1X, a9, 'CALLING EVOLVE TO PERFORM TIME EVOLUTION.')
+10021 format(/1X, a9, 'EVOLVE PERFORMED A TIME EVOLUTION.')
+10022 format(/1X, a9, 'EVOLVE DID NOT PERFORM A TIME EVOLUTION.')
+10023 format(10X, a8, 3X, a6, 2X, a6, 3X, a)
+80001 format('(', a, ' ', i10, ')')
+80002 format(10X, 1p, e10.2, 2X, e10.2, 3X, a)
+80003 format(10X, '  ... MORE')
 
 !///////////////////////////////////////////////////////////////////////
 !
@@ -4102,47 +4046,47 @@ module twopnt_core
 !
 !///////////////////////////////////////////////////////////////////////
 
-!     GO TO 99999
+!     return
 
-9001  if (0 < text) write (text, 99001) id, route
-      if (.not. mess) go to 99999
+9001  if (0 < text) write (text, 01) id, route
+      if (.not. mess) return
 
 9002  if (0 < text) then
          call twlast (length, versio)
-         write (text, 99002) id, versio (1 : length), vnmbr(vnmbrs)
-         do 9901 j = vnmbrs - 1, 1, - 1
+         write (text, 02) id, versio (1 : length), vnmbr(vnmbrs)
+         do j = vnmbrs - 1, 1, - 1
             write (text, '(10X, A, A)') &
                ' CAN REPLACE:  double precision VERSION ', vnmbr(j)
-9901     continue
+         end do
       end if
-      if (.not. mess) go to 99999
+      if (.not. mess) return
 
-9004  if (0 < text) write (text, 99004) id, cntrls, count
-      if (.not. mess) go to 99999
+9004  if (0 < text) write (text, 04) id, cntrls, count
+      if (.not. mess) return
 
-9005  if (0 < text) write (text, 99005) id, setup%leveld, setup%levelm
-      if (.not. mess) go to 99999
+9005  if (0 < text) write (text, 05) id, setup%leveld, setup%levelm
+      if (.not. mess) return
 
-9006  if (0 < text) write (text, 99006) id, &
+9006  if (0 < text) write (text, 06) id, &
          comps, points, groupa, groupb
-      if (.not. mess) go to 99999
+      if (.not. mess) return
 
-9007  if (0 < text) write (text, 99007) id, comps, points
-      if (.not. mess) go to 99999
+9007  if (0 < text) write (text, 07) id, comps, points
+      if (.not. mess) return
 
-9008  if (0 < text) write (text, 99008) id, &
+9008  if (0 < text) write (text, 08) id, &
          comps, points, groupa, groupb, groupa + comps * points + groupb
-      if (.not. mess) go to 99999
+      if (.not. mess) return
 
-9009  if (0 < text) write (text, 99009) id, &
+9009  if (0 < text) write (text, 09) id, &
          names, comps, groupa, groupb, groupa + comps + groupb
-      if (.not. mess) go to 99999
+      if (.not. mess) return
 
-9010  if (0 < text) write (text, 99010) id, points, pmax
-      if (.not. mess) go to 99999
+9010  if (0 < text) write (text, 10) id, points, pmax
+      if (.not. mess) return
 
 9011  if (0 < text) then
-         write (text, 99011) id, &
+         write (text, 11) id, &
             groupa, groupb, comps, groupa + comps + groupb, count
          count = 0
          do 8010 j = 1, groupa + comps + groupb
@@ -4187,107 +4131,109 @@ module twopnt_core
 8010     continue
          if (lines < count) write (text, 80003)
       end if
-      if (.not. mess) go to 99999
+      if (.not. mess) return
 
-9012  if (0 < text) write (text, 99012) id
-      if (.not. mess) go to 99999
+9012  if (0 < text) write (text, 12) id
+      if (.not. mess) return
 
-9013  if (0 < text) write (text, 99013) id, &
+9013  if (0 < text) write (text, 13) id, &
          isize, rsize, ilast, rlast
-      if (.not. mess) go to 99999
+      if (.not. mess) return
 
-9014  if (0 < text) write (text, 99014) id
-      if (.not. mess) go to 99999
+9014  if (0 < text) write (text, 14) id
+      if (.not. mess) return
 
-9015  if (0 < text) write (text, 99015) id
-      if (.not. mess) go to 99999
+9015  if (0 < text) write (text, 15) id
+      if (.not. mess) return
 
-9016  if (0 < text) write (text, 99016) id
-      if (.not. mess) go to 99999
+9016  if (0 < text) write (text, 16) id
+      if (.not. mess) return
 
-9017  if (0 < text) write (text, 99017) id
-      if (.not. mess) go to 99999
+9017  if (0 < text) write (text, 17) id
+      if (.not. mess) return
 
-9018  if (0 < text) write (text, 99018) id
-      if (.not. mess) go to 99999
+9018  if (0 < text) write (text, 18) id
+      if (.not. mess) return
 
-9019  if (0 < text) write (text, 99019) id
-      if (.not. mess) go to 99999
+9019  if (0 < text) write (text, 19) id
+      if (.not. mess) return
 
-9020  if (0 < text) write (text, 99020) id, label
-      if (.not. mess) go to 99999
+9020  if (0 < text) write (text, 20) id, label
+      if (.not. mess) return
 
-9021  if (0 < text) write (text, 99021) id, return
-      if (.not. mess) go to 99999
-
-99001 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-           //10X, i10, '  ROUTE')
-99002 format(/1X, a9, 'ERROR.  THE CALLING PROGRAM EXPECTS A VERSION OF' &
-            /10X, 'TWOPNT NOT COMPATIBLE WITH THIS VERSION.' &
-           //10X, '     EXPECTS:  ', a &
-           //10X, 'THIS VERSION:  double precision VERSION ', a)
-99004 format(/1X, a9, 'ERROR.  THE NUMBER OF CONTROLS IS INCONSISTENT.' &
-           //10X, i10, '  CONTROLS' &
-            /10X, i10, '  COUNTED')
-99005 format(/1X, a9, 'ERROR.  THE PRINTING LEVELS ARE OUT OF ORDER.' &
-            /10X, 'LEVELD CANNOT EXCEED LEVELM.' &
-           //10X, i10, '  LEVELD, FOR SOLUTIONS' &
-            /10X, i10, '  LEVELM, FOR MESSAGES')
-99006 format(/1X, a9, 'ERROR.  NUMBERS OF ALL TYPES OF UNKNOWNS MUST BE AT' &
-            /10X, 'LEAST ZERO.' &
-           //10X, i10, '  COMPS, COMPONENTS' &
-            /10X, i10, '  POINTS' &
-            /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-            /10X, i10, '  GROUPB, GROUP B UNKNOWNS')
-99007 format(/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
-            /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE.' &
-           //10X, i10, '  COMPS, COMPONENTS' &
-            /10X, i10, '  POINTS')
-99008 format(/1X, a9, 'ERROR.  TOTAL UNKNOWNS MUST BE POSITIVE.' &
-           //10X, i10, '  COMPS, COMPONENTS' &
-            /10X, i10, '  POINTS' &
-            /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-            /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-            /10X, i10, '  TOTAL NUMBER')
-99009 format(/1X, a9, 'ERROR.  THE NUMBER OF NAMES IS WRONG.' &
-           //10X, i10, '  NAMES' &
-           //10X, i10, '  COMPS, COMPONENTS' &
-            /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-            /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-            /10X, i10, '  TOTAL NUMBER')
-99010 format(/1X, a9, 'ERROR.  THERE ARE TOO MANY POINTS.' &
-           //10X, i10, '  POINTS' &
-            /10X, i10, '  PMAX, LIMIT ON POINTS')
-99011 format(/1X, a9, 'ERROR.  THE LOWER AND UPPER BOUNDS ON SOME UNKNOWNS' &
-            /10X, 'ARE OUT OF ORDER.' &
-           //10X, i10, '  GROUP A UNKNOWNS (A)' &
-            /10X, i10, '  GROUP B UNKNOWNS (B)' &
-            /10X, i10, '  COMPONENTS AT POINTS (C)' &
-            /10X, i10, '  TOTAL TYPES OF UNKNOWNS' &
-            /10X, i10, '  NUMBER OF BOUNDS OUT OF ORDER' &
-           //10X, '     LOWER       UPPER' &
-            /10X, '     BOUND       BOUND   UNKNOWN'/)
-99012 format(/1X, a9, 'ERROR.  TWGRAB FAILS.')
-99013 format(/1X, a9, 'ERROR.  ONE OR BOTH WORK SPACES ARE TOO SMALL.' &
-           //25X, '   INTEGER        REAL' &
-           //10X, ' PRESENT SIZE', 2i12 &
-            /10X, 'REQUIRED SIZE', 2i12)
-99014 format(/1X, a9, 'ERROR.  NEITHER THE INITIAL TIME EVOLUTION NOR THE' &
-            /10X, 'SEARCH FOR THE STEADY STATE IS ALLOWED.')
-99015 format(/1X, a9, 'ERROR.  UNKNOWN TASK.')
-99016 format(/1X, a9, 'ERROR.  UNKNOWN REPORT CODE.')
-99017 format(/1X, a9, 'ERROR.  SEARCH FAILS.')
-99018 format(/1X, a9, 'ERROR.  REFINE FAILS.')
-99019 format(/1X, a9, 'ERROR.  EVOLVE FAILS.')
-99020 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-           //10X, i10, '  LABEL')
-99021 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-           //10X, i10, '  RETURN')
+9021  if (0 < text) write (text, 21) id, return
+      if (.not. mess) return
 
       stop
-99999 continue
-      return
-      end
+
+        ! Error messages
+        01 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
+                   //10X, i10, '  ROUTE')
+        02 format(/1X, a9, 'ERROR.  THE CALLING PROGRAM EXPECTS A VERSION OF' &
+                    /10X, 'TWOPNT NOT COMPATIBLE WITH THIS VERSION.' &
+                   //10X, '     EXPECTS:  ', a &
+                   //10X, 'THIS VERSION:  double precision VERSION ', a)
+        04 format(/1X, a9, 'ERROR.  THE NUMBER OF CONTROLS IS INCONSISTENT.' &
+                   //10X, i10, '  CONTROLS' &
+                    /10X, i10, '  COUNTED')
+        05 format(/1X, a9, 'ERROR.  THE PRINTING LEVELS ARE OUT OF ORDER.' &
+                    /10X, 'LEVELD CANNOT EXCEED LEVELM.' &
+                   //10X, i10, '  LEVELD, FOR SOLUTIONS' &
+                    /10X, i10, '  LEVELM, FOR MESSAGES')
+        06 format(/1X, a9, 'ERROR.  NUMBERS OF ALL TYPES OF UNKNOWNS MUST BE AT' &
+                    /10X, 'LEAST ZERO.' &
+                   //10X, i10, '  COMPS, COMPONENTS' &
+                    /10X, i10, '  POINTS' &
+                    /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                    /10X, i10, '  GROUPB, GROUP B UNKNOWNS')
+        07 format(/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
+                    /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE.' &
+                   //10X, i10, '  COMPS, COMPONENTS' &
+                    /10X, i10, '  POINTS')
+        08 format(/1X, a9, 'ERROR.  TOTAL UNKNOWNS MUST BE POSITIVE.' &
+                   //10X, i10, '  COMPS, COMPONENTS' &
+                    /10X, i10, '  POINTS' &
+                    /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                    /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                    /10X, i10, '  TOTAL NUMBER')
+        09 format(/1X, a9, 'ERROR.  THE NUMBER OF NAMES IS WRONG.' &
+                   //10X, i10, '  NAMES' &
+                   //10X, i10, '  COMPS, COMPONENTS' &
+                    /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                    /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                    /10X, i10, '  TOTAL NUMBER')
+        10 format(/1X, a9, 'ERROR.  THERE ARE TOO MANY POINTS.' &
+                   //10X, i10, '  POINTS' &
+                    /10X, i10, '  PMAX, LIMIT ON POINTS')
+        11 format(/1X, a9, 'ERROR.  THE LOWER AND UPPER BOUNDS ON SOME UNKNOWNS' &
+                    /10X, 'ARE OUT OF ORDER.' &
+                   //10X, i10, '  GROUP A UNKNOWNS (A)' &
+                    /10X, i10, '  GROUP B UNKNOWNS (B)' &
+                    /10X, i10, '  COMPONENTS AT POINTS (C)' &
+                    /10X, i10, '  TOTAL TYPES OF UNKNOWNS' &
+                    /10X, i10, '  NUMBER OF BOUNDS OUT OF ORDER' &
+                   //10X, '     LOWER       UPPER' &
+                    /10X, '     BOUND       BOUND   UNKNOWN'/)
+        12 format(/1X, a9, 'ERROR.  TWGRAB FAILS.')
+        13 format(/1X, a9, 'ERROR.  ONE OR BOTH WORK SPACES ARE TOO SMALL.' &
+                   //25X, '   INTEGER        REAL' &
+                   //10X, ' PRESENT SIZE', 2i12 &
+                    /10X, 'REQUIRED SIZE', 2i12)
+        14 format(/1X, a9, 'ERROR.  NEITHER THE INITIAL TIME EVOLUTION NOR THE' &
+                    /10X, 'SEARCH FOR THE STEADY STATE IS ALLOWED.')
+        15 format(/1X, a9, 'ERROR.  UNKNOWN TASK.')
+        16 format(/1X, a9, 'ERROR.  UNKNOWN REPORT CODE.')
+        17 format(/1X, a9, 'ERROR.  SEARCH FAILS.')
+        18 format(/1X, a9, 'ERROR.  REFINE FAILS.')
+        19 format(/1X, a9, 'ERROR.  EVOLVE FAILS.')
+        20 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
+                   //10X, i10, '  LABEL')
+        21 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
+                   //10X, i10, '  RETURN')
+
+
+
+      end subroutine twopnt
 
 end module twopnt_core
 
