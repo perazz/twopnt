@@ -68,6 +68,13 @@ module twopnt_core
     logical, parameter :: DEBUG = .true.
     integer, parameter :: CONTRL_MAX_LEN = 40
 
+    ! Supported versions
+
+    character(len=8), parameter :: vnmbr(*) = [character(len=8) :: '3.18', '3.19', '3.20', '3.21', &
+                                                                   '3.22', '3.23', '3.24', '3.25', &
+                                                                   '3.26', '3.27', '3.28', '3.29']
+    integer, parameter :: vnmbrs = size(vnmbr)
+
     ! Settings structure (formerly a common block)
     integer, parameter :: cntrls = 22
 
@@ -500,7 +507,7 @@ module twopnt_core
           !///////////////////////////////////////////////////////////////////////
 
           !///  WRITE ALL MESSAGES.
-          if (mess .and. 0 < text) then
+          if (mess .and. text>0) then
               write (text, 1) id, comps, points, groupa, groupb, groupa + comps * points + groupb
               stop
           end if
@@ -510,7 +517,7 @@ module twopnt_core
                            0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
                            0 <= groupb .and. 0 < groupa + comps * points + groupb)
           if (error) then
-              if (0 < text) write (text, 1) id, comps, points, groupa, groupb, &
+              if (text>0) write (text, 1) id, comps, points, groupa, groupb, &
                                             groupa + comps * points + groupb
               return
           end if
@@ -529,7 +536,7 @@ module twopnt_core
           !
           !
           !///////////////////////////////////////////////////////////////////////
-          print_data: if (0 < text) then
+          print_data: if (text>0) then
 
               ! (2) PRINT THE GROUPED DATA.
               if (0 < groupa) then
@@ -641,8 +648,8 @@ module twopnt_core
 
           integer , intent(in) :: asize,text,comps,groupa,groupb,points
           integer , intent(in) :: pivot(groupa + comps * points + groupb)
-          double precision, intent(in) :: a(asize)
-          double precision, intent(inout) :: buffer(groupa + comps * points + groupb)
+          real(RK), intent(in) :: a(asize)
+          real(RK), intent(inout) :: buffer(groupa + comps * points + groupb)
           logical , intent(out) :: error
 
           ! Local variables
@@ -714,11 +721,11 @@ module twopnt_core
       ! SOLVE A SYSTEM OF LINEAR EQUATIONS FOR TWSOLV.  BASED ON _GBSL
       ! FROM THE LINPACK LIBRARY.
       subroutine twgbsl (abd, lda, n, lower, upper, pivot, b)
-          double precision, intent(in) :: abd(lda,*)
-          double precision, intent(inout) :: b(*)
+          real(RK), intent(in) :: abd(lda,*)
+          real(RK), intent(inout) :: b(*)
           integer , intent(in) :: pivot(*)
 
-          double precision  :: t
+          real(RK)  :: t
           integer   :: j, jdiag, k, l, la, lb, lda, lm, lower, n, upper
           intrinsic :: min
 
@@ -1052,7 +1059,7 @@ module twopnt_core
           if (error) go to 9003
 
           ! WRITE ALL MESSAGES.
-          if (mess .and. 0 < text) then
+          if (mess .and. text>0) then
              route = 0
              go to 9001
           end if
@@ -1265,19 +1272,19 @@ module twopnt_core
 
           go to 99999
 
-    9001  if (0 < text) write (text, 99001) id, route
+    9001  if (text>0) write (text, 99001) id, route
           if (.not. mess) go to 99999
 
-    9002  if (0 < text) write (text, 99002) id, &
+    9002  if (text>0) write (text, 99002) id, &
              comps, points, groupa, groupb, n
           if (.not. mess) go to 99999
 
-    9003  if (0 < text) write (text, 99003) id, &
+    9003  if (text>0) write (text, 99003) id, &
              comps, points, groupa, groupb, n, width, &
              (3 * width + 2) * n, asize
           if (.not. mess) go to 99999
 
-    9004  if (0 < text) then
+    9004  if (text>0) then
              write (text, 99004) id, comps, points, groupa, groupb, &
                 groupa + comps * points + groupb, count
              count = 0
@@ -1304,7 +1311,7 @@ module twopnt_core
           end if
           if (.not. mess) go to 99999
 
-    9005  if (0 < text) then
+    9005  if (text>0) then
              write (text, 99005) id, comps, points, groupa, groupb, &
                 groupa + comps * points + groupb, count
              count = 0
@@ -1331,7 +1338,7 @@ module twopnt_core
           end if
           if (.not. mess) go to 99999
 
-        9006  if (0 < text) write (text, 99006) id
+        9006  if (text>0) write (text, 99006) id
               if (.not. mess) go to 99999
 
         ! Formats section
@@ -1465,7 +1472,7 @@ module twopnt_core
       end subroutine twlaps
 
       ! Reserve space in an array
-      subroutine twgrab (error, last, first, number)
+      pure subroutine twgrab (error, last, first, number)
           integer, intent(inout) :: first,last
           integer, intent(in)    :: number
           logical, intent(out)   :: error
@@ -1505,7 +1512,7 @@ module twopnt_core
          cword*80, header*80, id*9, jword*80, name*(*), remark*80, &
          signal*(*), yword*80
 !**** PRECISION > DOUBLE
-      double precision    above, below, buffer, change, condit, csave, dummy, high, low, &
+      real(RK)    above, below, buffer, change, condit, csave, dummy, high, low, &
          s0, s1, strid0, stride, tdabs, tdec, tdrel, tinc, tmax, tmin, &
          v0, v1, vsave, y0, y1, ynorm
       integer &
@@ -1606,7 +1613,7 @@ module twopnt_core
       header(2, 2) = '---------------------'
       header(2, 3) = 'J''S   COND J   REMARK'
 
-      if (mess .and. 0 < text) then
+      if (mess .and. text>0) then
          route = 0
          ynorm = 1.0E-4
          call twlogr (yword, ynorm)
@@ -1657,7 +1664,7 @@ module twopnt_core
 
 !///  PRINT.
 
-      if (.not. (0 < levelm .and. 0 < text)) go to 1030
+      if (.not. (0 < levelm .and. text>0)) go to 1030
          call twcopy (groupa + comps * points + groupb, v0, buffer)
          signal = 'RESIDUAL'
          time = .false.
@@ -1700,10 +1707,10 @@ module twopnt_core
          exist = .false.
          low = stride * tdec
          stride = min (high, stride * tinc)
-         if (1 < levelm .and. 0 < text) &
+         if (1 < levelm .and. text>0) &
             write (text, 20003) id, step, yword, log10 (stride)
       else
-         if (1 < levelm .and. 0 < text .and. 0 < step) &
+         if (1 < levelm .and. text>0 .and. 0 < step) &
             write (text, 20002) id, step, yword, log10 (stride)
       end if
 
@@ -1758,7 +1765,7 @@ module twopnt_core
 !///  UNSUCCESSFUL?
 
       if (.not. xsucce) then
-         if (1 == levelm .and. 0 < text) then
+         if (1 == levelm .and. text>0) then
             if (xrepor == qbnds) then
                length = 6
                remark = 'BOUNDS'
@@ -1781,7 +1788,7 @@ module twopnt_core
             exist = .false.
             high = stride / tinc
             stride = max (low, stride / tdec)
-            if (1 < levelm .and. 0 < text) write (text, 20004) &
+            if (1 < levelm .and. text>0) write (text, 20004) &
                id, step, yword, log10 (stride)
             go to 1050
          end if
@@ -1801,7 +1808,7 @@ module twopnt_core
       call twlogr (cword, change)
 
       if (change == 0.0) then
-         if (1 == levelm .and. 0 < text) then
+         if (1 == levelm .and. text>0) then
             write (text, 10004) &
                step + 1, '  ZERO', log10 (stride), number, jword
          end if
@@ -1811,7 +1818,7 @@ module twopnt_core
             exist = .false.
             low = stride * tdec
             stride = min (high, stride * tinc)
-            if (1 < levelm .and. 0 < text) &
+            if (1 < levelm .and. text>0) &
                write (text, 20005) id, step, yword, log10 (stride)
             go to 1050
          end if
@@ -1834,7 +1841,7 @@ module twopnt_core
 
 !///  PRINT.
 
-      if (.not. (0 < levelm .and. 0 < text)) go to 1100
+      if (.not. (0 < levelm .and. text>0)) go to 1100
          call twcopy (groupa + comps * points + groupb, v0, buffer)
          signal = 'RESIDUAL'
          time = .false.
@@ -1864,7 +1871,7 @@ module twopnt_core
 
 !///  PRINT.
 
-      if (0 < levelm .and. 0 < text) then
+      if (0 < levelm .and. text>0) then
          if (1 == levelm) then
             if (step == first) then
                write (text, 10006) id
@@ -1992,32 +1999,32 @@ module twopnt_core
 
       go to 99999
 
-9001  if (0 < text) write (text, 99001) id, route
+9001  if (text>0) write (text, 99001) id, route
       if (.not. mess) go to 99999
 
-9002  if (0 < text) write (text, 99002) id, &
+9002  if (text>0) write (text, 99002) id, &
          comps, points, groupa, groupb, groupa + comps * points + groupb
       if (.not. mess) go to 99999
 
-9003  if (0 < text) write (text, 99003) id, desire
+9003  if (text>0) write (text, 99003) id, desire
       if (.not. mess) go to 99999
 
-9004  if (0 < text) write (text, 99004) id, tdec, tinc
+9004  if (text>0) write (text, 99004) id, tdec, tinc
       if (.not. mess) go to 99999
 
-9005  if (0 < text) write (text, 99005) id, tmin, tmax
+9005  if (text>0) write (text, 99005) id, tmin, tmax
       if (.not. mess) go to 99999
 
-9006  if (0 < text) write (text, 99006) id, tmin, strid0, tmax
+9006  if (text>0) write (text, 99006) id, tmin, strid0, tmax
       if (.not. mess) go to 99999
 
-9007  if (0 < text) write (text, 99007) id, step
+9007  if (text>0) write (text, 99007) id, step
       if (.not. mess) go to 99999
 
-9008  if (0 < text) write (text, 99008) id, steps2
+9008  if (text>0) write (text, 99008) id, steps2
       if (.not. mess) go to 99999
 
-9009  if (0 < text) write (text, 99009) id
+9009  if (text>0) write (text, 99009) id
       if (.not. mess) go to 99999
 
 99001 format &
@@ -2100,7 +2107,7 @@ module twopnt_core
          column*16, ctemp1*80, ctemp2*80, header*80, id*9, name*(*), &
          signal*(*), string*80
 !**** PRECISION > DOUBLE
-      double precision    above, abs0, abs1, below, buffer, condit, deltab, deltad, rel0, &
+      real(RK)    above, abs0, abs1, below, buffer, condit, deltab, deltad, rel0, &
          rel1, s0, s0norm, s1, s1norm, sj, temp, v0, v1, value, vj, &
          xxabs, xxrel, y0, y0norm, y1, y1norm, zero
       integer &
@@ -2196,7 +2203,7 @@ module twopnt_core
 
 !///  WRITE ALL MESSAGES.
 
-      if (mess .and. 0 < text) then
+      if (mess .and. text>0) then
          route = 0
 
          write (text, 10003) id
@@ -2271,7 +2278,7 @@ module twopnt_core
       header(3, 2) = 'ND REL    DELTA B AND D'
 
       if (levelm >= 1 .or. mess) then
-         if (0 < text) write (text, 10001) &
+         if (text>0) write (text, 10001) &
             id, ((header(j, k), k = 1, 2), j = 1, 3)
       end if
 
@@ -2305,7 +2312,7 @@ module twopnt_core
 
 !     JACOBIAN EVALUATION SHOULD RETURN A NEW RESIDUAL TOO.
 
-      if (0 < levelm .and. 0 < text) then
+      if (0 < levelm .and. text>0) then
          if (0.0 < condit) then
             write (column(2), '(F6.2)') log10 (condit)
          else
@@ -2389,7 +2396,7 @@ module twopnt_core
       if (.not. (0.0 < deltab)) then
          if (0 < age) go to 2010
 
-         if (0 < levelm .and. 0 < text) then
+         if (0 < levelm .and. text>0) then
             call twlogr (column(1), y0norm)
             call twlogr (column(3), s0norm)
             call twlogr (column(4), abs0)
@@ -2528,7 +2535,7 @@ module twopnt_core
          expone = expone + 1
          if (expone <= 5) go to 2100
             if (0 < age) go to 2010
-               if (0 < levelm .and. 0 < text) then
+               if (0 < levelm .and. text>0) then
                   call twlogr (column(1), y0norm)
                   call twlogr (column(3), s0norm)
                   call twlogr (column(4), abs0)
@@ -2547,7 +2554,7 @@ module twopnt_core
 
 !///  PRINT.
 
-      if (0 < levelm .and. 0 < text) then
+      if (0 < levelm .and. text>0) then
          call twlogr (column(1), y0norm)
          call twlogr (column(3), s0norm)
          call twlogr (column(4), abs0)
@@ -2585,7 +2592,7 @@ module twopnt_core
 
 !///  PRINT.
 
-      if (0 < levelm .and. 0 < text) then
+      if (0 < levelm .and. text>0) then
          call twlogr (column(1), y0norm)
          call twlogr (column(3), s0norm)
          call twlogr (column(4), abs0)
@@ -2668,18 +2675,18 @@ module twopnt_core
 
       go to 99999
 
-9001  if (0 < text) write (text, 99001) id, route
+9001  if (text>0) write (text, 99001) id, route
       if (.not. mess) go to 99999
 
-9002  if (0 < text) write (text, 99002) id, &
+9002  if (text>0) write (text, 99002) id, &
          comps, points, groupa, groupb, groupa + comps * points + groupb
       if (.not. mess) go to 99999
 
-9003  if (0 < text) write (text, 99003) id, &
+9003  if (text>0) write (text, 99003) id, &
          names, comps, groupa, groupb, groupa + comps + groupb
       if (.not. mess) go to 99999
 
-9004  if (0 < text) then
+9004  if (text>0) then
          write (text, 99004) id, &
             groupa, groupb, comps, groupa + comps + groupb, count
          count = 0
@@ -2727,7 +2734,7 @@ module twopnt_core
       end if
       if (.not. mess) go to 99999
 
-9005  if (0 < text) then
+9005  if (text>0) then
          write (text, 99005) id, groupa, groupb, comps, points, &
             groupa + comps * points + groupb, count
          count = 0
@@ -2785,13 +2792,13 @@ module twopnt_core
       end if
       if (.not. mess) go to 99999
 
-9006  if (0 < text) write (text, 99006) id, xxabs, xxrel
+9006  if (text>0) write (text, 99006) id, xxabs, xxrel
       if (.not. mess) go to 99999
 
-9007  if (0 < text) write (text, 99007) id, xxage
+9007  if (text>0) write (text, 99007) id, xxage
       if (.not. mess) go to 99999
 
-9008  if (0 < text) write (text, 99008) id, deltab
+9008  if (text>0) write (text, 99008) id, deltab
       if (.not. mess) go to 99999
 
 99001 format &
@@ -2876,29 +2883,31 @@ module twopnt_core
                         isize, iwork, mark, name, names, pmax, points, report, rsize, &
                         rwork, signal, stride, time, u, x)
 
-      type(twcom), intent(inout) :: setup
+      type(twcom) , intent(inout) :: setup
+      logical     , intent(out)   :: error
+      integer     , intent(in)    :: text
+      character(*), intent(in)    :: versio
+      character(*), intent(inout) :: signal,report
+      integer     , intent(in)    :: names
+      character(*), intent(inout) :: name(names) ! Names of the variables
 
-      character &
-         column*80, ctemp1*80, ctemp2*80, header*80, name*(*), &
-         report*(*), signal*(*), string*80, versio*(*), vnmbr*8
-      real(RK) ::  above, below, buffer, condit, detail, maxcon, ratio, rwork, stride, temp, timer, total, u, x, ynorm
-      integer &
-         age, cntrls, comps, count, desire, event, grid, groupa, &
+      real(RK) ::  above, below, buffer, condit, detail, maxcon, ratio, rwork, stride, temp, timer, &
+                   total, u, x, ynorm
+      integer :: age, cntrls, comps, count, desire, event, grid, groupa, &
          groupb, ilast, isize, iwork, j, jacobs, k, label, len1, &
-         len2, length, names, nsteps, pmax, &
+         len2, length, nsteps, pmax, &
          points, psave, qabove, qbelow, qrat1, qrat2, &
          qs0, qs1, qtask, qtype, qusave, &
          qv1, qvary, qvary1, qvary2, qvsave, qxsave, qy0, qy1, return, &
-         rlast, route, rsize, size, step, steps, text, xrepor
+         rlast, route, rsize, size, step, steps, xrepor
       intrinsic :: max
-      logical &
-         active, allow, error, exist, first, flag, found, &
-         mark, satisf, time
+      logical :: active, allow, exist, first, flag, found, mark, satisf, time
+
+      character(len=80) :: column,ctemp1,ctemp2,header,string
 
       character(*), parameter :: id = 'TWOPNT:  '
       integer,      parameter :: gmax = 100
       integer,      parameter :: lines = 20
-      integer,      parameter :: vnmbrs = 12
 
       ! SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
       logical,      parameter :: mess = .false.
@@ -2907,10 +2916,9 @@ module twopnt_core
          above(groupa + comps + groupb), active(*), below(groupa + comps &
          + groupb), buffer(groupa + comps * pmax + groupb), column(3), &
          detail(gmax, qtotal), event(gmax, qtotal), header(6), &
-          iwork(isize), mark(*), &
-         name(names), ratio(2), rwork(rsize), &
+          iwork(isize), mark(*), ratio(2), rwork(rsize), &
          size(gmax), timer(qtotal), total(qtotal), u(groupa + comps * &
-         pmax + groupb), vnmbr(vnmbrs), x(*)
+         pmax + groupb), x(*)
 
 
 !///  SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
@@ -2949,7 +2957,7 @@ module twopnt_core
 
 !///  WRITE ALL MESSAGES.
 
-      if (mess .and. 0 < text) then
+      if (mess .and. text>0) then
          label = 0
          return = 0
          route = 0
@@ -2958,7 +2966,7 @@ module twopnt_core
          write (text, 10020) id
          write (text, 10017) id
          write (text, 10014) id
-         write (text, 10001) id, 'DOUBLE PRECISION', twtrim(vnmbr(vnmbrs),CONTRL_MAX_LEN)
+         write (text, 10001) id, precision_flag(), twtrim(vnmbr(vnmbrs),CONTRL_MAX_LEN)
          write (text, 10022) id
          write (text, 10021) id
          write (text, 10011) id, '???', ratio, setup%toler1, setup%toler2
@@ -2977,18 +2985,8 @@ module twopnt_core
          go to 9001
       end if
 
-!///  CHECK THE VERSION.
-
-      data vnmbr &
-         / '3.18', '3.19', '3.20', '3.21', '3.22', '3.23', '3.24', &
-           '3.25', '3.26', '3.27', '3.28', '3.29' /
-
-      flag = .false.
-      do j = 1, vnmbrs
-         flag = flag .or. versio == 'DOUBLE PRECISION VERSION ' // vnmbr(j)
-      end do
-      error = .not. flag
-      if (error) go to 9002
+      ! Check the version.
+      call check_version(versio,text,error); if (error) return
 
       ! Additional settings initialization
       if (.not.setup%padd) setup%ipadd = pmax
@@ -3001,8 +2999,8 @@ module twopnt_core
 
       string = vnmbr(vnmbrs)
       call twlast (length, string)
-      if ((0 < setup%levelm .or. mess) .and. 0 < text) &
-         write (text, 10001) id, 'DOUBLE PRECISION', string (1:length)
+      if ((0 < setup%levelm .or. mess) .and. text>0) &
+         write (text, 10001) id, precision_flag(), string (1:length)
 
 !///  CHECK THE ARGUMENTS.
 
@@ -3179,7 +3177,7 @@ module twopnt_core
 
 !///  PRINT LEVELS 11, 21, AND 22.
 
-      if (0 < setup%leveld .and. 0 < text) then
+      if (0 < setup%leveld .and. text>0) then
          write (text, 10002) id, 'INITIAL GUESS:'
 !        GO TO 1100 WHEN RETURN = 2
          return = 2
@@ -3194,7 +3192,7 @@ module twopnt_core
       header(1) = '            LOG10   LOG10         '
       header(2) = '    TASK   NORM F  COND J   REMARK'
 
-      if (setup%levelm == 1 .and. 0 < text) then
+      if (setup%levelm == 1 .and. text>0) then
          if (0 < setup%leveld) write (text, 10002) id, &
             'SOLVE THE PROBLEM.'
          write (text, 10003) (header(j), j = 1, 2)
@@ -3328,7 +3326,7 @@ module twopnt_core
 !     SAVE THE STATUS REPORTS DURING REVERSE COMMUNICATION
       string = report
 
-      if (setup%leveld == 1 .and. 0 < text) then
+      if (setup%leveld == 1 .and. text>0) then
          write (text, 10002) id, 'FINAL SOLUTION:'
 !        GO TO 3020 WHEN RETURN = 3
          return = 3
@@ -3347,7 +3345,7 @@ module twopnt_core
 
 !///  TOP OF THE REPORT BLOCK.
 
-      if (0 < setup%levelm .and. 0 < text) then
+      if (0 < setup%levelm .and. text>0) then
          if (0.0 < total(qtotal)) then
 
 !///  REPORT TOTAL COMPUTER TIME.
@@ -3472,7 +3470,7 @@ module twopnt_core
 !///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE SEARCH BLOCK.
 
       if (1 < setup%levelm) then
-         if (0 < text) write (text, 10014) id
+         if (text>0) write (text, 10014) id
       end if
 
 !///  PREPARE TO CALL SEARCH.
@@ -3541,7 +3539,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE SEARCH BLOCK.
 
-      if (setup%levelm == 1 .and. 0 < text) then
+      if (setup%levelm == 1 .and. text>0) then
 !        GO TO 4040 WHEN LABEL = 2
          label = 2
          go to 7010
@@ -3552,9 +3550,9 @@ module twopnt_core
 
       if (1 < setup%levelm) then
          if (found) then
-            if (0 < text) write (text, 10015) id
+            if (text>0) write (text, 10015) id
          else
-            if (0 < text) write (text, 10016) id
+            if (text>0) write (text, 10016) id
          end if
       end if
 
@@ -3577,7 +3575,7 @@ module twopnt_core
 !///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE REFINE BLOCK.
 
       if (1 < setup%levelm) then
-         if (0 < text) write (text, 10017) id
+         if (text>0) write (text, 10017) id
       end if
 
 !///  PREPARE TO CALL REFINE.
@@ -3676,7 +3674,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE REFINE BLOCK.
 
-      if (setup%levelm == 1 .and. 0 < text) then
+      if (setup%levelm == 1 .and. text>0) then
          write (text, '()')
 !        GO TO 5120 WHEN LABEL = 3
          label = 3
@@ -3688,9 +3686,9 @@ module twopnt_core
 
       if (1 < setup%levelm) then
          if (found) then
-            if (0 < text) write (text, 10018) id
+            if (text>0) write (text, 10018) id
          else
-            if (0 < text) write (text, 10019) id
+            if (text>0) write (text, 10019) id
          end if
       end if
 
@@ -3717,7 +3715,7 @@ module twopnt_core
 !///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE EVOLVE BLOCK.
 
       if (1 < setup%levelm) then
-         if (0 < text) write (text, 10020) id
+         if (text>0) write (text, 10020) id
       end if
 
 !///  CALL EVOLVE.
@@ -3773,7 +3771,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE EVOLVE BLOCK.
 
-      if (setup%levelm == 1 .and. 0 < text) then
+      if (setup%levelm == 1 .and. text>0) then
 !        GO TO 6040 WHEN LABEL = 4
          label = 4
          go to 7010
@@ -3784,9 +3782,9 @@ module twopnt_core
 
       if (1 < setup%levelm) then
          if (found) then
-            if (0 < text) write (text, 10021) id
+            if (text>0) write (text, 10021) id
          else
-            if (0 < text) write (text, 10022) id
+            if (text>0) write (text, 10022) id
          end if
       end if
 
@@ -3866,7 +3864,7 @@ module twopnt_core
       end if
 
       call twsqez (length, string)
-      if (0 < text) write (text, 10023) column, string (1 : length)
+      if (text>0) write (text, 10023) column, string (1 : length)
 
       go to (1110, 4040, 5120, 6040) label
       error = .true.
@@ -4040,44 +4038,34 @@ module twopnt_core
 
 !     return
 
-9001  if (0 < text) write (text, 01) id, route
+9001  if (text>0) write (text, 01) id, route
       if (.not. mess) return
 
-9002  if (0 < text) then
-         call twlast (length, versio)
-         write (text, 02) id, versio (1 : length), vnmbr(vnmbrs)
-         do j = vnmbrs - 1, 1, - 1
-            write (text, '(10X, A, A)') &
-               ' CAN REPLACE:  double precision VERSION ', vnmbr(j)
-         end do
-      end if
+9004  if (text>0) write (text, 04) id, cntrls, count
       if (.not. mess) return
 
-9004  if (0 < text) write (text, 04) id, cntrls, count
+9005  if (text>0) write (text, 05) id, setup%leveld, setup%levelm
       if (.not. mess) return
 
-9005  if (0 < text) write (text, 05) id, setup%leveld, setup%levelm
-      if (.not. mess) return
-
-9006  if (0 < text) write (text, 06) id, &
+9006  if (text>0) write (text, 06) id, &
          comps, points, groupa, groupb
       if (.not. mess) return
 
-9007  if (0 < text) write (text, 07) id, comps, points
+9007  if (text>0) write (text, 07) id, comps, points
       if (.not. mess) return
 
-9008  if (0 < text) write (text, 08) id, &
+9008  if (text>0) write (text, 08) id, &
          comps, points, groupa, groupb, groupa + comps * points + groupb
       if (.not. mess) return
 
-9009  if (0 < text) write (text, 09) id, &
+9009  if (text>0) write (text, 09) id, &
          names, comps, groupa, groupb, groupa + comps + groupb
       if (.not. mess) return
 
-9010  if (0 < text) write (text, 10) id, points, pmax
+9010  if (text>0) write (text, 10) id, points, pmax
       if (.not. mess) return
 
-9011  if (0 < text) then
+9011  if (text>0) then
          write (text, 11) id, &
             groupa, groupb, comps, groupa + comps + groupb, count
          count = 0
@@ -4125,105 +4113,99 @@ module twopnt_core
       end if
       if (.not. mess) return
 
-9012  if (0 < text) write (text, 12) id
+9012  if (text>0) write (text, 12) id
       if (.not. mess) return
 
-9013  if (0 < text) write (text, 13) id, &
+9013  if (text>0) write (text, 13) id, &
          isize, rsize, ilast, rlast
       if (.not. mess) return
 
-9014  if (0 < text) write (text, 14) id
+9014  if (text>0) write (text, 14) id
       if (.not. mess) return
 
-9015  if (0 < text) write (text, 15) id
+9015  if (text>0) write (text, 15) id
       if (.not. mess) return
 
-9016  if (0 < text) write (text, 16) id
+9016  if (text>0) write (text, 16) id
       if (.not. mess) return
 
-9017  if (0 < text) write (text, 17) id
+9017  if (text>0) write (text, 17) id
       if (.not. mess) return
 
-9018  if (0 < text) write (text, 18) id
+9018  if (text>0) write (text, 18) id
       if (.not. mess) return
 
-9019  if (0 < text) write (text, 19) id
+9019  if (text>0) write (text, 19) id
       if (.not. mess) return
 
-9020  if (0 < text) write (text, 20) id, label
+9020  if (text>0) write (text, 20) id, label
       if (.not. mess) return
 
-9021  if (0 < text) write (text, 21) id, return
+9021  if (text>0) write (text, 21) id, return
       if (.not. mess) return
 
       stop
 
-        ! Error messages
-        01 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-                   //10X, i10, '  ROUTE')
-        02 format(/1X, a9, 'ERROR.  THE CALLING PROGRAM EXPECTS A VERSION OF' &
-                    /10X, 'TWOPNT NOT COMPATIBLE WITH THIS VERSION.' &
-                   //10X, '     EXPECTS:  ', a &
-                   //10X, 'THIS VERSION:  double precision VERSION ', a)
-        04 format(/1X, a9, 'ERROR.  THE NUMBER OF CONTROLS IS INCONSISTENT.' &
-                   //10X, i10, '  CONTROLS' &
-                    /10X, i10, '  COUNTED')
-        05 format(/1X, a9, 'ERROR.  THE PRINTING LEVELS ARE OUT OF ORDER.' &
-                    /10X, 'LEVELD CANNOT EXCEED LEVELM.' &
-                   //10X, i10, '  LEVELD, FOR SOLUTIONS' &
-                    /10X, i10, '  LEVELM, FOR MESSAGES')
-        06 format(/1X, a9, 'ERROR.  NUMBERS OF ALL TYPES OF UNKNOWNS MUST BE AT' &
-                    /10X, 'LEAST ZERO.' &
-                   //10X, i10, '  COMPS, COMPONENTS' &
-                    /10X, i10, '  POINTS' &
-                    /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-                    /10X, i10, '  GROUPB, GROUP B UNKNOWNS')
-        07 format(/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
-                    /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE.' &
-                   //10X, i10, '  COMPS, COMPONENTS' &
-                    /10X, i10, '  POINTS')
-        08 format(/1X, a9, 'ERROR.  TOTAL UNKNOWNS MUST BE POSITIVE.' &
-                   //10X, i10, '  COMPS, COMPONENTS' &
-                    /10X, i10, '  POINTS' &
-                    /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-                    /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-                    /10X, i10, '  TOTAL NUMBER')
-        09 format(/1X, a9, 'ERROR.  THE NUMBER OF NAMES IS WRONG.' &
-                   //10X, i10, '  NAMES' &
-                   //10X, i10, '  COMPS, COMPONENTS' &
-                    /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-                    /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-                    /10X, i10, '  TOTAL NUMBER')
-        10 format(/1X, a9, 'ERROR.  THERE ARE TOO MANY POINTS.' &
-                   //10X, i10, '  POINTS' &
-                    /10X, i10, '  PMAX, LIMIT ON POINTS')
-        11 format(/1X, a9, 'ERROR.  THE LOWER AND UPPER BOUNDS ON SOME UNKNOWNS' &
-                    /10X, 'ARE OUT OF ORDER.' &
-                   //10X, i10, '  GROUP A UNKNOWNS (A)' &
-                    /10X, i10, '  GROUP B UNKNOWNS (B)' &
-                    /10X, i10, '  COMPONENTS AT POINTS (C)' &
-                    /10X, i10, '  TOTAL TYPES OF UNKNOWNS' &
-                    /10X, i10, '  NUMBER OF BOUNDS OUT OF ORDER' &
-                   //10X, '     LOWER       UPPER' &
-                    /10X, '     BOUND       BOUND   UNKNOWN'/)
-        12 format(/1X, a9, 'ERROR.  TWGRAB FAILS.')
-        13 format(/1X, a9, 'ERROR.  ONE OR BOTH WORK SPACES ARE TOO SMALL.' &
-                   //25X, '   INTEGER        REAL' &
-                   //10X, ' PRESENT SIZE', 2i12 &
-                    /10X, 'REQUIRED SIZE', 2i12)
-        14 format(/1X, a9, 'ERROR.  NEITHER THE INITIAL TIME EVOLUTION NOR THE' &
-                    /10X, 'SEARCH FOR THE STEADY STATE IS ALLOWED.')
-        15 format(/1X, a9, 'ERROR.  UNKNOWN TASK.')
-        16 format(/1X, a9, 'ERROR.  UNKNOWN REPORT CODE.')
-        17 format(/1X, a9, 'ERROR.  SEARCH FAILS.')
-        18 format(/1X, a9, 'ERROR.  REFINE FAILS.')
-        19 format(/1X, a9, 'ERROR.  EVOLVE FAILS.')
-        20 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-                   //10X, i10, '  LABEL')
-        21 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-                   //10X, i10, '  RETURN')
-
-
+          ! Error messages
+           1 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
+                  //10X, i10, '  ROUTE')
+           4 format(/1X, a9, 'ERROR.  THE NUMBER OF CONTROLS IS INCONSISTENT.' &
+                  //10X, i10, '  CONTROLS' &
+                   /10X, i10, '  COUNTED')
+           5 format(/1X, a9, 'ERROR.  THE PRINTING LEVELS ARE OUT OF ORDER.' &
+                   /10X, 'LEVELD CANNOT EXCEED LEVELM.' &
+                  //10X, i10, '  LEVELD, FOR SOLUTIONS' &
+                   /10X, i10, '  LEVELM, FOR MESSAGES')
+           6 format(/1X, a9, 'ERROR.  NUMBERS OF ALL TYPES OF UNKNOWNS MUST BE AT' &
+                   /10X, 'LEAST ZERO.' &
+                  //10X, i10, '  COMPS, COMPONENTS' &
+                   /10X, i10, '  POINTS' &
+                   /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                   /10X, i10, '  GROUPB, GROUP B UNKNOWNS')
+           7 format(/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
+                   /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE.' &
+                  //10X, i10, '  COMPS, COMPONENTS' &
+                   /10X, i10, '  POINTS')
+           8 format(/1X, a9, 'ERROR.  TOTAL UNKNOWNS MUST BE POSITIVE.' &
+                  //10X, i10, '  COMPS, COMPONENTS' &
+                   /10X, i10, '  POINTS' &
+                   /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                   /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                   /10X, i10, '  TOTAL NUMBER')
+           9 format(/1X, a9, 'ERROR.  THE NUMBER OF NAMES IS WRONG.' &
+                  //10X, i10, '  NAMES' &
+                  //10X, i10, '  COMPS, COMPONENTS' &
+                   /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                   /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                   /10X, i10, '  TOTAL NUMBER')
+          10 format(/1X, a9, 'ERROR.  THERE ARE TOO MANY POINTS.' &
+                  //10X, i10, '  POINTS' &
+                   /10X, i10, '  PMAX, LIMIT ON POINTS')
+          11 format(/1X, a9, 'ERROR.  THE LOWER AND UPPER BOUNDS ON SOME UNKNOWNS' &
+                   /10X, 'ARE OUT OF ORDER.' &
+                  //10X, i10, '  GROUP A UNKNOWNS (A)' &
+                   /10X, i10, '  GROUP B UNKNOWNS (B)' &
+                   /10X, i10, '  COMPONENTS AT POINTS (C)' &
+                   /10X, i10, '  TOTAL TYPES OF UNKNOWNS' &
+                   /10X, i10, '  NUMBER OF BOUNDS OUT OF ORDER' &
+                  //10X, '     LOWER       UPPER' &
+                   /10X, '     BOUND       BOUND   UNKNOWN'/)
+          12 format(/1X, a9, 'ERROR.  TWGRAB FAILS.')
+          13 format(/1X, a9, 'ERROR.  ONE OR BOTH WORK SPACES ARE TOO SMALL.' &
+                  //25X, '   INTEGER        REAL' &
+                  //10X, ' PRESENT SIZE', 2i12 &
+                   /10X, 'REQUIRED SIZE', 2i12)
+          14 format(/1X, a9, 'ERROR.  NEITHER THE INITIAL TIME EVOLUTION NOR THE' &
+                   /10X, 'SEARCH FOR THE STEADY STATE IS ALLOWED.')
+          15 format(/1X, a9, 'ERROR.  UNKNOWN TASK.')
+          16 format(/1X, a9, 'ERROR.  UNKNOWN REPORT CODE.')
+          17 format(/1X, a9, 'ERROR.  SEARCH FAILS.')
+          18 format(/1X, a9, 'ERROR.  REFINE FAILS.')
+          19 format(/1X, a9, 'ERROR.  EVOLVE FAILS.')
+          20 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
+                  //10X, i10, '  LABEL')
+          21 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
+                  //10X, i10, '  RETURN')
 
       end subroutine twopnt
 
@@ -4675,6 +4657,57 @@ module twopnt_core
           integer , intent(in) :: point ! ID of the finite-difference node (<=points-1)
           grad = (u(comp,point+1)-u(comp,point)) / (x(point+1)-x(point))
       end function grad
+
+      !> Return precision flag based on the current real kind
+      function precision_flag()
+          character(len=16) :: precision_flag
+
+          if (precision(zero)==precision(0.0)) then
+             precision_flag = 'SINGLE PRECISION'
+          elseif (precision(zero)==precision(0.d0)) then
+             precision_flag = 'DOUBLE PRECISION'
+          else
+             precision_flag = 'UNKNWN PRECISION'
+          endif
+
+      end function precision_flag
+
+      !> Check that the requested version is supported
+      subroutine check_version(version_label,text,error)
+         character(len=*), intent(in) :: version_label
+         integer, intent(in) :: text
+         logical, intent(out) :: error
+
+         integer :: j,length
+         logical :: match_found
+         character(*), parameter :: id = 'TWOPNT:  '
+
+         ! Check all compatible versions for a match
+         match_found = .false.
+         do j = 1, vnmbrs
+            match_found = version_label == precision_flag()//' VERSION ' // vnmbr(j)
+            if (match_found) exit
+         end do
+
+         error = .not.match_found
+
+         if (error .and. text>0) then
+            call twlast (length, version_label)
+            write (text, 1) id, version_label(1:length),precision_flag(),vnmbr(vnmbrs)
+            do j = vnmbrs - 1, 1, - 1
+                write (text,'(10X,A,A)')' CAN REPLACE:  '//precision_flag()//' VERSION ',vnmbr(j)
+            end do
+         end if
+
+         return
+
+         1 format(/1X, a9, 'ERROR.  THE CALLING PROGRAM EXPECTS A VERSION OF' &
+                 /10X, 'TWOPNT NOT COMPATIBLE WITH THIS VERSION.' &
+                //10X, '     EXPECTS:  ', a &
+                //10X, 'THIS VERSION:  ',a,' VERSION ', a)
+
+      end subroutine check_version
+
 
 end module twopnt_core
 
