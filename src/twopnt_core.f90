@@ -3343,8 +3343,7 @@ module twopnt_core
 
       call twlaps (timer(qtotal))
       total(qtotal) = timer(qtotal)
-      total(qother) = total(qtotal) &
-         - (total(qfunct) + total(qjacob) + total(qsolve))
+      total(qother) = total(qtotal) - (total(qfunct) + total(qjacob) + total(qsolve))
 
 !///  TOP OF THE REPORT BLOCK.
 
@@ -4235,8 +4234,8 @@ module twopnt_core
 
           integer, intent(in)     :: pmax
           integer, intent(in)     :: comps
-          logical, intent(out)    :: error, newx, success
-          logical, intent(in)     :: active(comps)
+          logical, intent(inout)    :: error, newx, success
+          logical, intent(inout)     :: active(comps)
           logical, intent(inout)  :: mark(pmax)
           real(RK), intent(inout) :: ratio1(pmax),ratio2(pmax),ratio(2),x(pmax)
           real(RK), intent(inout) :: buffer(comps*pmax),u(comps,pmax)
@@ -4529,7 +4528,7 @@ module twopnt_core
               points = total
 
               ! allow the user to update the solution.
-              call twcopy (comps * points, u, buffer)
+              call twcopy (comps*points, u, buffer)
 
               ! Request to update the grid
               signal = 'UPDATE'
@@ -4537,24 +4536,25 @@ module twopnt_core
               route = 1
               return
 
-          end if add_points
+              ! Restart after grid update.
+              ! DO NOT MOVE THIS out of (more>0) block
+              4060  continue
+              signal = ' '
+              call twcopy (comps*points,buffer,u)
 
-          ! Restart after grid update
-          4060  continue
-          signal = ' '
-          call twcopy (comps*points,buffer,u)
+          end if add_points
 
           ! ***** epilogue. *****
 
           ! print summary
           if (levelm>0 .and. text>0) then
 
+             temp1 = maxval(ratio1(1:former-1),1)
+             temp2 = maxval(ratio2(2:former-1),1)
+
              if (signif == 0) then
                 write (text, 2) id
              else
-
-                temp1 = maxval(ratio1(1:former-1),1)
-                temp2 = maxval(ratio2(2:former-1),1)
 
                 write (text, 3) temp1, temp2, toler1, toler2
                 if (most == 0) then
