@@ -35,6 +35,8 @@ module twopnt_core
     real(RK), parameter, public :: half = 0.5_RK
     real(RK), parameter, public :: one  = 1.0_RK
     real(RK), parameter, public :: pi   = acos(-1.0_RK)
+    real(RK), parameter, public :: minute = 60.0_RK
+    real(RK), parameter, public :: hour   = 3600.0_RK
 
     ! Machine epsilon and the absolute and relative perturbations.
     real(RK), parameter, public :: eps   = epsilon(0.0_RK)
@@ -2925,39 +2927,28 @@ module twopnt_core
 
       save
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     PROLOGUE.
-!
-!///////////////////////////////////////////////////////////////////////
+      !***** PROLOGUE. *****
 
-!///  EVERY-TIME INITIALIZATION.
+      ! : EVERY-TIME INITIALIZATION.
 
-!     TURN OFF ALL REVERSE COMMUNICATION FLAGS.
-      time = .false.
+      time = .false. ! Turn off all reverse communication flags
 
-!///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
-
+      ! If this is a return call, continue where the program had paused.
       if (signal /= ' ') then
          go to (9912, 9922, 9932, 9942) route
          error = .true.
          go to 9001
       end if
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     ENTRY BLOCK.  INITIALIZE A NEW PROBLEM.
-!
-!///////////////////////////////////////////////////////////////////////
+      !***** ENTRY BLOCK.  INITIALIZE A NEW PROBLEM. *****
 
-!///  TURN OFF ALL STATUS REPORTS.
-
+      ! Turn off all status reports.
       error = .false.
       report = ' '
 
-!///  WRITE ALL MESSAGES.
+      ! Write all messages.
 
-      if (mess .and. text>0) then
+      test_messages: if (mess .and. text>0) then
          label = 0
          return = 0
          route = 0
@@ -2983,7 +2974,7 @@ module twopnt_core
          write (text, 10010) id
 
          go to 9001
-      end if
+      end if test_messages
 
       ! Check the version.
       call check_version(versio,text,error); if (error) return
@@ -2995,12 +2986,11 @@ module twopnt_core
       error = .not. (count == cntrls)
       if (error) go to 9004
 
-!///  PRINT THE ENTRY BANNER AT ALL PRINT LEVELS.
+      ! Print entry banner
 
       string = vnmbr(vnmbrs)
-      call twlast (length, string)
-      if ((0 < setup%levelm .or. mess) .and. text>0) &
-         write (text, 10001) id, precision_flag(), string (1:length)
+      if ((setup%levelm>0 .or. mess) .and. text>0) &
+         write (text, 10001) id, precision_flag(), trim(string)
 
 !///  CHECK THE ARGUMENTS.
 
@@ -3343,60 +3333,48 @@ module twopnt_core
       total(qtotal) = timer(qtotal)
       total(qother) = total(qtotal) - (total(qfunct) + total(qjacob) + total(qsolve))
 
-!///  TOP OF THE REPORT BLOCK.
+      ! TOP OF THE REPORT BLOCK.
+      if (setup%levelm>0 .and. text>0) then
+         if (total(qtotal)>zero) then
 
-      if (0 < setup%levelm .and. text>0) then
-         if (0.0 < total(qtotal)) then
-
-!///  REPORT TOTAL COMPUTER TIME.
-
-      temp = total(qtotal)
-      if (3600.0 <= temp) then
-         write (string, '(F10.2, A)') temp / 3600.0, ' HOURS'
-      else if (60.0 <= temp) then
-         write (string, '(F10.2, A)') temp / 60.0, ' MINUTES'
-      else
-         write (string, '(F10.2, A)') temp, ' SECONDS'
-      end if
-
-      call twsqez (length, string)
-      write (text, 10004) id, string (1 : length)
+      ! Report total computer time
+      write (text, 10004) id, print_time(total(qtotal))
 
 !///  REPORT PERCENT OF TOTAL COMPUTER TIME.
 
       temp = 100.0 / total(qtotal)
       if (setup%adapt) then
 
-!                  123456789_123456789_123456789_12345678
-!                  123456  123456  123456 123456 123456
-      header(1) = '                TASK                  '
-      header(3) = '  GRID    GRID  --------------------  '
-      header(5) = 'POINTS  TOTALS  EVOLVE SEARCH REFINE  '
+    !                  123456789_123456789_123456789_12345678
+    !                  123456  123456  123456 123456 123456
+          header(1) = '                TASK                  '
+          header(3) = '  GRID    GRID  --------------------  '
+          header(5) = 'POINTS  TOTALS  EVOLVE SEARCH REFINE  '
 
-!                  123456789_123456789_1234567
-!                  123456 123456 123456 123456
-      header(2) = 'SUBTASK                    '
-      header(4) = '---------------------------'
-      header(6) = 'EVAL F PREP J  SOLVE  OTHER'
+    !                  123456789_123456789_1234567
+    !                  123456 123456 123456 123456
+          header(2) = 'SUBTASK                    '
+          header(4) = '---------------------------'
+          header(6) = 'EVAL F PREP J  SOLVE  OTHER'
 
-      write (text, 10005) header, &
-         (size(j), (temp * detail(j, k), k = 1, 8), j = 1, grid)
-      if (1 < grid) write (text, 10006) (temp * total(k), k = 2, 8)
-      if (gmax < grid) write (text, 10007)
+          write (text, 10005) header, &
+             (size(j), (temp * detail(j, k), k = 1, 8), j = 1, grid)
+          if (1 < grid) write (text, 10006) (temp * total(k), k = 2, 8)
+          if (gmax < grid) write (text, 10007)
 
       else
 
-!                  123456789_123456789_123456789_123456789_123456789_1
-!                  123456   123456   123456   123456   123456   123456
-      header(1) = 'SUBTASK                             TASK           '
-      header(2) = '---------------------------------   ---------------'
-      header(3) = 'EVAL F   PREP J    SOLVE    OTHER   EVOLVE   SEARCH'
+    !                  123456789_123456789_123456789_123456789_123456789_1
+    !                  123456   123456   123456   123456   123456   123456
+          header(1) = 'SUBTASK                             TASK           '
+          header(2) = '---------------------------------   ---------------'
+          header(3) = 'EVAL F   PREP J    SOLVE    OTHER   EVOLVE   SEARCH'
 
-      write (text, 10008) &
-         (header(j), j = 1, 3), '  % OF TOTAL', &
-         (temp * total(k), k = 5, 8), (temp * total(k), k = 2, 3), &
-         'MEAN SECONDS', (detail(1, k) / event(1, k), k = 5, 7), &
-         '    QUANTITY', (event(1, k), k = 5, 7)
+          write (text, 10008) &
+             (header(j), j = 1, 3), '  % OF TOTAL', &
+             (temp * total(k), k = 5, 8), (temp * total(k), k = 2, 3), &
+             'MEAN SECONDS', (detail(1, k) / event(1, k), k = 5, 7), &
+             '    QUANTITY', (event(1, k), k = 5, 7)
 
       end if
 
@@ -3423,7 +3401,7 @@ module twopnt_core
 
 !///  REPORT THE COMPLETION STATUS.
 
-      if (0 < setup%levelm) then
+      if (setup%levelm>0) then
          if (report == ' ') then
             write (text, 10010) id
          else if (report == 'NO SPACE') then
@@ -4692,8 +4670,7 @@ module twopnt_core
          error = .not.match_found
 
          if (error .and. text>0) then
-            call twlast (length, version_label)
-            write (text, 1) id, version_label(1:length),precision_flag(),vnmbr(vnmbrs)
+            write (text, 1) id, trim(version_label),precision_flag(),vnmbr(vnmbrs)
             do j = vnmbrs - 1, 1, - 1
                 write (text,'(10X,A,A)')' CAN REPLACE:  '//precision_flag()//' VERSION ',vnmbr(j)
             end do
@@ -4707,6 +4684,25 @@ module twopnt_core
                 //10X, 'THIS VERSION:  ',a,' VERSION ', a)
 
       end subroutine check_version
+
+      ! Print computer time
+      function print_time(seconds) result(string)
+          real(RK), intent(in) :: seconds
+          character(len=:), allocatable :: string
+
+          character(len=80) :: buffer
+
+          if (hour <= seconds) then
+             write (buffer, '(F10.2, A)') seconds / hour, ' HOURS'
+          else if (minute <= seconds) then
+             write (buffer, '(F10.2, A)') seconds / minute, ' MINUTES'
+          else
+             write (buffer, '(F10.2, A)') seconds, ' SECONDS'
+          end if
+
+          string = trim(buffer)
+
+      end function print_time
 
 
 end module twopnt_core
