@@ -2895,15 +2895,15 @@ module twopnt_core
 
       real(RK) ::  above, below, buffer, condit, detail, maxcon, ratio, rwork, stride, temp, timer, &
                    total, u, x, ynorm
-      integer :: age, cntrls, comps, count, desire, event, grid, groupa, &
-         groupb, ilast, isize, iwork, j, jacobs, k, label, len1, &
-         len2, length, nsteps, pmax, &
-         points, psave, qabove, qbelow, qrat1, qrat2, &
-         qs0, qs1, qtask, qtype, qusave, &
-         qv1, qvary, qvary1, qvary2, qvsave, qxsave, qy0, qy1, return, &
-         rlast, route, rsize, size, step, steps, xrepor
+      integer :: age, comps, count, desire, event, grid, groupa, &
+                 groupb, ilast, isize, iwork, j, jacobs, k, label, len1, &
+                 len2, length, nsteps, pmax, &
+                 points, psave, qabove, qbelow, qrat1, qrat2, &
+                 qs0, qs1, qtask, qtype, qusave, &
+                 qv1, qvary, qvary1, qvary2, qvsave, qxsave, qy0, qy1, return, &
+                 rlast, route, rsize, size, step, steps, xrepor
       intrinsic :: max
-      logical :: active, allow, exist, first, flag, found, mark, satisf, time
+      logical :: active, allow, exist, first, found, mark, satisf, time
 
       character(len=80) :: column,ctemp1,ctemp2,header,string
 
@@ -2923,8 +2923,7 @@ module twopnt_core
          pmax + groupb), x(*)
 
 
-!///  SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
-
+      ! SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
       save
 
       !***** PROLOGUE. *****
@@ -2937,7 +2936,9 @@ module twopnt_core
       if (signal /= ' ') then
          go to (9912, 9922, 9932, 9942) route
          error = .true.
-         go to 9001
+
+         if (text>0) write (text, 01) id, route
+         return
       end if
 
       !***** ENTRY BLOCK.  INITIALIZE A NEW PROBLEM. *****
@@ -2973,7 +2974,15 @@ module twopnt_core
          write (text, 10002) id, 'SOLVE THE PROBLEM.'
          write (text, 10010) id
 
-         go to 9001
+         ! Print all messages
+         write (text, 1) id, route
+         write (text, 5) id, setup%leveld, setup%levelm
+         write (text, 6) id, comps, points, groupa, groupb
+         write (text, 7) id, comps, points
+         write (text, 8) id, comps, points, groupa, groupb, groupa + comps * points + groupb
+         write (text, 9) id, names, comps, groupa, groupb, groupa + comps + groupb
+         write (text, 10) id, points, pmax
+
       end if test_messages
 
       ! Check the version.
@@ -2982,37 +2991,49 @@ module twopnt_core
       ! Additional settings initialization
       if (.not.setup%padd) setup%ipadd = pmax
 
-
-      error = .not. (count == cntrls)
-      if (error) go to 9004
-
       ! Print entry banner
-
       string = vnmbr(vnmbrs)
       if ((setup%levelm>0 .or. mess) .and. text>0) &
          write (text, 10001) id, precision_flag(), trim(string)
 
-!///  CHECK THE ARGUMENTS.
-
+      ! CHECK THE ARGUMENTS.
       error = .not. (setup%leveld <= setup%levelm)
-      if (error) go to 9005
+      printing_levels: if (error) then
+          if (text>0) write (text, 5) id, setup%leveld, setup%levelm
+          return
+      end if printing_levels
 
-      error = .not. (0 <= comps .and. 0 <= points .and. &
-         0 <= groupa .and. 0 <= groupb)
-      if (error) go to 9006
+      error = .not. all([comps,points,groupa,groupb]>=0)
+      sizes: if (error) then
+          if (text>0) write (text, 6) id, comps, points, groupa, groupb
+          return
+      endif sizes
 
-      error = .not. ((0 < comps) .eqv. (0 < points))
-      if (error) go to 9007
+      error = .not. ((comps>0) .eqv. (points>0))
+      unknowns: if (error) then
+          if (text>0) write (text, 7) id, comps, points
+          return
+      end if unknowns
 
-      error = .not. (0 < groupa + comps * points + groupb)
-      if (error) go to 9008
+      error = .not. (groupa + comps * points + groupb > 0)
+      if (error) then
+          if (text>0) write (text, 8) id, comps, points, groupa, groupb, &
+                                           groupa + comps * points + groupb
+          return
+      end if
 
-      error = .not. (names == 1 .or. &
-         names == groupa + comps + groupb)
-      if (error) go to 9009
+      error = .not. (names == 1 .or. names == groupa + comps + groupb)
+      number_of_names: if (error) then
+          if (text>0) write (text, 9) id, names, comps, groupa, groupb, groupa + comps + groupb
+          return
+      end if number_of_names
 
       error = .not. (points <= pmax)
-      if (error) go to 9010
+      too_many_points: if (error) then
+          if (text>0) write (text, 10) id, points, pmax
+          return
+      endif too_many_points
+
 
       count = 0
       do 1020 j = 1, groupa + comps + groupb
@@ -3021,10 +3042,7 @@ module twopnt_core
       error = count /= 0
       if (error) go to 9011
 
-!///  PARTITION THE INTEGER WORK SPACE.
-
-!     SUBROUTINE TWGRAB (ERROR, LAST, FIRST, NUMBER)
-
+      ! PARTITION THE INTEGER WORK SPACE.
       ilast = 0
 
 !     VARY(PMAX)
@@ -3438,18 +3456,14 @@ module twopnt_core
 
 4010  continue
 
-!///  INITIALIZE STATISTICS ON ENTRY TO THE SEARCH BLOCK.
-
-      call twtime (timer(qsearc))
+      ! INITIALIZE STATISTICS ON ENTRY TO THE SEARCH BLOCK.
+      call twtime(timer(qsearc))
       first = .true.
       jacobs = 0
-      maxcon = 0.0
+      maxcon = zero
 
-!///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE SEARCH BLOCK.
-
-      if (1 < setup%levelm) then
-         if (text>0) write (text, 10014) id
-      end if
+      ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE SEARCH BLOCK.
+      if (setup%levelm>1 .and. text>0) write (text, 10014) id
 
 !///  PREPARE TO CALL SEARCH.
 
@@ -3526,7 +3540,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE SEARCH BLOCK.
 
-      if (1 < setup%levelm) then
+      if (setup%levelm>1) then
          if (found) then
             if (text>0) write (text, 10015) id
          else
@@ -3552,7 +3566,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE REFINE BLOCK.
 
-      if (1 < setup%levelm) then
+      if (setup%levelm>1) then
          if (text>0) write (text, 10017) id
       end if
 
@@ -3582,10 +3596,10 @@ module twopnt_core
 !///  SERVICE REQUESTS FROM REFINE: PASS REQUESTS TO THE CALLER.
 
       if (signal /= ' ') then
-!        INSERT THE GROUP A AND B UNKNOWNS
+         ! INSERT THE GROUP A AND B UNKNOWNS
          buffer(1:groupa) = u(1:groupa)
          do j = 1, groupb
-            buffer(groupa + comps * points + j) = rwork(qvsave - 1 + j)
+            buffer(groupa + comps*points + j) = rwork(qvsave - 1 + j)
          end do
 
 !        GO TO 5030 WHEN RETURN = 6
@@ -3662,7 +3676,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE REFINE BLOCK.
 
-      if (1 < setup%levelm) then
+      if (setup%levelm>1) then
          if (found) then
             if (text>0) write (text, 10018) id
          else
@@ -3692,7 +3706,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE EVOLVE BLOCK.
 
-      if (1 < setup%levelm) then
+      if (setup%levelm>1) then
          if (text>0) write (text, 10020) id
       end if
 
@@ -3758,7 +3772,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE EVOLVE BLOCK.
 
-      if (1 < setup%levelm) then
+      if (setup%levelm>1) then
          if (found) then
             if (text>0) write (text, 10021) id
          else
@@ -4016,36 +4030,8 @@ module twopnt_core
 
 !     return
 
-9001  if (text>0) write (text, 01) id, route
-      if (.not. mess) return
-
-9004  if (text>0) write (text, 04) id, cntrls, count
-      if (.not. mess) return
-
-9005  if (text>0) write (text, 05) id, setup%leveld, setup%levelm
-      if (.not. mess) return
-
-9006  if (text>0) write (text, 06) id, &
-         comps, points, groupa, groupb
-      if (.not. mess) return
-
-9007  if (text>0) write (text, 07) id, comps, points
-      if (.not. mess) return
-
-9008  if (text>0) write (text, 08) id, &
-         comps, points, groupa, groupb, groupa + comps * points + groupb
-      if (.not. mess) return
-
-9009  if (text>0) write (text, 09) id, &
-         names, comps, groupa, groupb, groupa + comps + groupb
-      if (.not. mess) return
-
-9010  if (text>0) write (text, 10) id, points, pmax
-      if (.not. mess) return
-
 9011  if (text>0) then
-         write (text, 11) id, &
-            groupa, groupb, comps, groupa + comps + groupb, count
+         write (text, 11) id, groupa, groupb, comps, groupa + comps + groupb, count
          count = 0
          do 8010 j = 1, groupa + comps + groupb
             if (.not. (below(j) < above(j)) .or. mess) then
@@ -4057,7 +4043,6 @@ module twopnt_core
                      ctemp1 = ' '
                   end if
                   call twsqez (len1, ctemp1)
-
                   if (j <= groupa) then
                      write (ctemp2, 80001) 'A', j
                   else if (j <= groupa + comps) then
@@ -4127,9 +4112,6 @@ module twopnt_core
           ! Error messages
            1 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
                   //10X, i10, '  ROUTE')
-           4 format(/1X, a9, 'ERROR.  THE NUMBER OF CONTROLS IS INCONSISTENT.' &
-                  //10X, i10, '  CONTROLS' &
-                   /10X, i10, '  COUNTED')
            5 format(/1X, a9, 'ERROR.  THE PRINTING LEVELS ARE OUT OF ORDER.' &
                    /10X, 'LEVELD CANNOT EXCEED LEVELM.' &
                   //10X, i10, '  LEVELD, FOR SOLUTIONS' &
@@ -4419,14 +4401,14 @@ module twopnt_core
              end if
           end do to_be_halved
 
-    ! hack  if one point is marked, mark them all
-    !      if (counted>0) then
-    !         counted = 0
-    !         do k = 1, points - 1
-    !            counted = counted + 1
-    !            mark(k) = .true.
-    !         enddo
-    !      endif
+          ! hack  if one point is marked, mark them all
+          !      if (counted>0) then
+          !         counted = 0
+          !         do k = 1, points - 1
+          !            counted = counted + 1
+          !            mark(k) = .true.
+          !         enddo
+          !      endif
 
           more = counted
 
@@ -4578,8 +4560,8 @@ module twopnt_core
 
           ! Formats section.
              ! Informative messages.
-              1 format(/1X, a9, 'SELECT A GRID.')
-              2 format(/1X, a9, 'SUCCESS.  THE GRID IS ADEQUATE BECAUSE ALL ACTIVE' &
+             1 format(/1X, a9, 'SELECT A GRID.')
+             2 format(/1X, a9, 'SUCCESS.  THE GRID IS ADEQUATE BECAUSE ALL ACTIVE' &
                       /10X, 'COMPONENTS ARE INSIGNIFICANT.')
              !               123456789-   1234567   1234567
              3 format(/15X, '             RATIO 1   RATIO 2' &
@@ -4656,7 +4638,7 @@ module twopnt_core
          integer, intent(in) :: text
          logical, intent(out) :: error
 
-         integer :: j,length
+         integer :: j
          logical :: match_found
          character(*), parameter :: id = 'TWOPNT:  '
 
