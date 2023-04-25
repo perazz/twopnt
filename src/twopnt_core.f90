@@ -2892,43 +2892,45 @@ module twopnt_core
       character(*), intent(inout) :: signal,report
       integer     , intent(in)    :: names
       character(*), intent(inout) :: name(names) ! Names of the variables
+      real(RK)    , intent(inout), dimension(groupa+comps+groupb) :: above,below
+      logical     , intent(inout) :: active(*),mark(*)
+      real(RK)    , intent(inout) :: buffer(groupa+comps*pmax+groupb)
+      real(RK)    , intent(inout) :: condit
+      integer     , intent(in)    :: rsize
+      real(RK)    , intent(inout) :: rwork(rsize)
+      integer     , intent(in)    :: isize
+      integer     , intent(inout) :: iwork(isize)
 
-      real(RK) ::  above, below, buffer, condit, detail, maxcon, ratio, rwork, stride, temp, timer, &
+
+      ! Local variables
+      character(*), parameter :: id = 'TWOPNT:  '
+      integer,      parameter :: gmax = 100  ! Maximum number of grids attempted
+      integer,      parameter :: lines = 20
+
+      real(RK) ::  detail(gmax,qtotal), maxcon, ratio, stride, temp, timer, &
                    total, u, x, ynorm
-      integer :: age, comps, count, desire, event, grid, groupa, &
-                 groupb, ilast, isize, iwork, j, jacobs, k, label, len1, &
+      integer :: age, comps, count, desire, event(gmax,qtotal), grid, groupa, &
+                 groupb, ilast, j, jacobs, k, label, len1, &
                  len2, length, nsteps, pmax, &
                  points, psave, qabove, qbelow, qrat1, qrat2, &
                  qs0, qs1, qtask, qtype, qusave, &
                  qv1, qvary, qvary1, qvary2, qvsave, qxsave, qy0, qy1, return, &
-                 rlast, route, rsize, size, step, steps, xrepor
+                 rlast, route, gsize(gmax), step, steps, xrepor
       intrinsic :: max
-      logical :: active, allow, exist, first, found, mark, satisf, time
+      logical :: allow, exist, first, found, satisf, time
 
-      character(len=80) :: column,ctemp1,ctemp2,header,string
-
-      character(*), parameter :: id = 'TWOPNT:  '
-      integer,      parameter :: gmax = 100
-      integer,      parameter :: lines = 20
+      character(len=80) :: column(3),ctemp1,ctemp2,header(6),string
 
       ! SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
       logical,      parameter :: mess = .false.
 
-      dimension &
-         above(groupa + comps + groupb), active(*), below(groupa + comps &
-         + groupb), buffer(groupa + comps * pmax + groupb), column(3), &
-         detail(gmax, qtotal), event(gmax, qtotal), header(6), &
-          iwork(isize), mark(*), ratio(2), rwork(rsize), &
-         size(gmax), timer(qtotal), total(qtotal), u(groupa + comps * &
-         pmax + groupb), x(*)
+      dimension ratio(2), timer(qtotal), total(qtotal), u(groupa + comps * pmax + groupb), x(*)
 
 
       ! SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
       save
 
-      !***** PROLOGUE. *****
-
-      ! : EVERY-TIME INITIALIZATION.
+      !***** INITIALIZATION. *****
 
       time = .false. ! Turn off all reverse communication flags
 
@@ -3138,7 +3140,7 @@ module twopnt_core
 
 !     GRID POINTER AND STATISTICS FOR THE FIRST GRID
       grid = 1
-      size(grid) = points
+      gsize(grid) = points
       call twtime (timer(qgrid))
 
 !     TIME STEP NUMBER
@@ -3376,7 +3378,7 @@ module twopnt_core
           header(6) = 'EVAL F PREP J  SOLVE  OTHER'
 
           write (text, 10005) header, &
-             (size(j), (temp * detail(j, k), k = 1, 8), j = 1, grid)
+             (gsize(j), (temp * detail(j, k), k = 1, 8), j = 1, grid)
           if (1 < grid) write (text, 10006) (temp * total(k), k = 2, 8)
           if (gmax < grid) write (text, 10007)
 
@@ -3412,7 +3414,7 @@ module twopnt_core
       header(6) = ' EVAL F   PREP J    SOLVE'
 
       if (setup%adapt) write (text, 10009) header, &
-         (size(j), (detail(j, k) / event(j, k), k = 5, 7), &
+         (gsize(j), (detail(j, k) / event(j, k), k = 5, 7), &
          (event(j, k), k = 5, 7), j = 1, grid)
 
       end if
@@ -3624,13 +3626,13 @@ module twopnt_core
          grid = grid + 1
          if (grid <= gmax) then
             call twtime (timer(qgrid))
-            size(grid) = points
+            gsize(grid) = points
          end if
 
 !        INSERT THE GROUP B VALUES
-         do 5060 j = 1, groupb
+         do j = 1, groupb
             u(groupa + comps * points + j) = rwork(qvsave - 1 + j)
-5060     continue
+         end do
 
 !        EXPAND THE BOUNDS
          count = groupa
