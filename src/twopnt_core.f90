@@ -31,12 +31,13 @@ module twopnt_core
     integer, parameter, public :: RK = real64
 
     ! Numeric constants
-    real(RK), parameter, public :: zero = 0.0_RK
-    real(RK), parameter, public :: half = 0.5_RK
-    real(RK), parameter, public :: one  = 1.0_RK
-    real(RK), parameter, public :: pi   = acos(-1.0_RK)
-    real(RK), parameter, public :: minute = 60.0_RK
-    real(RK), parameter, public :: hour   = 3600.0_RK
+    real(RK), parameter, public :: zero    = 0.0_RK
+    real(RK), parameter, public :: half    = 0.5_RK
+    real(RK), parameter, public :: one     = 1.0_RK
+    real(RK), parameter, public :: pi      = acos(-1.0_RK)
+    real(RK), parameter, public :: minute  = 60.0_RK
+    real(RK), parameter, public :: hour    = 3600.0_RK
+    real(RK), parameter, public :: hundred = 100.0_RK
 
     ! Machine epsilon and the absolute and relative perturbations.
     real(RK), parameter, public :: eps   = epsilon(0.0_RK)
@@ -66,6 +67,9 @@ module twopnt_core
     integer,  parameter, public :: qtotal =  9
     integer,  parameter, public :: qentry = 10
     integer,  parameter, public :: qexit  = 11
+
+    ! Maximum number of grids attempted
+    integer,  parameter, public :: gmax = 100
 
     logical, parameter :: DEBUG = .true.
     integer, parameter :: CONTRL_MAX_LEN = 40
@@ -121,9 +125,9 @@ module twopnt_core
     ! TWOPNT work arrays
     type, public :: twwork
 
-        integer, allocatable :: vary (:)
-        integer, allocatable :: vary1(:)
-        integer, allocatable :: vary2(:)
+        integer, allocatable :: vary (:)   ! (PMAX)
+        integer, allocatable :: vary1(:)   ! (PMAX)
+        integer, allocatable :: vary2(:)   ! (PMAX)
 
         real(RK), allocatable :: above(:)  ! (GROUPA + COMPS * PMAX + GROUPB)
         real(RK), allocatable :: below(:)  ! (GROUPA + COMPS * PMAX + GROUPB)
@@ -144,6 +148,26 @@ module twopnt_core
             procedure :: load_bounds => expand_bounds
 
     end type twwork
+
+    ! TWOPNT statistics arrays
+    type, public :: twstat
+
+        integer :: grid = 0 ! grid number
+        integer :: step = 0 ! step number
+
+        real(RK) :: detail(gmax,qtotal)  = zero
+        real(RK) :: timer(qtotal)        = zero
+        real(RK) :: total(qtotal)        = zero
+        integer  :: event(gmax,qtotal)   = 0
+        integer  :: gsize(gmax)          = 0
+
+        contains
+
+           procedure :: new => init_stats
+           procedure :: tock => tock_stats
+           procedure :: print_stats
+
+    end type twstat
 
     interface realloc
         module procedure realloc_int
@@ -2915,16 +2939,15 @@ module twopnt_core
 
       ! Local variables
       character(*), parameter :: id = 'TWOPNT:  '
-      integer,      parameter :: gmax = 100  ! Maximum number of grids attempted
       integer,      parameter :: lines = 20
 
-      real(RK) ::  detail(gmax,qtotal), maxcon, ratio(2), stride, temp, timer(qtotal), &
-                   total(qtotal), ynorm
-      integer :: age, comps, count, desire, event(gmax,qtotal), grid, groupa, &
+      real(RK) ::  maxcon, ratio(2), stride, temp, ynorm
+      type(twstat) :: stats
+      integer :: age, comps, count, desire, grid, groupa, &
                  groupb,  j, jacobs, k, label, len1, &
                  len2, length, nsteps, pmax, &
                  points, psave, qtask, qtype, return, &
-                 route, gsize(gmax), step, steps, xrepor
+                 route, step, steps, xrepor
       intrinsic :: max
       logical :: allow, exist, first, found, satisf, time
 
@@ -2962,7 +2985,6 @@ module twopnt_core
          return = 0
          route = 0
 
-         write (text, 10004) id, '???'
          write (text, 10020) id
          write (text, 10017) id
          write (text, 10014) id
@@ -3058,21 +3080,8 @@ module twopnt_core
 !     PRESENT TASK
       qtask = qentry
 
-      ! Init statistics arrays
-      total = zero
-      detail = zero
-      event = zero
-
-      ! Init total time counter
-      call twtime (timer(qtotal))
-
-      !  GRID POINTER AND STATISTICS FOR THE FIRST GRID
-      grid = 1
-      gsize(grid) = points
-      call twtime (timer(qgrid))
-
-      ! TIME STEP NUMBER
-      step = 0
+      ! Init solver statistics
+      call stats%new(points)
 
       ! SOLUTION FLAG
       found = .true.
@@ -3081,9 +3090,8 @@ module twopnt_core
       call work%load_bounds(above,below,points,comps,groupa,groupb)
 
       ! SAVE THE INITIAL SOLUTION.
-
       psave = points
-      if (setup%adapt .and. points>0) call twcopy (points, x, work%xsave)
+      if (setup%adapt .and. points>0) call twcopy(points, x, work%xsave)
       call twcopy (groupa + comps * points + groupb, u, work%usave)
 
 !     GO TO 1090 WHEN RETURN = 1
@@ -3199,14 +3207,16 @@ module twopnt_core
          end if
       end if
 
-!///  BRANCH TO THE NEXT TASK.
-
-      if (qtask == qexit) go to 3010
-      if (qtask == qsearc) go to 4010
-      if (qtask == qrefin) go to 5010
-      if (qtask == qtimst) go to 6010
-      error = .true.
-      go to 9015
+      ! Branch to the next task.
+      select case (qtask)
+         case (qexit);  goto 3010
+         case (qsearc); goto 4010
+         case (qrefin); goto 5010
+         case (qtimst); goto 6010
+         case default
+            error = .true.
+            go to 9015
+      end select
 
 !///////////////////////////////////////////////////////////////////////
 !
@@ -3216,20 +3226,12 @@ module twopnt_core
 
 3010  continue
 
-!///  COMPLETE STATISTICS FOR THE LAST GRID.
+      ! Complete statistics for the last grid
+      call stats%tock(qgrid)
 
-      call twlaps (timer(qgrid))
-      if (grid <= gmax) then
-         detail(grid, qgrid) = timer(qgrid)
-         detail(grid, qother) &
-            = detail(grid, qgrid) - (detail(grid, qfunct) &
-            + detail(grid, qjacob) + detail(grid, qsolve))
-      end if
-
-!///  RESTORE THE SOLUTION.
-
+      ! Restore the solution.
       if (report /= ' ') then
-!        BE CAREFUL NOT TO ASSIGN A VALUE TO A PARAMETER
+         ! BE CAREFUL NOT TO ASSIGN A VALUE TO A PARAMETER
          if (points /= psave) points = psave
          if (setup%adapt .and. points>0) call twcopy(points, work%xsave, x)
          call twcopy(groupa + comps * points + groupb, work%usave, u)
@@ -3237,7 +3239,7 @@ module twopnt_core
 
 !///  PRINT LEVEL 11 OR 21.
 
-!     SAVE THE STATUS REPORTS DURING REVERSE COMMUNICATION
+      ! SAVE THE STATUS REPORTS DURING REVERSE COMMUNICATION
       string = report
 
       if (setup%leveld == 1 .and. text>0) then
@@ -3251,80 +3253,15 @@ module twopnt_core
 !     RESTORE THE STATUS REPORTS AFTER REVERSE COMMUNICATION
       report = string
 
-!///  COMPLETE THE TOTAL TIME STATISTICS.
-
-      call twlaps (timer(qtotal))
-      total(qtotal) = timer(qtotal)
-      total(qother) = total(qtotal) - (total(qfunct) + total(qjacob) + total(qsolve))
+      ! Complete the total time statistics
+      call stats%tock(qtotal)
 
       ! TOP OF THE REPORT BLOCK.
-      if (setup%levelm>0 .and. text>0) then
-         if (total(qtotal)>zero) then
+      print_reports: if (setup%levelm>0 .and. text>0) then
 
-      ! Report total computer time
-      write (text, 10004) id, print_time(total(qtotal))
+         call stats%print_stats(text,setup%adapt)
 
-!///  REPORT PERCENT OF TOTAL COMPUTER TIME.
-
-      temp = 100.0 / total(qtotal)
-      if (setup%adapt) then
-
-    !                  123456789_123456789_123456789_12345678
-    !                  123456  123456  123456 123456 123456
-          header(1) = '                TASK                  '
-          header(3) = '  GRID    GRID  --------------------  '
-          header(5) = 'POINTS  TOTALS  EVOLVE SEARCH REFINE  '
-
-    !                  123456789_123456789_1234567
-    !                  123456 123456 123456 123456
-          header(2) = 'SUBTASK                    '
-          header(4) = '---------------------------'
-          header(6) = 'EVAL F PREP J  SOLVE  OTHER'
-
-          write (text, 10005) header, &
-             (gsize(j), (temp * detail(j, k), k = 1, 8), j = 1, grid)
-          if (1 < grid) write (text, 10006) (temp * total(k), k = 2, 8)
-          if (gmax < grid) write (text, 10007)
-
-      else
-
-    !                  123456789_123456789_123456789_123456789_123456789_1
-    !                  123456   123456   123456   123456   123456   123456
-          header(1) = 'SUBTASK                             TASK           '
-          header(2) = '---------------------------------   ---------------'
-          header(3) = 'EVAL F   PREP J    SOLVE    OTHER   EVOLVE   SEARCH'
-
-          write (text, 10008) &
-             (header(j), j = 1, 3), '  % OF TOTAL', &
-             (temp * total(k), k = 5, 8), (temp * total(k), k = 2, 3), &
-             'MEAN SECONDS', (detail(1, k) / event(1, k), k = 5, 7), &
-             '    QUANTITY', (event(1, k), k = 5, 7)
-
-      end if
-
-!///  REPORT AVERAGE COMPUTER TIME.
-
-!                  123456789_123456789_123456789_1234567
-!                  123456   1234567  1234567  1234567
-      header(1) = '         AVERAGE SECONDS             '
-      header(3) = '  GRID   -------------------------   '
-      header(5) = 'POINTS    EVAL F   PREP J    SOLVE   '
-
-
-!                  123456789_123456789_12345
-!                  1234567  1234567  1234567
-      header(2) = 'NUMBER OF SUBTASKS       '
-      header(4) = '-------------------------'
-      header(6) = ' EVAL F   PREP J    SOLVE'
-
-      if (setup%adapt) write (text, 10009) header, &
-         (gsize(j), (detail(j, k) / event(j, k), k = 5, 7), &
-         (event(j, k), k = 5, 7), j = 1, grid)
-
-      end if
-
-!///  REPORT THE COMPLETION STATUS.
-
+      ! Report the completion status.
       if (setup%levelm>0) then
          if (report == ' ') then
             write (text, 10010) id
@@ -3346,9 +3283,7 @@ module twopnt_core
          end if
       end if
 
-!///  BOTTOM OF THE REPORT BLOCK.
-
-      end if
+      end if print_reports
 
 !///  BOTTOM OF THE EXIT BLOCK.
 
@@ -3425,12 +3360,8 @@ module twopnt_core
       end if
 4030  continue
 
-!///  COMPLETE STATISTICS FOR THE SEARCH BLOCK.
-
-      call twlaps (timer(qsearc))
-      total(qsearc) = total(qsearc) + timer(qsearc)
-      if (grid <= gmax) &
-         detail(grid, qsearc) = detail(grid, qsearc) + timer(qsearc)
+      ! COMPLETE STATISTICS FOR THE SEARCH BLOCK.
+      call stats%tock(qsearc)
 
 !///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE SEARCH BLOCK.
 
@@ -3546,12 +3477,8 @@ module twopnt_core
 
 5110  continue
 
-!///  COMPLETE STATISTICS FOR THE REFINE BLOCK.
-
-      call twlaps (timer(qrefin))
-      total(qrefin) = total(qrefin) + timer(qrefin)
-      if (grid <= gmax) &
-         detail(grid, qrefin) = detail(grid, qrefin) + timer(qrefin)
+      ! COMPLETE STATISTICS FOR THE REFINE BLOCK.
+      call stats%tock(qrefin)
 
 !///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE REFINE BLOCK.
 
@@ -3641,13 +3568,10 @@ module twopnt_core
 
       allow = xrepor == qnull
 
-!///  COMPLETE STATISTICS FOR THE EVOLVE BLOCK.
+      ! COMPLETE STATISTICS FOR THE EVOLVE BLOCK.
+      call stats%tock(qtimst)
 
-      call twlaps (timer(qtimst))
-      total(qtimst) = total(qtimst) + timer(qtimst)
-      if (grid <= gmax) &
-         detail(grid, qtimst) = detail(grid, qtimst) + timer(qtimst)
-      steps = step - steps
+      steps = stats%step - steps
 
 !///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE EVOLVE BLOCK.
 
@@ -3820,12 +3744,7 @@ module twopnt_core
 !     SAVE THE CONDITION NUMBER
       if (qtype == qjacob) maxcon = max (maxcon, condit)
 
-      call twlaps (timer(qtype))
-      total(qtype) = total(qtype) + timer(qtype)
-      if (grid <= gmax) then
-         detail(grid, qtype) = detail(grid, qtype) + timer(qtype)
-         event(grid, qtype) = event(grid, qtype) + 1
-      end if
+      call stats%tock(qtype,event=.true.)
 
       go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) &
          return
@@ -3846,12 +3765,7 @@ module twopnt_core
 9942  continue
       signal = ' '
 
-      call twlaps (timer(qfunct))
-      total(qfunct) = total(qfunct) + timer(qfunct)
-      if (grid <= gmax) then
-         detail(grid, qfunct) = detail(grid, qfunct) + timer(qfunct)
-         event(grid, qfunct) = event(grid, qfunct) + 1
-      end if
+      call stats%tock(qfunct,event=.true.)
 
       go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) &
          return
@@ -3869,19 +3783,6 @@ module twopnt_core
              ' OF APRIL 1998 BY DR. JOSEPH F. GRCAR.')
 10002 format(/1X, a9, a)
 10003 format(3(/10X, a35)/)
-10004 format(/1X, a9, a, ' TOTAL COMPUTER TIME (SEE BREAKDOWN BELOW).')
-10005 format(/10X, 'PERCENT OF TOTAL COMPUTER TIME FOR VARIOUS TASKS:' &
-             /3(/10X, a38, a27) &
-            //(10X, i6, 2X, f6.1, 1X, 3(1X, f6.1), 1X, 4(1X, f6.1)))
-10006 format(/12X, 'TASK TOTALS:', 1X, 3(1X, f6.1), 1X, 4(1X, f6.1))
-10007 format(/10X, 'SOME GRIDS ARE OMITTED, BUT THE TOTALS ARE FOR ALL.')
-10008 format(3(/24X, a51) &
-            //10X, a12, f8.1, 5F9.1 &
-             /10X, a12, f8.3, 2F9.3 &
-             /10X, a12, i8, 2i9)
-10009 format(/10X, 'AVERAGE COMPUTER TIMES FOR, AND NUMBERS OF, SUBTASKS:' &
-            /3(/10X, a37, a25) &
-            //(10X, i6, 3X, f7.3, 2X, f7.3, 2X, f7.3, 1X, 3(2X, i7)))
 10010 format(/1X, a9, 'SUCCESS.  PROBLEM SOLVED.')
 10011 format(/1X, a9, 'FAILURE.  A SOLUTION WAS FOUND FOR A GRID WITH ', a &
             /10X, 'POINTS, BUT ONE OR BOTH RATIOS ARE TOO LARGE.' &
@@ -4682,6 +4583,142 @@ module twopnt_core
          error = stat/=0
 
       end subroutine realloc_int
+
+      subroutine init_stats(this,points)
+         class(twstat), intent(inout) :: this
+         integer      , intent(in)    :: points
+
+          ! Init statistics arrays
+          this%total = zero
+          this%detail = zero
+          this%event = 0
+          this%gsize = 0
+
+          ! Init total time counter
+          call twtime(this%timer(qtotal))
+
+          ! Initialize first grid
+          this%grid = 1
+          this%gsize(this%grid) = points
+          call twtime(this%timer(qgrid))
+
+          ! Initialize time step number
+          this%step = 0
+
+      end subroutine init_stats
+
+      subroutine tock_stats(this,task,event)
+          class(twstat), intent(inout) :: this
+          integer, intent(in) :: task
+          logical, optional, intent(in) :: event
+
+          call twlaps(this%timer(task))
+          this%total(task) = this%total(task) + this%timer(task)
+          if (this%grid <= gmax) this%detail(this%grid, task) = this%detail(this%grid, task) &
+                                                              + this%timer(task)
+          if (any(task==[qgrid,qtotal])) &
+          this%detail(this%grid, qother) = this%detail(this%grid,task) &
+                                         - sum(this%detail(this%grid,[qfunct,qjacob,qsolve]))
+
+          if (this%grid<=gmax .and. present(event)) then
+              if (event) this%event(this%grid, task) = this%event(this%grid, task) + 1
+          end if
+
+      end subroutine tock_stats
+
+      subroutine print_stats(this,text,adapt)
+         class(twstat), intent(inout) :: this
+         integer, intent(in) :: text
+         logical, intent(in) :: adapt
+
+         integer :: j,k
+         real(RK) :: temp
+         character(len=80) :: header(6)
+         character(*), parameter :: id = 'TWOPNT: '
+
+         associate(total=>this%total,detail=>this%detail,gsize=>this%gsize,grid=>this%grid,&
+                   event=>this%event)
+
+         time_output: if (total(qtotal)>zero) then
+
+             ! Report total computer time
+             write (text, 10004) id, print_time(total(qtotal))
+
+             ! REPORT PERCENT OF TOTAL COMPUTER TIME.
+             temp = hundred/total(qtotal)
+
+             adaptive_grid: if (adapt) then
+
+                !                  123456789_123456789_123456789_12345678
+                !                  123456  123456  123456 123456 123456
+                      header(1) = '                TASK                  '
+                      header(3) = '  GRID    GRID  --------------------  '
+                      header(5) = 'POINTS  TOTALS  EVOLVE SEARCH REFINE  '
+
+                !                  123456789_123456789_1234567
+                !                  123456 123456 123456 123456
+                      header(2) = 'SUBTASK                    '
+                      header(4) = '---------------------------'
+                      header(6) = 'EVAL F PREP J  SOLVE  OTHER'
+
+                      write (text, 10005) header,(gsize(j),(temp*detail(j,k), k=1,8), j=1,grid)
+                      if (grid>1)    write (text, 10006) (temp * total(k), k = 2, 8)
+                      if (grid>gmax) write (text, 10007)
+
+                ! REPORT AVERAGE COMPUTER TIME.
+
+                !                  123456789_123456789_123456789_1234567
+                !                  123456   1234567  1234567  1234567
+                      header(1) = '         AVERAGE SECONDS             '
+                      header(3) = '  GRID   -------------------------   '
+                      header(5) = 'POINTS    EVAL F   PREP J    SOLVE   '
+
+
+                !                  123456789_123456789_12345
+                !                  1234567  1234567  1234567
+                      header(2) = 'NUMBER OF SUBTASKS       '
+                      header(4) = '-------------------------'
+                      header(6) = ' EVAL F   PREP J    SOLVE'
+
+                      write (text, 10009) header, &
+                                          (gsize(j), (detail(j,k) / event(j, k), k = 5,7), &
+                                          (event(j, k), k = 5,7), j = 1, grid)
+
+             else adaptive_grid
+
+                !                  123456789_123456789_123456789_123456789_123456789_1
+                !                  123456   123456   123456   123456   123456   123456
+                      header(1) = 'SUBTASK                             TASK           '
+                      header(2) = '---------------------------------   ---------------'
+                      header(3) = 'EVAL F   PREP J    SOLVE    OTHER   EVOLVE   SEARCH'
+
+                      write (text, 10008) (header(j), j=1,3), '  % OF TOTAL', &
+                         (temp * total(k), k = 5, 8), (temp * total(k), k = 2, 3), &
+                         'MEAN SECONDS', (detail(1, k) / event(1, k), k = 5, 7), &
+                         '    QUANTITY', (event(1, k), k = 5, 7)
+
+             end if adaptive_grid
+
+         end if time_output
+
+         endassociate
+
+         10004 format(/1X, a9, a, ' TOTAL COMPUTER TIME (SEE BREAKDOWN BELOW).')
+         10005 format(/10X, 'PERCENT OF TOTAL COMPUTER TIME FOR VARIOUS TASKS:' &
+                      /3(/10X, a38, a27) &
+                     //(10X, i6, 2X, f6.1, 1X, 3(1X, f6.1), 1X, 4(1X, f6.1)))
+         10006 format(/12X, 'TASK TOTALS:', 1X, 3(1X, f6.1), 1X, 4(1X, f6.1))
+         10007 format(/10X, 'SOME GRIDS ARE OMITTED, BUT THE TOTALS ARE FOR ALL.')
+         10008 format(3(/24X, a51) &
+                     //10X, a12, f8.1, 5F9.1 &
+                      /10X, a12, f8.3, 2F9.3 &
+                      /10X, a12, i8, 2i9)
+         10009 format(/10X, 'AVERAGE COMPUTER TIMES FOR, AND NUMBERS OF, SUBTASKS:' &
+                     /3(/10X, a37, a25) &
+                     //(10X, i6, 3X, f7.3, 2X, f7.3, 2X, f7.3, 1X, 3(2X, i7)))
+
+
+      end subroutine print_stats
 
 end module twopnt_core
 
