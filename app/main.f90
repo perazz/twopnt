@@ -30,7 +30,6 @@ program TWMAIN
     ! Parameters
     character(len=*), parameter :: ID = 'TWMAIN:  '
     integer, parameter :: TEXT = OUTPUT_UNIT
-    integer, parameter :: ISIZE  = 5000, RSIZE = 100000
     integer, parameter :: COMPS  = 5
     integer, parameter :: GROUPA = 0
     integer, parameter :: GROUPB = 0
@@ -43,13 +42,14 @@ program TWMAIN
     character(len=80) :: VERSIO
 
     type(twcom) :: settings
-    real(RK) :: A(ASIZE), ABOVE(COMPS), BELOW(COMPS),RWORK(RSIZE)
+    type(twwork) :: work
+    real(RK) :: A(ASIZE), ABOVE(COMPS), BELOW(COMPS)
     real(RK), dimension(COMPS*PMAX) :: BUFFER
     real(RK), dimension(COMPS,PMAX) :: U,U0
     real(RK), dimension(PMAX) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0,X
     real(RK) :: CONDIT,STRIDE
     logical  :: ACTIVE(COMPS), MARK(PMAX)
-    integer  :: IWORK(ISIZE), PIVOT(COMPS*PMAX)
+    integer  :: PIVOT(COMPS*PMAX)
 
     INTEGER :: J, LENGTH, N, POINTS
     LOGICAL :: ERROR, return_call, TIME
@@ -182,8 +182,8 @@ program TWMAIN
           ! Call driver
           CALL TWOPNT(SETTINGS, ERROR, TEXT, VERSIO, &
                       ABOVE, ACTIVE, BELOW, BUFFER, COMPS, CONDIT, GROUPA, GROUPB, &
-                      ISIZE, IWORK, MARK, NAME, NAMES, PMAX, POINTS, REPORT, RSIZE, &
-                      RWORK, SIGNAL, STRIDE, TIME, U, X)
+                      WORK, MARK, NAME, NAMES, PMAX, POINTS, REPORT, &
+                      SIGNAL, STRIDE, TIME, U, X)
 
           IF (ERROR) GO TO 9004
 

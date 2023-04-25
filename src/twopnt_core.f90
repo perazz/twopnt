@@ -80,6 +80,7 @@ module twopnt_core
     ! Settings structure (formerly a common block)
     integer, parameter :: cntrls = 22
 
+    ! TWOPNT settings
     type, public :: twcom
 
         ! Adaptive grid size
@@ -116,6 +117,37 @@ module twopnt_core
            generic :: set => twsetr,twseti,twsetl
 
     end type twcom
+
+    ! TWOPNT work arrays
+    type, public :: twwork
+
+        integer, allocatable :: vary (:)
+        integer, allocatable :: vary1(:)
+        integer, allocatable :: vary2(:)
+
+        real(RK), allocatable :: above(:)  ! (GROUPA + COMPS * PMAX + GROUPB)
+        real(RK), allocatable :: below(:)  ! (GROUPA + COMPS * PMAX + GROUPB)
+        real(RK), allocatable :: ratio1(:) ! PMAX
+        real(RK), allocatable :: ratio2(:) ! PMAX
+        real(RK), allocatable :: s0(:)     ! (GROUPA + COMPS * PMAX + GROUPB)
+        real(RK), allocatable :: s1(:)     ! (GROUPA + COMPS * PMAX + GROUPB)
+        real(RK), allocatable :: usave(:)  ! (GROUPA + COMPS * PMAX + GROUPB)
+        real(RK), allocatable :: vsave(:)  ! (GROUPA + COMPS * PMAX + GROUPB)
+        real(RK), allocatable :: v1(:)     ! (GROUPA + COMPS * PMAX + GROUPB)
+        real(RK), allocatable :: xsave(:)  ! PMAX
+        real(RK), allocatable :: y0(:)     ! (GROUPA + COMPS * PMAX + GROUPB)
+        real(RK), allocatable :: y1(:)     ! (GROUPA + COMPS * PMAX + GROUPB)
+
+        contains
+
+            procedure :: init => partition_working_space
+
+    end type twwork
+
+    interface realloc
+        module procedure realloc_int
+        module procedure realloc_real
+    end interface realloc
 
     contains
 
@@ -515,7 +547,7 @@ module twopnt_core
           end if
 
           !///  CHECK THE ARGUMENTS.
-          error = .not. (((0 < comps) .eqv. (0 < points)) .and. &
+          error = .not. (((0 < comps) .eqv. (points>0)) .and. &
                            0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
                            0 <= groupb .and. 0 < groupa + comps * points + groupb)
           if (error) then
@@ -528,7 +560,7 @@ module twopnt_core
           groups = 0
           if (0 < groupa) groups = groups + 1
           if (0 < groupb) groups = groups + 1
-          if (0 < comps .and. 0 < points) groups = groups + 1
+          if (0 < comps .and. points>0) groups = groups + 1
 
           !///  CHOOSE NUMBER OF DATA COLUMNS.
           cols = merge(5,6,grid)
@@ -553,7 +585,7 @@ module twopnt_core
               end if
 
               ! (2) PRINT THE COMPONENTS AT POINTS.
-              if (0 < comps .and. 0 < points) then
+              if (0 < comps .and. points>0) then
 
                  if (1 < groups) write (text, 11) 'COMPONENTS AT POINTS'
 
@@ -673,7 +705,7 @@ module twopnt_core
 
           ! CHECK THE ARGUMENTS.
           n = groupa + comps * points + groupb
-          error = .not. (((0 < comps) .eqv. (0 < points)) .and. &
+          error = .not. (((0 < comps) .eqv. (points>0)) .and. &
                            0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
                            0 <= groupb .and. 0 < n)
           if (error) then
@@ -1051,7 +1083,7 @@ module twopnt_core
 
           ! CHECK THE ARGUMENTS.
           n = groupa + comps * points + groupb
-          error = .not. (((0 < comps) .eqv. (0 < points)) .and. &
+          error = .not. (((0 < comps) .eqv. (points>0)) .and. &
                   0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
                   0 <= groupb .and. 0 < n)
           if (error) go to 9002
@@ -1578,7 +1610,7 @@ module twopnt_core
 
 !///  CHECK THE ARGUMENTS.
 
-      error = .not. (((0 < comps) .eqv. (0 < points)) .and. &
+      error = .not. (((0 < comps) .eqv. (points>0)) .and. &
          0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
          0 <= groupb .and. 0 < groupa + comps * points + groupb)
       if (error) go to 9002
@@ -2174,7 +2206,7 @@ module twopnt_core
 
 !///  CHECK THE ARGUMENTS.
 
-      error = .not. (((0 < comps) .eqv. (0 < points)) .and. &
+      error = .not. (((0 < comps) .eqv. (points>0)) .and. &
          0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
          0 <= groupb .and. 0 < groupa + comps * points + groupb)
       if (error) go to 9002
@@ -2882,8 +2914,7 @@ module twopnt_core
       ! TWOPNT driver.
       subroutine twopnt(setup, error, text, versio, &
                         above, active, below, buffer, comps, condit, groupa, groupb, &
-                        isize, iwork, mark, name, names, pmax, points, report, rsize, &
-                        rwork, signal, stride, time, u, x)
+                        work, mark, name, names, pmax, points, report, signal, stride, time, u, x)
 
       type(twcom) , intent(inout) :: setup
       logical     , intent(out)   :: error
@@ -2896,26 +2927,22 @@ module twopnt_core
       logical     , intent(inout) :: active(*),mark(*)
       real(RK)    , intent(inout) :: buffer(groupa+comps*pmax+groupb)
       real(RK)    , intent(inout) :: condit
-      integer     , intent(in)    :: rsize
-      real(RK)    , intent(inout) :: rwork(rsize)
-      integer     , intent(in)    :: isize
-      integer     , intent(inout) :: iwork(isize)
-
+      type(twwork), intent(inout) :: work
+      real(RK)    , intent(inout) :: u(groupa + comps*pmax + groupb)
+      real(RK)    , intent(inout) :: x(*)
 
       ! Local variables
       character(*), parameter :: id = 'TWOPNT:  '
       integer,      parameter :: gmax = 100  ! Maximum number of grids attempted
       integer,      parameter :: lines = 20
 
-      real(RK) ::  detail(gmax,qtotal), maxcon, ratio, stride, temp, timer, &
-                   total, u, x, ynorm
+      real(RK) ::  detail(gmax,qtotal), maxcon, ratio(2), stride, temp, timer(qtotal), &
+                   total(qtotal), ynorm
       integer :: age, comps, count, desire, event(gmax,qtotal), grid, groupa, &
-                 groupb, ilast, j, jacobs, k, label, len1, &
+                 groupb,  j, jacobs, k, label, len1, &
                  len2, length, nsteps, pmax, &
-                 points, psave, qabove, qbelow, qrat1, qrat2, &
-                 qs0, qs1, qtask, qtype, qusave, &
-                 qv1, qvary, qvary1, qvary2, qvsave, qxsave, qy0, qy1, return, &
-                 rlast, route, gsize(gmax), step, steps, xrepor
+                 points, psave, qtask, qtype, return, &
+                 route, gsize(gmax), step, steps, xrepor
       intrinsic :: max
       logical :: allow, exist, first, found, satisf, time
 
@@ -2923,9 +2950,6 @@ module twopnt_core
 
       ! SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
       logical,      parameter :: mess = .false.
-
-      dimension ratio(2), timer(qtotal), total(qtotal), u(groupa + comps * pmax + groupb), x(*)
-
 
       ! SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
       save
@@ -3036,149 +3060,68 @@ module twopnt_core
           return
       endif too_many_points
 
-
-      count = 0
-      do 1020 j = 1, groupa + comps + groupb
-         if (.not. (below(j) < above(j))) count = count + 1
-1020  continue
-      error = count /= 0
+      ! Check variable bounds
+      error = any(.not.below<above)
       if (error) go to 9011
 
       ! PARTITION THE INTEGER WORK SPACE.
-      ilast = 0
+      call work%init(text,pmax,groupa,groupb,comps,error)
+      if (error) return
 
-!     VARY(PMAX)
-      call twgrab (error, ilast, qvary, pmax)
-      if (error) go to 9012
+      ! ONE-TIME INITIALIZATION.
 
-!     VARY1(PMAX)
-      call twgrab (error, ilast, qvary1, pmax)
-      if (error) go to 9012
-
-!     VARY2(PMAX)
-      call twgrab (error, ilast, qvary2, pmax)
-      if (error) go to 9012
-
-!///  PARTITION THE REAL WORK SPACE.
-
-!     SUBROUTINE TWGRAB (ERROR, LAST, FIRST, NUMBER)
-
-      rlast = 0
-
-!     ABOVE(GROUPA + COMPS * PMAX + GROUPB)
-      call twgrab (error, rlast, qabove, groupa + comps * pmax + groupb)
-      if (error) go to 9012
-
-!     BELOW(GROUPA + COMPS * PMAX + GROUPB)
-      call twgrab (error, rlast, qbelow, groupa + comps * pmax + groupb)
-      if (error) go to 9012
-
-!     RATIO1(PMAX)
-      call twgrab (error, rlast, qrat1, pmax)
-      if (error) go to 9012
-
-!     RATIO2(PMAX)
-      call twgrab (error, rlast, qrat2, pmax)
-      if (error) go to 9012
-
-!     S0(GROUPA + COMPS * PMAX + GROUPB)
-      call twgrab (error, rlast, qs0, groupa + comps * pmax + groupb)
-      if (error) go to 9012
-
-!     S1(GROUPA + COMPS * PMAX + GROUPB)
-      call twgrab (error, rlast, qs1, groupa + comps * pmax + groupb)
-      if (error) go to 9012
-
-!     USAVE(GROUPA + COMPS * PMAX + GROUPB)
-      call twgrab (error, rlast, qusave, groupa + comps * pmax + groupb)
-      if (error) go to 9012
-
-!     VSAVE(GROUPA + COMPS * PMAX + GROUPB)
-      call twgrab (error, rlast, qvsave, groupa + comps * pmax + groupb)
-      if (error) go to 9012
-
-!     V1(GROUPA + COMPS * PMAX + GROUPB)
-      call twgrab (error, rlast, qv1, groupa + comps * pmax + groupb)
-      if (error) go to 9012
-
-!     XSAVE(PMAX)
-      call twgrab (error, rlast, qxsave, pmax)
-      if (error) go to 9012
-
-!     Y0(GROUPA + COMPS * PMAX + GROUPB)
-      call twgrab (error, rlast, qy0, groupa + comps * pmax + groupb)
-      if (error) go to 9012
-
-!     Y1(GROUPA + COMPS * PMAX + GROUPB)
-      call twgrab (error, rlast, qy1, groupa + comps * pmax + groupb)
-      if (error) go to 9012
-
-!///  CHECK THE WORK SPACES' SIZES.
-
-      error = .not. (ilast <= isize .and. rlast <= rsize)
-      if (error) go to 9013
-
-!///  ONE-TIME INITIALIZATION.
-
-!     ALLOW FURTHER TIME EVOLUTION
+      ! ALLOW FURTHER TIME EVOLUTION
       allow = .true.
 
 !     PRESENT TASK
       qtask = qentry
 
-!     STATISTICS ARRAYS
-      do 1040 k = 1, qtotal
-         total(k) = 0.0
-         do 1030 j = 1, gmax
-            detail(j, k) = 0.0
-            event(j, k) = 0
-1030     continue
-1040  continue
+      ! Init statistics arrays
+      total = zero
+      detail = zero
+      event = zero
 
-!     TOTAL TIME STATISTIC
+      ! Init total time counter
       call twtime (timer(qtotal))
 
-!     GRID POINTER AND STATISTICS FOR THE FIRST GRID
+      !  GRID POINTER AND STATISTICS FOR THE FIRST GRID
       grid = 1
       gsize(grid) = points
       call twtime (timer(qgrid))
 
-!     TIME STEP NUMBER
+      ! TIME STEP NUMBER
       step = 0
 
-!     SOLUTION FLAG
+      ! SOLUTION FLAG
       found = .true.
 
-!///  EXPAND THE BOUNDS.
-
-      count = 0
-
-      do 1050 j = 1, groupa
-         rwork(qabove + count) = above(j)
-         rwork(qbelow + count) = below(j)
+      ! EXPAND THE BOUNDS.
+      count = 1
+      do j = 1, groupa
+         work%above(count) = above(j)
+         work%below(count) = below(j)
          count = count + 1
-1050  continue
+      end do
 
-      do 1070 k = 1, points
-         do 1060 j = 1, comps
-            rwork(qabove + count) = above(groupa + j)
-            rwork(qbelow + count) = below(groupa + j)
+      do k = 1, points
+         do j = 1, comps
+            work%above(count) = above(groupa + j)
+            work%below(count) = below(groupa + j)
             count = count + 1
-1060     continue
-1070  continue
+         end do
+      end do
 
-      do 1080 j = 1, groupb
-         rwork(qabove + count) = above(groupa + comps + j)
-         rwork(qbelow + count) = below(groupa + comps + j)
+      do j = 1, groupb
+         work%above(count) = above(groupa + comps + j)
+         work%below(count) = below(groupa + comps + j)
          count = count + 1
-1080  continue
+      end do
 
-!///  SAVE THE INITIAL SOLUTION.
+      ! SAVE THE INITIAL SOLUTION.
 
       psave = points
-      if (setup%adapt .and. 0 < points) &
-         call twcopy (points, x, rwork(qxsave))
-      call twcopy (groupa + comps * points + groupb, u, rwork(qusave))
+      if (setup%adapt .and. points>0) call twcopy (points, x, work%xsave)
+      call twcopy (groupa + comps * points + groupb, u, work%usave)
 
 !     GO TO 1090 WHEN RETURN = 1
       return = 1
@@ -3325,10 +3268,8 @@ module twopnt_core
       if (report /= ' ') then
 !        BE CAREFUL NOT TO ASSIGN A VALUE TO A PARAMETER
          if (points /= psave) points = psave
-         if (setup%adapt .and. 0 < points) &
-            call twcopy (points, rwork(qxsave), x)
-         call twcopy &
-            (groupa + comps * points + groupb, rwork(qusave), u)
+         if (setup%adapt .and. points>0) call twcopy(points, work%xsave, x)
+         call twcopy(groupa + comps * points + groupb, work%usave, u)
       end if
 
 !///  PRINT LEVEL 11 OR 21.
@@ -3467,10 +3408,10 @@ module twopnt_core
       ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE SEARCH BLOCK.
       if (setup%levelm>1 .and. text>0) write (text, 10014) id
 
-!///  PREPARE TO CALL SEARCH.
+      ! PREPARE TO CALL SEARCH.
 
-!     SAVE THE SOLUTION SHOULD THE SEARCH FAIL
-      call twcopy (groupa + comps * points + groupb, u, rwork(qvsave))
+      ! Save the solution should the search fail
+      call twcopy (groupa + comps * points + groupb, u, work%vsave)
 
       exist = .false.
 
@@ -3488,11 +3429,11 @@ module twopnt_core
 
       call search &
         (error, text, &
-         rwork(qabove), age, rwork(qbelow), buffer, comps, condit, &
+         work%above, age, work%below, buffer, comps, condit, &
          exist, groupa, groupb, setup%leveld - 1, setup%levelm - 1, name, names, &
-         points, xrepor, rwork(qs0), rwork(qs1), signal, nsteps, found, &
-         u, rwork(qv1), setup%ssabs, setup%ssage, setup%ssrel, rwork(qy0), ynorm, &
-         rwork(qy1))
+         points, xrepor, work%s0, work%s1, signal, nsteps, found, &
+         u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
+         work%y1)
       if (error) go to 9017
 
 !///  PASS REQUESTS FROM SEARCH TO THE CALLER.
@@ -3509,18 +3450,15 @@ module twopnt_core
 !        SAVE THE LATEST SOLUTION
 
          psave = points
-         if (setup%adapt .and. 0 < points) &
-            call twcopy (points, x, rwork(qxsave))
-         call twcopy &
-            (groupa + comps * points + groupb, u, rwork(qusave))
+         if (setup%adapt .and. points>0) call twcopy (points, x, work%xsave)
+         call twcopy(groupa+comps*points+groupb, u, work%usave)
 
 !        GO TO 4030 WHEN RETURN = 5
          return = 5
          go to 9911
       else
 !        RESTORE THE SOLUTION
-         call twcopy &
-            (groupa + comps * points + groupb, rwork(qvsave), u)
+         call twcopy(groupa+comps*points+groupb, work%vsave, u)
       end if
 4030  continue
 
@@ -3574,10 +3512,10 @@ module twopnt_core
 
 !///  PREPARE TO CALL REFINE.
 
-!     SAVE THE GROUP B VALUES
-      do 5020 j = 1, groupb
-         rwork(qvsave - 1 + j) = u(groupa + comps * points + j)
-5020  continue
+      ! Save group B values
+      do j = 1, groupb
+         work%vsave(j) = u(groupa + comps * points + j)
+      end do
 
       exist = .false.
 
@@ -3590,9 +3528,9 @@ module twopnt_core
         (error, text, &
          active, &
          buffer(groupa + 1), comps, setup%leveld - 1, setup%levelm - 1, mark, &
-         found, setup%ipadd, pmax, points, ratio, rwork(qrat1), rwork(qrat2), &
+         found, setup%ipadd, pmax, points, ratio, work%ratio1, work%ratio2, &
          signal, satisf, setup%toler0, setup%toler1, setup%toler2, u(groupa + 1), &
-         iwork(qvary1), iwork(qvary2), iwork(qvary), x)
+         work%vary1, work%vary2, work%vary, x)
       if (error) go to 9018
 
 !///  SERVICE REQUESTS FROM REFINE: PASS REQUESTS TO THE CALLER.
@@ -3601,7 +3539,7 @@ module twopnt_core
          ! INSERT THE GROUP A AND B UNKNOWNS
          buffer(1:groupa) = u(1:groupa)
          do j = 1, groupb
-            buffer(groupa + comps*points + j) = rwork(qvsave - 1 + j)
+            buffer(groupa + comps*points + j) = work%vsave(j)
          end do
 
 !        GO TO 5030 WHEN RETURN = 6
@@ -3631,25 +3569,24 @@ module twopnt_core
 
 !        INSERT THE GROUP B VALUES
          do j = 1, groupb
-            u(groupa + comps * points + j) = rwork(qvsave - 1 + j)
+            u(groupa + comps * points + j) = work%vsave(j)
          end do
 
 !        EXPAND THE BOUNDS
          count = groupa
-
-         do 5080 k = 1, points
-            do 5070 j = 1, comps
-               rwork(qabove + count) = above(groupa + j)
-               rwork(qbelow + count) = below(groupa + j)
+         do k = 1, points
+            do j = 1, comps
+               work%above(count+1) = above(groupa + j)
+               work%below(count+1) = below(groupa + j)
                count = count + 1
-5070        continue
-5080     continue
+            end do
+         end do
 
-         do 5090 j = 1, groupb
-            rwork(qabove + count) = above(groupa + comps + j)
-            rwork(qbelow + count) = below(groupa + comps + j)
+         do j = 1, groupb
+            work%above(count+1) = above(groupa + comps + j)
+            work%below(count+1) = below(groupa + comps + j)
             count = count + 1
-5090     continue
+         end do
 
 !        SAVE THE LATEST SOLUTION
 !        GO TO 5100 WHEN RETURN = 7
@@ -3725,12 +3662,11 @@ module twopnt_core
 
       call evolve &
         (error, text, &
-         rwork(qabove), rwork(qbelow), buffer, comps, condit, desire, &
+         work%above, work%below, buffer, comps, condit, desire, &
          groupa, groupb, setup%leveld - 1, setup%levelm - 1, name, names, points, &
-         xrepor, rwork(qs0), rwork(qs1), signal, step, setup%steps2, setup%strid0, &
+         xrepor, work%s0, work%s1, signal, step, setup%steps2, setup%strid0, &
          stride, found, setup%tdabs, setup%tdage, setup%tdec, setup%tdrel, time, setup%tinc, setup%tmax, &
-         setup%tmin, u, rwork(qv1), rwork(qvsave), rwork(qy0), rwork(qy1), &
-         ynorm)
+         setup%tmin, u, work%v1, work%vsave, work%y0, work%y1, ynorm)
       if (error) go to 9019
 
 !///  PASS REQUESTS FROM EVOLVE TO THE CALLER.
@@ -4078,13 +4014,6 @@ module twopnt_core
       end if
       if (.not. mess) return
 
-9012  if (text>0) write (text, 12) id
-      if (.not. mess) return
-
-9013  if (text>0) write (text, 13) id, &
-         isize, rsize, ilast, rlast
-      if (.not. mess) return
-
 9014  if (text>0) write (text, 14) id
       if (.not. mess) return
 
@@ -4152,11 +4081,6 @@ module twopnt_core
                    /10X, i10, '  NUMBER OF BOUNDS OUT OF ORDER' &
                   //10X, '     LOWER       UPPER' &
                    /10X, '     BOUND       BOUND   UNKNOWN'/)
-          12 format(/1X, a9, 'ERROR.  TWGRAB FAILS.')
-          13 format(/1X, a9, 'ERROR.  ONE OR BOTH WORK SPACES ARE TOO SMALL.' &
-                  //25X, '   INTEGER        REAL' &
-                  //10X, ' PRESENT SIZE', 2i12 &
-                   /10X, 'REQUIRED SIZE', 2i12)
           14 format(/1X, a9, 'ERROR.  NEITHER THE INITIAL TIME EVOLUTION NOR THE' &
                    /10X, 'SEARCH FOR THE STEADY STATE IS ALLOWED.')
           15 format(/1X, a9, 'ERROR.  UNKNOWN TASK.')
@@ -4688,6 +4612,83 @@ module twopnt_core
 
       end function print_time
 
+      subroutine partition_working_space(this,text,pmax,groupa,groupb,comps,error)
+          class(twwork), intent(inout) :: this
+          integer, intent(in)  :: text
+          integer, intent(in)  :: pmax,groupa,groupb,comps
+          logical, intent(out) :: error
+
+          character(*), parameter :: id = 'TWOPNT:  '
+
+          call realloc(this%vary,pmax,error);                      if (error) goto 1
+          call realloc(this%vary1,pmax,error);                     if (error) goto 1
+          call realloc(this%vary2,pmax,error);                     if (error) goto 1
+          call realloc(this%above,groupa+comps*pmax+groupb,error); if (error) goto 1
+          call realloc(this%below,groupa+comps*pmax+groupb,error); if (error) goto 1
+          call realloc(this%ratio1,pmax,error);                    if (error) goto 1
+          call realloc(this%ratio2,pmax,error);                    if (error) goto 1
+          call realloc(this%s0,groupa+comps*pmax+groupb,error);    if (error) goto 1
+          call realloc(this%s1,groupa+comps*pmax+groupb,error);    if (error) goto 1
+          call realloc(this%usave,groupa+comps*pmax+groupb,error); if (error) goto 1
+          call realloc(this%vsave,groupa+comps*pmax+groupb,error); if (error) goto 1
+          call realloc(this%v1,groupa+comps*pmax+groupb,error);    if (error) goto 1
+          call realloc(this%xsave,pmax,error);                     if (error) goto 1
+          call realloc(this%y0,groupa+comps*pmax+groupb,error);    if (error) goto 1
+          call realloc(this%y1,groupa+comps*pmax+groupb,error);    if (error) goto 1
+
+          ! Success!
+          return
+
+          ! Error control
+          1 if (text>0) write (text, 10) id; return
+
+          10 format(/1X, a9, 'ERROR.  TWGRAB FAILS.')
+
+      end subroutine partition_working_space
+
+      pure subroutine realloc_real(array,min_size,error)
+         real(RK), allocatable, intent(inout) :: array(:)
+         integer , intent(in)  :: min_size
+         real(RK), allocatable :: tmp(:)
+         logical , intent(out) :: error
+         integer :: stat
+
+         if (allocated(array)) then
+             if (size(array)<min_size) then
+                allocate(tmp(min_size),stat=stat)
+                call move_alloc(from=tmp,to=array)
+             else
+                stat = 0
+             end if
+         else
+             allocate(array(min_size),stat=stat)
+         end if
+
+         error = stat/=0
+
+      end subroutine realloc_real
+
+      pure subroutine realloc_int(array,min_size,error)
+         integer , allocatable, intent(inout) :: array(:)
+         integer , intent(in)  :: min_size
+         integer , allocatable :: tmp(:)
+         logical , intent(out) :: error
+         integer :: stat
+
+         if (allocated(array)) then
+             if (size(array)<min_size) then
+                allocate(tmp(min_size),stat=stat)
+                call move_alloc(from=tmp,to=array)
+             else
+                stat = 0
+             end if
+         else
+             allocate(array(min_size),stat=stat)
+         end if
+
+         error = stat/=0
+
+      end subroutine realloc_int
 
 end module twopnt_core
 
