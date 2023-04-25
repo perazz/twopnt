@@ -141,6 +141,7 @@ module twopnt_core
         contains
 
             procedure :: init => partition_working_space
+            procedure :: load_bounds => expand_bounds
 
     end type twwork
 
@@ -1504,25 +1505,6 @@ module twopnt_core
          timer = temp - timer
 
       end subroutine twlaps
-
-      ! Reserve space in an array
-      pure subroutine twgrab (error, last, first, number)
-          integer, intent(inout) :: first,last
-          integer, intent(in)    :: number
-          logical, intent(out)   :: error
-
-          intrinsic :: max
-
-          ! Check the arguments.
-          error = .not. (0 <= last);   if (error) return
-          error = .not. (0 <= number); if (error) return
-
-          ! Grab the space.
-          first = last + 1
-          last  = last + max (1, number)
-
-      end subroutine twgrab
-
 
       subroutine evolve &
         (error, text, &
@@ -3096,26 +3078,7 @@ module twopnt_core
       found = .true.
 
       ! EXPAND THE BOUNDS.
-      count = 1
-      do j = 1, groupa
-         work%above(count) = above(j)
-         work%below(count) = below(j)
-         count = count + 1
-      end do
-
-      do k = 1, points
-         do j = 1, comps
-            work%above(count) = above(groupa + j)
-            work%below(count) = below(groupa + j)
-            count = count + 1
-         end do
-      end do
-
-      do j = 1, groupb
-         work%above(count) = above(groupa + comps + j)
-         work%below(count) = below(groupa + comps + j)
-         count = count + 1
-      end do
+      call work%load_bounds(above,below,points,comps,groupa,groupb)
 
       ! SAVE THE INITIAL SOLUTION.
 
@@ -3572,21 +3535,8 @@ module twopnt_core
             u(groupa + comps * points + j) = work%vsave(j)
          end do
 
-!        EXPAND THE BOUNDS
-         count = groupa
-         do k = 1, points
-            do j = 1, comps
-               work%above(count+1) = above(groupa + j)
-               work%below(count+1) = below(groupa + j)
-               count = count + 1
-            end do
-         end do
-
-         do j = 1, groupb
-            work%above(count+1) = above(groupa + comps + j)
-            work%below(count+1) = below(groupa + comps + j)
-            count = count + 1
-         end do
+         ! Expand bounds to new grid size
+         call work%load_bounds(above,below,points,comps,groupa,groupb)
 
 !        SAVE THE LATEST SOLUTION
 !        GO TO 5100 WHEN RETURN = 7
@@ -4645,6 +4595,49 @@ module twopnt_core
           10 format(/1X, a9, 'ERROR.  TWGRAB FAILS.')
 
       end subroutine partition_working_space
+
+      pure subroutine expand_bounds(this,above,below,points,comps,groupa,groupb)
+         class(twwork), intent(inout) :: this
+         real(RK), intent(in) :: above(:),below(:)
+         integer , intent(in) :: points,comps,groupa,groupb
+
+         integer :: ptr,j,k
+
+         ! Input arrays: bounds for groups and components only
+         ! Working array: bounds for each point
+         ! +--------+-------+--------+
+         ! | groupa | comps | groupb |
+         ! +--------+-------+--------+
+
+         ! Working array: bounds for each point
+         ! +--------+------------------------------------+--------+
+         ! | groupa | point1 | point2 | point.. | points | groupb |
+         ! |        |          comps*points              |        |
+         ! +--------+------------------------------------+--------+
+
+         ! EXPAND THE BOUNDS.
+         ptr = 1
+         do j = 1, groupa
+             this%above(ptr) = above(j)
+             this%below(ptr) = below(j)
+             ptr = ptr + 1
+         end do
+
+         do k = 1, points
+             do j = 1, comps
+                this%above(ptr) = above(groupa + j)
+                this%below(ptr) = below(groupa + j)
+                ptr = ptr + 1
+             end do
+         end do
+
+         do j = 1, groupb
+             this%above(ptr) = above(groupa + comps + j)
+             this%below(ptr) = below(groupa + comps + j)
+             ptr = ptr + 1
+         end do
+
+      end subroutine expand_bounds
 
       pure subroutine realloc_real(array,min_size,error)
          real(RK), allocatable, intent(inout) :: array(:)
