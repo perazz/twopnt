@@ -3449,23 +3449,43 @@ module twopnt_core
 
       string = ' '
 
-!     COLUMN 1: NAME OF THE TASK
+      ! COLUMN 1: NAME OF THE TASK
       if (qtask == qentry) column(1) = '   START'
       if (qtask == qsearc) column(1) = '  SEARCH'
       if (qtask == qrefin) column(1) = '  REFINE'
       if (qtask == qtimst) column(1) = '  EVOLVE'
 
-!     COLUMN 2: NORM OF THE STEADY STATE FUNCTION
-      if (.not. found) go to 7040
-!        GO TO 7030 WHEN RETURN = 10
+      ! COLUMN 2: NORM OF THE STEADY STATE FUNCTION
+      if (found) then
+         ! GO TO 7030 WHEN RETURN = 10
          return = 10
-         go to 9941
-7030     continue
+
+         ! EVALUATE THE STEADY STATE FUNCTION.
+         call stats%tick(qfunct)
+
+         call twcopy (groupa + comps * points + groupb, u, buffer)
+         signal = 'RESIDUAL'
+         time = .false.
+
+         ! GO TO 9942 WHEN ROUTE = 4
+         route = 4
+         return
+
+         9942  continue
+         signal = ' '
+         call stats%tock(qfunct,event=.true.)
+
+         go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
+         error = .true.
+         if (text>0) write (text, 21) id, return
+         return
+
+         7030 continue
          call twnorm (groupa + comps * points + groupb, temp, buffer)
          call twlogr (column(2), temp)
-7040  continue
+      endif
 
-!     COLUMN 3: LARGEST CONDITION NUMBER
+      ! COLUMN 3: LARGEST CONDITION NUMBER
       if (qtask == qsearc .or. qtask == qtimst) then
          if (maxcon /= 0.0) call twlogr (column(3), maxcon)
       end if
@@ -3585,76 +3605,6 @@ module twopnt_core
       if (text>0) write (text, 21) id, return
       return
 
-!///  EVALUATE THE STEADY STATE FUNCTION.
-
-9941  continue
-
-      call stats%tick(qfunct)
-
-      call twcopy (groupa + comps * points + groupb, u, buffer)
-      signal = 'RESIDUAL'
-      time = .false.
-!     GO TO 9942 WHEN ROUTE = 4
-      route = 4
-      return
-9942  continue
-      signal = ' '
-
-      call stats%tock(qfunct,event=.true.)
-
-      go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) &
-         return
-      error = .true.
-      if (text>0) write (text, 21) id, return
-      return
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     INFORMATIVE MESSAGES.
-!
-!///////////////////////////////////////////////////////////////////////
-
-10001 format(/1X, a9, a, ' (TWO POINT BOUNDARY VALUE PROBLEM) SOLVER,' &
-             /10X, 'VERSION ', a, &
-             ' OF APRIL 1998 BY DR. JOSEPH F. GRCAR.')
-10002 format(/1X, a9, a)
-10003 format(3(/10X, a35)/)
-10010 format(/1X, a9, 'SUCCESS.  PROBLEM SOLVED.')
-10011 format(/1X, a9, 'FAILURE.  A SOLUTION WAS FOUND FOR A GRID WITH ', a &
-            /10X, 'POINTS, BUT ONE OR BOTH RATIOS ARE TOO LARGE.' &
-           //22X, '   RATIO 1     RATIO 2' &
-           //10X, '     FOUND', 2F12.2 &
-            /10X, '   DESIRED', 2F12.2 &
-           //10X, 'A LARGER GRID COULD NOT BE FORMED.')
-10012 format(/1X, a9, 'FAILURE.  NO SOLUTION WAS FOUND.')
-10013 format(/1X, a9, 'FAILURE.  A SOLUTION WAS FOUND FOR A GRID WITH ', a &
-            /10X, 'POINTS, BUT ONE OR BOTH RATIOS ARE TOO LARGE.' &
-           //22X, '   RATIO 1     RATIO 2' &
-           //10X, '     FOUND', 2F12.2 &
-            /10X, '   DESIRED', 2F12.2 &
-           //10X, 'A SOLUTION COULD NOT BE FOUND FOR A LARGER GRID.')
-10014 format(/1X, a9, 'CALLING SEARCH TO SOLVE THE STEADY STATE PROBLEM.')
-10015 format(/1X, a9, 'SEARCH FOUND THE STEADY STATE.')
-10016 format(/1X, a9, 'SEARCH DID NOT FIND THE STEADY STATE.')
-10017 format(/1X, a9, 'CALLING REFINE TO PRODUCE A NEW GRID.')
-10018 format(/1X, a9, 'REFINE SELECTED A NEW GRID.')
-10019 format(/1X, a9, 'REFINE DID NOT SELECT A NEW GRID.')
-10020 format(/1X, a9, 'CALLING EVOLVE TO PERFORM TIME EVOLUTION.')
-10021 format(/1X, a9, 'EVOLVE PERFORMED A TIME EVOLUTION.')
-10022 format(/1X, a9, 'EVOLVE DID NOT PERFORM A TIME EVOLUTION.')
-10023 format(10X, a8, 3X, a6, 2X, a6, 3X, a)
-80001 format('(', a, ' ', i10, ')')
-80002 format(10X, 1p, e10.2, 2X, e10.2, 3X, a)
-80003 format(10X, '  ... MORE')
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     ERROR MESSAGES.
-!
-!///////////////////////////////////////////////////////////////////////
-
-!     return
-
 9011  if (text>0) then
          write (text, 11) id, groupa, groupb, comps, groupa + comps + groupb, count
          count = 0
@@ -3753,6 +3703,39 @@ module twopnt_core
                   //10X, i10, '  LABEL')
           21 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
                   //10X, i10, '  RETURN')
+
+       ! Informative messages
+       10001 format(/1X, a9, a, ' (TWO POINT BOUNDARY VALUE PROBLEM) SOLVER,' &
+                    /10X, 'VERSION ', a,' OF APRIL 1998 BY DR. JOSEPH F. GRCAR.')
+       10002 format(/1X, a9, a)
+       10003 format(3(/10X, a35)/)
+       10010 format(/1X, a9, 'SUCCESS.  PROBLEM SOLVED.')
+       10011 format(/1X, a9, 'FAILURE.  A SOLUTION WAS FOUND FOR A GRID WITH ', a &
+                   /10X, 'POINTS, BUT ONE OR BOTH RATIOS ARE TOO LARGE.' &
+                  //22X, '   RATIO 1     RATIO 2' &
+                  //10X, '     FOUND', 2F12.2 &
+                   /10X, '   DESIRED', 2F12.2 &
+                  //10X, 'A LARGER GRID COULD NOT BE FORMED.')
+       10012 format(/1X, a9, 'FAILURE.  NO SOLUTION WAS FOUND.')
+       10013 format(/1X, a9, 'FAILURE.  A SOLUTION WAS FOUND FOR A GRID WITH ', a &
+                   /10X, 'POINTS, BUT ONE OR BOTH RATIOS ARE TOO LARGE.' &
+                  //22X, '   RATIO 1     RATIO 2' &
+                  //10X, '     FOUND', 2F12.2 &
+                   /10X, '   DESIRED', 2F12.2 &
+                  //10X, 'A SOLUTION COULD NOT BE FOUND FOR A LARGER GRID.')
+       10014 format(/1X, a9, 'CALLING SEARCH TO SOLVE THE STEADY STATE PROBLEM.')
+       10015 format(/1X, a9, 'SEARCH FOUND THE STEADY STATE.')
+       10016 format(/1X, a9, 'SEARCH DID NOT FIND THE STEADY STATE.')
+       10017 format(/1X, a9, 'CALLING REFINE TO PRODUCE A NEW GRID.')
+       10018 format(/1X, a9, 'REFINE SELECTED A NEW GRID.')
+       10019 format(/1X, a9, 'REFINE DID NOT SELECT A NEW GRID.')
+       10020 format(/1X, a9, 'CALLING EVOLVE TO PERFORM TIME EVOLUTION.')
+       10021 format(/1X, a9, 'EVOLVE PERFORMED A TIME EVOLUTION.')
+       10022 format(/1X, a9, 'EVOLVE DID NOT PERFORM A TIME EVOLUTION.')
+       10023 format(10X, a8, 3X, a6, 2X, a6, 3X, a)
+       80001 format('(', a, ' ', i10, ')')
+       80002 format(10X, 1p, e10.2, 2X, e10.2, 3X, a)
+       80003 format(10X, '  ... MORE')
 
       end subroutine twopnt
 
