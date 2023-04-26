@@ -3096,12 +3096,18 @@ module twopnt_core
 
 !     GO TO 1090 WHEN RETURN = 1
       return = 1
-      go to 9911
+      ! Save the last solution
+      call twcopy (groupa + comps * points + groupb, u, buffer)
+      signal = 'SAVE'
+      ! GO TO 9912 WHEN ROUTE = 1
+      route = 1
+      return
+
+
 1090  continue
 
 !///  PRINT LEVELS 11, 21, AND 22.
-
-      if (0 < setup%leveld .and. text>0) then
+      if (setup%leveld>0 .and. text>0) then
          write (text, 10002) id, 'INITIAL GUESS:'
 !        GO TO 1100 WHEN RETURN = 2
          return = 2
@@ -3117,8 +3123,7 @@ module twopnt_core
       header(2) = '    TASK   NORM F  COND J   REMARK'
 
       if (setup%levelm == 1 .and. text>0) then
-         if (0 < setup%leveld) write (text, 10002) id, &
-            'SOLVE THE PROBLEM.'
+         if (setup%leveld>0) write (text, 10002) id, 'SOLVE THE PROBLEM.'
          write (text, 10003) (header(j), j = 1, 2)
 !        GO TO 1110 WHEN LABEL = 1
          label = 1
@@ -3132,259 +3137,169 @@ module twopnt_core
 !
 !///////////////////////////////////////////////////////////////////////
 
-2010  continue
+      new_task: do
 
-!///  ENTRY WAS THE PREVIOUS TASK.
+      !///  ENTRY WAS THE PREVIOUS TASK.
+          qtask = twopnt_next_task(setup,stats,qtask,found,satisf,allow,report,desire,error)
+          if (error) goto 9014
 
-      if (qtask == qentry) then
-         if (0 < setup%steps0) then
-            qtask = qtimst
-            desire = setup%steps0
-         else if (setup%steady) then
-            qtask = qsearc
-         else
-            error = .true.
-            go to 9014
-         end if
+          ! Branch to the next task.
+          select case (qtask)
+              case (qexit) ! *** EXIT BLOCK. ***
 
-!///  SEARCH WAS THE PREVIOUS TASK.
+                  ! Complete statistics for the last grid
+                  call stats%tock(qgrid)
 
-      else if (qtask == qsearc) then
-         if (found) then
-            if (setup%adapt) then
-               qtask = qrefin
-            else
-               qtask = qexit
-               report = ' '
-            end if
-         else
-            if (allow .and. 0 < setup%steps1) then
-               qtask = qtimst
-               desire = setup%steps1
-            else
-               qtask = qexit
-               if (stats%grid>1) then
-                  report = 'SOME SOLVED'
-               else
-                  report = 'NOT SOLVED'
-               end if
-            end if
-         end if
+                  ! Restore the solution.
+                  if (report /= ' ') then
+                     ! BE CAREFUL NOT TO ASSIGN A VALUE TO A PARAMETER
+                     if (points /= psave) points = psave
+                     if (setup%adapt .and. points>0) call twcopy(points, work%xsave, x)
+                     call twcopy(groupa + comps * points + groupb, work%usave, u)
+                  end if
 
-!///  REFINE WAS THE PREVIOUS TASK.
+                  ! PRINT LEVEL 11 OR 21.
 
-      else if (qtask == qrefin) then
-         if (found) then
-            stats%step = 0
-            qtask = qsearc
-            allow = .true.
-         else
-            qtask = qexit
-            if (satisf) then
-               report = ' '
-            else
-               report = 'NO SPACE'
-            end if
-         end if
+                  ! SAVE THE STATUS REPORTS DURING REVERSE COMMUNICATION
+                  string = report
 
-!///  EVOLVE WAS THE PREVIOUS TASK.
+                  if (setup%leveld == 1 .and. text>0) then
+                     write (text, 10002) id, 'FINAL SOLUTION:'
+                     ! GO TO 3020 WHEN RETURN = 3
+                     return = 3
+                     go to 9921
+                  end if
+            3020  continue
 
-      else if (qtask == qtimst) then
-         if (found) then
-            if (setup%steady) then
-               qtask = qsearc
-            else
-               qtask = qexit
-               report = ' '
-            end if
-         else
-            qtask = qexit
-            if (stats%grid>1) then
-               report = 'SOME SOLVED'
-            else
-               report = 'NOT SOLVED'
-            end if
-         end if
-      end if
+                  ! RESTORE THE STATUS REPORTS AFTER REVERSE COMMUNICATION
+                  report = string
 
-      ! Branch to the next task.
-      select case (qtask)
-         case (qexit);  goto 3010
-         case (qsearc); goto 4010
-         case (qrefin); goto 5010
-         case (qtimst); goto 6010
-         case default
-            error = .true.
-            go to 9015
-      end select
+                  ! Complete the total time statistics
+                  call stats%tock(qtotal)
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     EXIT BLOCK.
-!
-!///////////////////////////////////////////////////////////////////////
+                  ! TOP OF THE REPORT BLOCK.
+                  print_reports: if (setup%levelm>0 .and. text>0) then
 
-3010  continue
+                     call stats%print_stats(text,setup%adapt)
 
-      ! Complete statistics for the last grid
-      call stats%tock(qgrid)
+                      ! Report the completion status.
+                      if (setup%levelm>0) then
+                         if (report == ' ') then
+                            write (text, 10010) id
+                         else if (report == 'NO SPACE') then
+                            write (string, '(I10)') points
+                            call twsqez (length, string)
+                            write (text, 10011) &
+                               id, string (1 : length), ratio, setup%toler1, setup%toler2
+                         else if (report == 'NOT SOLVED') then
+                            write (text, 10012) id
+                         else if (report == 'SOME SOLVED') then
+                            write (string, '(I10)') points
+                            call twsqez (length, string)
+                            write (text, 10013) &
+                               id, string (1 : length), ratio, setup%toler1, setup%toler2
+                         else
+                            error = .true.
+                            go to 9016
+                         end if
+                      end if
 
-      ! Restore the solution.
-      if (report /= ' ') then
-         ! BE CAREFUL NOT TO ASSIGN A VALUE TO A PARAMETER
-         if (points /= psave) points = psave
-         if (setup%adapt .and. points>0) call twcopy(points, work%xsave, x)
-         call twcopy(groupa + comps * points + groupb, work%usave, u)
-      end if
+                  end if print_reports
 
-!///  PRINT LEVEL 11 OR 21.
+                  return
 
-      ! SAVE THE STATUS REPORTS DURING REVERSE COMMUNICATION
-      string = report
+              case (qsearc) ! *** SEARCH BLOCK. ***
 
-      if (setup%leveld == 1 .and. text>0) then
-         write (text, 10002) id, 'FINAL SOLUTION:'
-!        GO TO 3020 WHEN RETURN = 3
-         return = 3
-         go to 9921
-      end if
-3020  continue
+                  ! INITIALIZE STATISTICS ON ENTRY TO THE SEARCH BLOCK.
+                  call stats%tick(qsearc)
+                  first = .true.
+                  jacobs = 0
+                  maxcon = zero
 
-!     RESTORE THE STATUS REPORTS AFTER REVERSE COMMUNICATION
-      report = string
+                  ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE SEARCH BLOCK.
+                  if (setup%levelm>1 .and. text>0) write (text, 10014) id
 
-      ! Complete the total time statistics
-      call stats%tock(qtotal)
+                  ! PREPARE TO CALL SEARCH.
 
-      ! TOP OF THE REPORT BLOCK.
-      print_reports: if (setup%levelm>0 .and. text>0) then
+                  ! Save the solution should the search fail
+                  call twcopy (groupa + comps * points + groupb, u, work%vsave)
+                  exist = .false.
 
-         call stats%print_stats(text,setup%adapt)
+                  ! CALL SEARCH.
+                  age = 0
+            4020  continue
 
-      ! Report the completion status.
-      if (setup%levelm>0) then
-         if (report == ' ') then
-            write (text, 10010) id
-         else if (report == 'NO SPACE') then
-            write (string, '(I10)') points
-            call twsqez (length, string)
-            write (text, 10011) &
-               id, string (1 : length), ratio, setup%toler1, setup%toler2
-         else if (report == 'NOT SOLVED') then
-            write (text, 10012) id
-         else if (report == 'SOME SOLVED') then
-            write (string, '(I10)') points
-            call twsqez (length, string)
-            write (text, 10013) &
-               id, string (1 : length), ratio, setup%toler1, setup%toler2
-         else
-            error = .true.
-            go to 9016
-         end if
-      end if
+                  call search(error, text, &
+                             work%above, age, work%below, buffer, comps, condit, &
+                             exist, groupa, groupb, setup%leveld - 1, setup%levelm - 1, name, names, &
+                             points, xrepor, work%s0, work%s1, signal, nsteps, found, &
+                             u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
+                             work%y1)
+                  if (error) go to 9017
 
-      end if print_reports
+                  ! PASS REQUESTS FROM SEARCH TO THE CALLER.
+                  if (signal /= ' ') then
+                     ! GO TO 4020 WHEN RETURN = 4
+                     return = 4
+                     go to 9931
+                  end if
 
-!///  BOTTOM OF THE EXIT BLOCK.
+                  ! REACT TO THE COMPLETION OF SEARCH.
+                  save_or_restore: if (found) then
 
-      return
+                     psave = points
+                     if (setup%adapt .and. points>0) call twcopy (points, x, work%xsave)
+                     call twcopy(groupa+comps*points+groupb, u, work%usave)
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     SEARCH BLOCK.
-!
-!///////////////////////////////////////////////////////////////////////
+                     ! GO TO 4030 WHEN RETURN = 5
+                     return = 5
+                     ! Save the last solution
+                     call twcopy (groupa + comps * points + groupb, u, buffer)
+                     signal = 'SAVE'
+                     ! GO TO 9912 WHEN ROUTE = 1
+                     route = 1
+                     return
 
-4010  continue
+                     4030  continue
 
-      ! INITIALIZE STATISTICS ON ENTRY TO THE SEARCH BLOCK.
-      call stats%tick(qsearc)
-      first = .true.
-      jacobs = 0
-      maxcon = zero
+                  else save_or_restore
+                     ! RESTORE THE SOLUTION
+                     call twcopy(groupa+comps*points+groupb, work%vsave, u)
+                  end if save_or_restore
 
-      ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE SEARCH BLOCK.
-      if (setup%levelm>1 .and. text>0) write (text, 10014) id
+                  ! COMPLETE STATISTICS FOR THE SEARCH BLOCK.
+                  call stats%tock(qsearc)
 
-      ! PREPARE TO CALL SEARCH.
+                  ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE SEARCH BLOCK.
+                  if (setup%levelm == 1 .and. text>0) then
+                     ! GO TO 4040 WHEN LABEL = 2
+                     label = 2
+                     go to 7010
+                  end if
+            4040  continue
 
-      ! Save the solution should the search fail
-      call twcopy (groupa + comps * points + groupb, u, work%vsave)
+            !///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE SEARCH BLOCK.
 
-      exist = .false.
+                  if (setup%levelm>1) then
+                     if (found) then
+                        if (text>0) write (text, 10015) id
+                     else
+                        if (text>0) write (text, 10016) id
+                     end if
+                  end if
 
-!///  CALL SEARCH.
+            !///  BOTTOM OF THE SEARCH BLOCK.
 
-      age = 0
-4020  continue
+                  cycle new_task
 
-!     SUBROUTINE SEARCH &
-!       (ERROR, TEXT, &
-!        ABOVE, AGE, BELOW, BUFFER, COMPS, CONDIT, EXIST, GROUPA, &
-!        GROUPB, setup%leveld, setup%levelm, NAME, NAMES, POINTS, REPORT, S0, S1, &
-!        SIGNAL, STEPS, success, V0, V1, XXABS, XXAGE, XXREL, Y0, Y0NORM, &
-!        Y1)
 
-      call search &
-        (error, text, &
-         work%above, age, work%below, buffer, comps, condit, &
-         exist, groupa, groupb, setup%leveld - 1, setup%levelm - 1, name, names, &
-         points, xrepor, work%s0, work%s1, signal, nsteps, found, &
-         u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
-         work%y1)
-      if (error) go to 9017
+              case (qrefin); goto 5010
+              case (qtimst); goto 6010
+              case default
+                  error = .true.
+                  go to 9015
+          end select
 
-!///  PASS REQUESTS FROM SEARCH TO THE CALLER.
-
-      if (signal /= ' ') then
-!        GO TO 4020 WHEN RETURN = 4
-         return = 4
-         go to 9931
-      end if
-
-!///  REACT TO THE COMPLETION OF SEARCH.
-
-      if (found) then
-!        SAVE THE LATEST SOLUTION
-
-         psave = points
-         if (setup%adapt .and. points>0) call twcopy (points, x, work%xsave)
-         call twcopy(groupa+comps*points+groupb, u, work%usave)
-
-!        GO TO 4030 WHEN RETURN = 5
-         return = 5
-         go to 9911
-      else
-!        RESTORE THE SOLUTION
-         call twcopy(groupa+comps*points+groupb, work%vsave, u)
-      end if
-4030  continue
-
-      ! COMPLETE STATISTICS FOR THE SEARCH BLOCK.
-      call stats%tock(qsearc)
-
-!///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE SEARCH BLOCK.
-
-      if (setup%levelm == 1 .and. text>0) then
-!        GO TO 4040 WHEN LABEL = 2
-         label = 2
-         go to 7010
-      end if
-4040  continue
-
-!///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE SEARCH BLOCK.
-
-      if (setup%levelm>1) then
-         if (found) then
-            if (text>0) write (text, 10015) id
-         else
-            if (text>0) write (text, 10016) id
-         end if
-      end if
-
-!///  BOTTOM OF THE SEARCH BLOCK.
-
-      go to 2010
 
 !///////////////////////////////////////////////////////////////////////
 !
@@ -3394,14 +3309,11 @@ module twopnt_core
 
 5010  continue
 
-      !INITIALIZE STATISTICS ON ENTRY TO THE REFINE BLOCK.
+      ! INITIALIZE STATISTICS ON ENTRY TO THE REFINE BLOCK.
       call stats%tick(qrefin)
 
-!///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE REFINE BLOCK.
-
-      if (setup%levelm>1) then
-         if (text>0) write (text, 10017) id
-      end if
+      ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE REFINE BLOCK.
+      if (setup%levelm>1 .and. text>0) write (text, 10017) id
 
 !///  PREPARE TO CALL REFINE.
 
@@ -3442,7 +3354,7 @@ module twopnt_core
 
 !///  REACT TO THE COMPLETION OF REFINE.
 
-      if (.not. found) go to 5110
+      refine_found: if (found) then
 
          ! Initialize statistics for the new grid
          call stats%new_grid(points)
@@ -3455,13 +3367,17 @@ module twopnt_core
          ! Expand bounds to new grid size
          call work%load_bounds(above,below,points,comps,groupa,groupb)
 
-!        SAVE THE LATEST SOLUTION
+         ! SAVE THE LATEST SOLUTION
 !        GO TO 5100 WHEN RETURN = 7
          return = 7
-         go to 9911
-5100     continue
+         call twcopy (groupa + comps * points + groupb, u, buffer)
+         signal = 'SAVE'
+         ! GO TO 9912 WHEN ROUTE = 1
+         route = 1
+         return
+         5100 continue
 
-5110  continue
+      endif refine_found
 
       ! COMPLETE STATISTICS FOR THE REFINE BLOCK.
       call stats%tock(qrefin)
@@ -3488,7 +3404,7 @@ module twopnt_core
 
 !///  BOTTOM OF THE REFINE BLOCK.
 
-      go to 2010
+      cycle new_task
 
 !///////////////////////////////////////////////////////////////////////
 !
@@ -3543,10 +3459,17 @@ module twopnt_core
 !///  REACT TO THE COMPLETION OF EVOLVE.
 
       if (found) then
-!        SAVE THE LATEST SOLUTION
+         ! SAVE THE LATEST SOLUTION
 !        GO TO 6030 WHEN RETURN = 9
          return = 9
-         go to 9911
+
+         ! Save the last solution
+         call twcopy (groupa + comps * points + groupb, u, buffer)
+         signal = 'SAVE'
+         ! GO TO 9912 WHEN ROUTE = 1
+         route = 1
+         return
+
       end if
 6030  continue
 
@@ -3580,7 +3503,7 @@ module twopnt_core
 
 !///  BOTTOM OF THE EVOLVE BLOCK.
 
-      go to 2010
+      end do new_task
 
 !///////////////////////////////////////////////////////////////////////
 !
@@ -3590,9 +3513,8 @@ module twopnt_core
 
 7010  continue
 
-      do 7020 j = 1, 3
-         column(j) = ' '
-7020  continue
+
+      column(:) = repeat(' ',80)
 
       string = ' '
 
@@ -3668,18 +3590,10 @@ module twopnt_core
 
 !///  SAVE THE SOLUTION.
 
-9911  continue
-
-      call twcopy (groupa + comps * points + groupb, u, buffer)
-      signal = 'SAVE'
-!     GO TO 9912 WHEN ROUTE = 1
-      route = 1
-      return
 9912  continue
       signal = ' '
 
-      go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) &
-         return
+      go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
       error = .true.
       go to 9021
 
@@ -3695,8 +3609,7 @@ module twopnt_core
 9922  continue
       signal = ' '
 
-      go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) &
-         return
+      go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
       error = .true.
       go to 9021
 
@@ -3852,29 +3765,29 @@ module twopnt_core
       end if
       if (.not. mess) return
 
-9014  if (text>0) write (text, 14) id
-      if (.not. mess) return
+      9014  if (text>0) write (text, 14) id
+              if (.not. mess) return
 
-9015  if (text>0) write (text, 15) id
-      if (.not. mess) return
+        9015  if (text>0) write (text, 15) id
+              if (.not. mess) return
 
-9016  if (text>0) write (text, 16) id
-      if (.not. mess) return
+        9016  if (text>0) write (text, 16) id
+              if (.not. mess) return
 
-9017  if (text>0) write (text, 17) id
-      if (.not. mess) return
+        9017  if (text>0) write (text, 17) id
+              if (.not. mess) return
 
-9018  if (text>0) write (text, 18) id
-      if (.not. mess) return
+        9018  if (text>0) write (text, 18) id
+              if (.not. mess) return
 
-9019  if (text>0) write (text, 19) id
-      if (.not. mess) return
+        9019  if (text>0) write (text, 19) id
+              if (.not. mess) return
 
-9020  if (text>0) write (text, 20) id, label
-      if (.not. mess) return
+        9020  if (text>0) write (text, 20) id, label
+              if (.not. mess) return
 
-9021  if (text>0) write (text, 21) id, return
-      if (.not. mess) return
+        9021  if (text>0) write (text, 21) id, return
+              if (.not. mess) return
 
       stop
 
@@ -4733,6 +4646,92 @@ module twopnt_core
 
 
       end subroutine print_stats
+
+      ! Decision block: the previous task determines the next
+      integer function twopnt_next_task(setup,stats,old_task,found,satisf,allow,report,desire,error) result(qtask)
+          type(twcom),  intent(in)    :: setup
+          type(twstat), intent(inout)  :: stats
+          integer,      intent(in)     :: old_task
+          logical,      intent(in)     :: found,satisf
+          logical,      intent(inout)  :: allow
+          character(*), intent(inout)  :: report
+          integer,      intent(inout)  :: desire
+          logical,      intent(out)    :: error
+
+          error = .false.
+
+          select case (old_task)
+
+             case (qentry)
+                 if (setup%steps0>0) then
+                    qtask  = qtimst
+                    desire = setup%steps0
+                 else if (setup%steady) then
+                    qtask  = qsearc
+                 else
+                    error  = .true.
+                    return
+                 end if
+
+             case (qsearc) ! SEARCH WAS THE PREVIOUS TASK.
+
+                 if (found) then
+                    if (setup%adapt) then
+                       qtask = qrefin
+                    else
+                       qtask  = qexit
+                       report = ' '
+                    end if
+                 else
+                    if (allow .and. setup%steps1>0) then
+                       qtask  = qtimst
+                       desire = setup%steps1
+                    else
+                       qtask = qexit
+                       if (stats%grid>1) then
+                          report = 'SOME SOLVED'
+                       else
+                          report = 'NOT SOLVED'
+                       end if
+                    end if
+                 end if
+
+             case (qrefin) ! REFINE WAS THE PREVIOUS TASK.
+
+                 if (found) then
+                    stats%step = 0
+                    qtask = qsearc
+                    allow = .true.
+                 else
+                    qtask = qexit
+                    if (satisf) then
+                       report = ' '
+                    else
+                       report = 'NO SPACE'
+                    end if
+                 end if
+
+             case (qtimst) ! EVOLVE WAS THE PREVIOUS TASK.
+
+                 if (found) then
+                    if (setup%steady) then
+                       qtask = qsearc
+                    else
+                       qtask = qexit
+                       report = ' '
+                    end if
+                 else
+                    qtask = qexit
+                    if (stats%grid>1) then
+                       report = 'SOME SOLVED'
+                    else
+                       report = 'NOT SOLVED'
+                    end if
+                 end if
+
+          end select
+
+      end function twopnt_next_task
 
 end module twopnt_core
 
