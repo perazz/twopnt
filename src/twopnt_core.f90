@@ -2978,43 +2978,6 @@ module twopnt_core
       error = .false.
       report = ' '
 
-      ! Write all messages.
-
-      test_messages: if (mess .and. text>0) then
-         label = 0
-         return = 0
-         route = 0
-
-         write (text, 10020) id
-         write (text, 10017) id
-         write (text, 10014) id
-         write (text, 10001) id, precision_flag(), twtrim(vnmbr(vnmbrs),CONTRL_MAX_LEN)
-         write (text, 10022) id
-         write (text, 10021) id
-         write (text, 10011) id, '???', ratio, setup%toler1, setup%toler2
-         write (text, 10013) id, '???', ratio, setup%toler1, setup%toler2
-         write (text, 10012) id
-         write (text, 10002) id, 'FINAL SOLUTION:'
-         write (text, 10002) id, 'INITIAL GUESS:'
-         write (text, 10019) id
-         write (text, 10018) id
-         write (text, 10016) id
-         write (text, 10015) id
-         write (text, 10001) id, 'SINGLE PRECISION', twtrim(vnmbr(vnmbrs),CONTRL_MAX_LEN)
-         write (text, 10002) id, 'SOLVE THE PROBLEM.'
-         write (text, 10010) id
-
-         ! Print all messages
-         write (text, 1) id, route
-         write (text, 5) id, setup%leveld, setup%levelm
-         write (text, 6) id, comps, points, groupa, groupb
-         write (text, 7) id, comps, points
-         write (text, 8) id, comps, points, groupa, groupb, groupa + comps * points + groupb
-         write (text, 9) id, names, comps, groupa, groupb, groupa + comps + groupb
-         write (text, 10) id, points, pmax
-
-      end if test_messages
-
       ! Check the version.
       call check_version(versio,text,error); if (error) return
 
@@ -3129,19 +3092,22 @@ module twopnt_core
          label = 1
          go to 7010
       end if
-1110  continue
+      1110  continue
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     DECISION BLOCK.  THE PREVIOUS TASK DETERMINES THE NEXT.
-!
-!///////////////////////////////////////////////////////////////////////
+      !///////////////////////////////////////////////////////////////////////
+      !
+      !     DECISION BLOCK.  THE PREVIOUS TASK DETERMINES THE NEXT.
+      !
+      !///////////////////////////////////////////////////////////////////////
 
       new_task: do
 
-      !///  ENTRY WAS THE PREVIOUS TASK.
+          ! ENTRY WAS THE PREVIOUS TASK.
           qtask = twopnt_next_task(setup,stats,qtask,found,satisf,allow,report,desire,error)
-          if (error) goto 9014
+          if (error) then
+              if (text>0) write (text, 14) id
+              return
+          end if
 
           ! Branch to the next task.
           select case (qtask)
@@ -3293,215 +3259,175 @@ module twopnt_core
                   cycle new_task
 
 
-              case (qrefin); goto 5010
-              case (qtimst); goto 6010
+              case (qrefin) ! *** REFINE BLOCK. ***
+
+                  ! INITIALIZE STATISTICS ON ENTRY TO THE REFINE BLOCK.
+                  call stats%tick(qrefin)
+
+                  ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE REFINE BLOCK.
+                  if (setup%levelm>1 .and. text>0) write (text, 10017) id
+
+                  ! PREPARE TO CALL REFINE.
+
+                  ! Save group B values
+                  if (groupb>0) work%vsave(:groupb) = u(groupa+comps*points+1:groupa+comps*points+groupb)
+                  exist = .false.
+
+                  ! CALL REFINE.
+                  5030  continue
+                  call refine(error, text, active, &
+                              buffer(groupa + 1), comps, setup%leveld - 1, setup%levelm - 1, mark, &
+                              found, setup%ipadd, pmax, points, ratio, work%ratio1, work%ratio2,   &
+                              signal, satisf, setup%toler0, setup%toler1, setup%toler2, u(groupa + 1), &
+                              work%vary1, work%vary2, work%vary, x)
+                  if (error) then
+                      if (text>0) write (text, 18) id
+                      return
+                  end if
+
+                  ! SERVICE REQUESTS FROM REFINE: PASS REQUESTS TO THE CALLER.
+                  if (signal /= ' ') then
+                     ! INSERT THE GROUP A AND B UNKNOWNS
+                     buffer(1:groupa) = u(1:groupa)
+                     do j = 1, groupb
+                        buffer(groupa + comps*points + j) = work%vsave(j)
+                     end do
+
+                     ! GO TO 5030 WHEN RETURN = 6
+                     return = 6
+                     go to 9931
+                  end if
+
+                  ! REACT TO THE COMPLETION OF REFINE.
+                  refine_found: if (found) then
+
+                     ! Initialize statistics for the new grid
+                     call stats%new_grid(points)
+
+                     ! Insert the group B values
+                     do j = 1, groupb
+                         u(groupa + comps * points + j) = work%vsave(j)
+                     end do
+
+                     ! Expand bounds to new grid size
+                     call work%load_bounds(above,below,points,comps,groupa,groupb)
+
+                     ! SAVE THE LATEST SOLUTION
+                     ! GO TO 5100 WHEN RETURN = 7
+                     return = 7
+                     call twcopy (groupa + comps * points + groupb, u, buffer)
+                     signal = 'SAVE'
+                     ! GO TO 9912 WHEN ROUTE = 1
+                     route = 1
+                     return
+                     5100 continue
+
+                  endif refine_found
+
+                  ! COMPLETE STATISTICS FOR THE REFINE BLOCK.
+                  call stats%tock(qrefin)
+
+                  ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE REFINE BLOCK.
+                  if (setup%levelm == 1 .and. text>0) then
+                     write (text, '()')
+                     ! GO TO 5120 WHEN LABEL = 3
+                     label = 3
+                     go to 7010
+                  end if
+                  5120 continue
+
+                  ! PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE REFINE BLOCK.
+                  if (setup%levelm>1) then
+                     if (found) then
+                        if (text>0) write (text, 10018) id
+                     else
+                        if (text>0) write (text, 10019) id
+                     end if
+                  end if
+
+                  ! BOTTOM OF THE REFINE BLOCK.
+                  cycle new_task
+
+              case (qtimst) ! *** EVOLVE BLOCK. ***
+
+                  ! INITIALIZE STATISTICS ON ENTRY TO THE EVOLVE BLOCK.
+                  call stats%tick(qtimst)
+                  first = .true.
+                  jacobs = 0
+                  maxcon = 0.0
+                  steps = stats%step
+
+                  ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE EVOLVE BLOCK.
+                  if (setup%levelm>1 .and. text>0) write (text, 10020) id
+
+                  ! CALL EVOLVE.
+                  6020  continue
+                  call evolve(error, text, work%above, work%below, &
+                         buffer, comps, condit, desire, groupa, groupb, setup%leveld - 1, &
+                         setup%levelm - 1, name, names, points, xrepor, work%s0, work%s1, signal, &
+                         stats%step, setup%steps2, setup%strid0, stride, found, setup%tdabs, &
+                         setup%tdage, setup%tdec, setup%tdrel, time, setup%tinc, setup%tmax, &
+                         setup%tmin, u, work%v1, work%vsave, work%y0, work%y1, ynorm)
+                  if (error) then
+                      if (text>0) write (text, 19) id
+                      return
+                  end if
+
+                  ! PASS REQUESTS FROM EVOLVE TO THE CALLER.
+                  if (signal /= ' ') then
+                     ! GO TO 6020 WHEN RETURN = 8
+                     return = 8
+                     go to 9931
+                  end if
+
+                  ! REACT TO THE COMPLETION OF EVOLVE.
+                  if (found) then
+                     ! SAVE THE LATEST SOLUTION
+                     ! GO TO 6030 WHEN RETURN = 9
+                     return = 9
+
+                     ! Save the last solution
+                     call twcopy (groupa + comps * points + groupb, u, buffer)
+                     signal = 'SAVE'
+                     ! GO TO 9912 WHEN ROUTE = 1
+                     route = 1
+                     return
+
+                  end if
+                  6030  continue
+
+                  ! ALLOW FURTHER TIME EVOLUTION.
+                  allow = xrepor == qnull
+
+                  ! COMPLETE STATISTICS FOR THE EVOLVE BLOCK.
+                  call stats%tock(qtimst)
+
+                  steps = stats%step - steps
+
+                  ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE EVOLVE BLOCK.
+                  if (setup%levelm==1 .and. text>0) then
+                     ! GO TO 6040 WHEN LABEL = 4
+                     label = 4
+                     go to 7010
+                  end if
+                  6040  continue
+
+                  ! PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE EVOLVE BLOCK.
+                  if (setup%levelm>1) then
+                     if (found) then
+                        if (text>0) write (text, 10021) id
+                     else
+                        if (text>0) write (text, 10022) id
+                     end if
+                  end if
+
+                  ! BOTTOM OF THE EVOLVE BLOCK.
+
               case default
                   error = .true.
-                  go to 9015
+                  if (text>0) write (text, 15) id
+                  return
           end select
-
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     REFINE BLOCK.
-!
-!///////////////////////////////////////////////////////////////////////
-
-5010  continue
-
-      ! INITIALIZE STATISTICS ON ENTRY TO THE REFINE BLOCK.
-      call stats%tick(qrefin)
-
-      ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE REFINE BLOCK.
-      if (setup%levelm>1 .and. text>0) write (text, 10017) id
-
-!///  PREPARE TO CALL REFINE.
-
-      ! Save group B values
-      do j = 1, groupb
-         work%vsave(j) = u(groupa+comps*points+j)
-      end do
-
-      exist = .false.
-
-!///  CALL REFINE.
-
-5030  continue
-
-
-      call refine &
-        (error, text, &
-         active, &
-         buffer(groupa + 1), comps, setup%leveld - 1, setup%levelm - 1, mark, &
-         found, setup%ipadd, pmax, points, ratio, work%ratio1, work%ratio2, &
-         signal, satisf, setup%toler0, setup%toler1, setup%toler2, u(groupa + 1), &
-         work%vary1, work%vary2, work%vary, x)
-      if (error) go to 9018
-
-!///  SERVICE REQUESTS FROM REFINE: PASS REQUESTS TO THE CALLER.
-
-      if (signal /= ' ') then
-         ! INSERT THE GROUP A AND B UNKNOWNS
-         buffer(1:groupa) = u(1:groupa)
-         do j = 1, groupb
-            buffer(groupa + comps*points + j) = work%vsave(j)
-         end do
-
-!        GO TO 5030 WHEN RETURN = 6
-         return = 6
-         go to 9931
-      end if
-
-!///  REACT TO THE COMPLETION OF REFINE.
-
-      refine_found: if (found) then
-
-         ! Initialize statistics for the new grid
-         call stats%new_grid(points)
-
-         ! Insert the group B values
-         do j = 1, groupb
-             u(groupa + comps * points + j) = work%vsave(j)
-         end do
-
-         ! Expand bounds to new grid size
-         call work%load_bounds(above,below,points,comps,groupa,groupb)
-
-         ! SAVE THE LATEST SOLUTION
-!        GO TO 5100 WHEN RETURN = 7
-         return = 7
-         call twcopy (groupa + comps * points + groupb, u, buffer)
-         signal = 'SAVE'
-         ! GO TO 9912 WHEN ROUTE = 1
-         route = 1
-         return
-         5100 continue
-
-      endif refine_found
-
-      ! COMPLETE STATISTICS FOR THE REFINE BLOCK.
-      call stats%tock(qrefin)
-
-!///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE REFINE BLOCK.
-
-      if (setup%levelm == 1 .and. text>0) then
-         write (text, '()')
-!        GO TO 5120 WHEN LABEL = 3
-         label = 3
-         go to 7010
-      end if
-5120  continue
-
-!///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE REFINE BLOCK.
-
-      if (setup%levelm>1) then
-         if (found) then
-            if (text>0) write (text, 10018) id
-         else
-            if (text>0) write (text, 10019) id
-         end if
-      end if
-
-!///  BOTTOM OF THE REFINE BLOCK.
-
-      cycle new_task
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     EVOLVE BLOCK.
-!
-!///////////////////////////////////////////////////////////////////////
-
-6010  continue
-
-!///  INITIALIZE STATISTICS ON ENTRY TO THE EVOLVE BLOCK.
-
-      call stats%tick(qtimst)
-      first = .true.
-      jacobs = 0
-      maxcon = 0.0
-      steps = stats%step
-
-!///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE EVOLVE BLOCK.
-
-      if (setup%levelm>1) then
-         if (text>0) write (text, 10020) id
-      end if
-
-!///  CALL EVOLVE.
-
-6020  continue
-
-!     SUBROUTINE EVOLVE &
-!       (ERROR, TEXT, &
-!        ABOVE, BELOW, BUFFER, COMPS, CONDIT, DESIRE, GROUPA, GROUPB, &
-!        setup%leveld, setup%levelm, NAME, NAMES, POINTS, REPORT, S0, S1, SIGNAL, &
-!        STEP, STEPS2, STRID0, STRIDE, success, TDABS, TDAGE, TDEC, &
-!        TDREL, TIME, TINC, TMAX, TMIN, V0, V1, VSAVE, Y0, Y1, YNORM)
-
-      call evolve &
-        (error, text, &
-         work%above, work%below, buffer, comps, condit, desire, &
-         groupa, groupb, setup%leveld - 1, setup%levelm - 1, name, names, points, &
-         xrepor, work%s0, work%s1, signal, stats%step, setup%steps2, setup%strid0, &
-         stride, found, setup%tdabs, setup%tdage, setup%tdec, setup%tdrel, time, setup%tinc, setup%tmax, &
-         setup%tmin, u, work%v1, work%vsave, work%y0, work%y1, ynorm)
-      if (error) go to 9019
-
-!///  PASS REQUESTS FROM EVOLVE TO THE CALLER.
-
-      if (signal /= ' ') then
-!        GO TO 6020 WHEN RETURN = 8
-         return = 8
-         go to 9931
-      end if
-
-!///  REACT TO THE COMPLETION OF EVOLVE.
-
-      if (found) then
-         ! SAVE THE LATEST SOLUTION
-!        GO TO 6030 WHEN RETURN = 9
-         return = 9
-
-         ! Save the last solution
-         call twcopy (groupa + comps * points + groupb, u, buffer)
-         signal = 'SAVE'
-         ! GO TO 9912 WHEN ROUTE = 1
-         route = 1
-         return
-
-      end if
-6030  continue
-
-!///  ALLOW FURTHER TIME EVOLUTION.
-
-      allow = xrepor == qnull
-
-      ! COMPLETE STATISTICS FOR THE EVOLVE BLOCK.
-      call stats%tock(qtimst)
-
-      steps = stats%step - steps
-
-!///  PRINT LEVEL 10 OR 11 ON EXIT FROM THE EVOLVE BLOCK.
-
-      if (setup%levelm == 1 .and. text>0) then
-!        GO TO 6040 WHEN LABEL = 4
-         label = 4
-         go to 7010
-      end if
-6040  continue
-
-!///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE EVOLVE BLOCK.
-
-      if (setup%levelm>1) then
-         if (found) then
-            if (text>0) write (text, 10021) id
-         else
-            if (text>0) write (text, 10022) id
-         end if
-      end if
-
-!///  BOTTOM OF THE EVOLVE BLOCK.
 
       end do new_task
 
@@ -3765,22 +3691,10 @@ module twopnt_core
       end if
       if (.not. mess) return
 
-      9014  if (text>0) write (text, 14) id
-              if (.not. mess) return
-
-        9015  if (text>0) write (text, 15) id
-              if (.not. mess) return
-
         9016  if (text>0) write (text, 16) id
               if (.not. mess) return
 
         9017  if (text>0) write (text, 17) id
-              if (.not. mess) return
-
-        9018  if (text>0) write (text, 18) id
-              if (.not. mess) return
-
-        9019  if (text>0) write (text, 19) id
               if (.not. mess) return
 
         9020  if (text>0) write (text, 20) id, label
