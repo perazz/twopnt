@@ -69,6 +69,10 @@ module twopnt_core
     integer,  parameter, public :: qentry = 10
     integer,  parameter, public :: qexit  = 11
 
+    character(len=*), parameter, public :: qname(11) = ['    GRID','  EVOLVE','  SEARCH','  REFINE',&
+                                                        'FUNCTION','JACOBIAN','   SOLVE','   OTHER',&
+                                                        '   TOTAL','   START','    EXIT']
+
     ! Maximum number of grids attempted
     integer,  parameter, public :: gmax = 100
 
@@ -3089,7 +3093,7 @@ module twopnt_core
       if (setup%levelm == 1 .and. text>0) then
          if (setup%leveld>0) write (text, 10002) id, 'SOLVE THE PROBLEM.'
          write (text, 10003) (header(j), j = 1, 2)
-!        GO TO 1110 WHEN LABEL = 1
+         ! GO TO 1110 WHEN LABEL = 1
          label = 1
          go to 7010
       end if
@@ -3240,7 +3244,7 @@ module twopnt_core
                   if (setup%levelm == 1 .and. text>0) then
                      ! GO TO 4040 WHEN LABEL = 2
                      label = 2
-                     go to 7010
+                     exit new_task
                   end if
             4040  continue
 
@@ -3303,9 +3307,7 @@ module twopnt_core
                      call stats%new_grid(points)
 
                      ! Insert the group B values
-                     do j = 1, groupb
-                         u(groupa + comps * points + j) = work%vsave(j)
-                     end do
+                     if (groupb>0) u(groupa+comps*points+1:groupa+comps*points+groupb) = work%vsave(:groupb)
 
                      ! Expand bounds to new grid size
                      call work%load_bounds(above,below,points,comps,groupa,groupb)
@@ -3313,7 +3315,7 @@ module twopnt_core
                      ! SAVE THE LATEST SOLUTION
                      ! GO TO 5100 WHEN RETURN = 7
                      return = 7
-                     call twcopy (groupa + comps * points + groupb, u, buffer)
+                     call twcopy (groupa+comps*points+groupb,u,buffer)
                      signal = 'SAVE'
                      ! GO TO 9912 WHEN ROUTE = 1
                      route = 1
@@ -3330,7 +3332,7 @@ module twopnt_core
                      write (text, '()')
                      ! GO TO 5120 WHEN LABEL = 3
                      label = 3
-                     go to 7010
+                     exit new_task
                   end if
                   5120 continue
 
@@ -3405,7 +3407,7 @@ module twopnt_core
                   if (setup%levelm==1 .and. text>0) then
                      ! GO TO 6040 WHEN LABEL = 4
                      label = 4
-                     go to 7010
+                     exit new_task
                   end if
                   6040  continue
 
@@ -3434,18 +3436,13 @@ module twopnt_core
 !
 !///////////////////////////////////////////////////////////////////////
 
-7010  continue
+      7010 continue
 
-
-      column(:) = repeat(' ',80)
-
+      column(:) = ' '
       string = ' '
 
       ! COLUMN 1: NAME OF THE TASK
-      if (qtask == qentry) column(1) = '   START'
-      if (qtask == qsearc) column(1) = '  SEARCH'
-      if (qtask == qrefin) column(1) = '  REFINE'
-      if (qtask == qtimst) column(1) = '  EVOLVE'
+      column(1) = trim(qname(qtask))
 
       ! COLUMN 2: NORM OF THE STEADY STATE FUNCTION
       if (found) then
@@ -3474,15 +3471,13 @@ module twopnt_core
 
          7030 continue
          call twnorm (groupa + comps * points + groupb, temp, buffer)
-         call twlogr (column(2), temp)
+         call twlogr (column(2),temp)
       endif
 
       ! COLUMN 3: LARGEST CONDITION NUMBER
-      if (qtask == qsearc .or. qtask == qtimst) then
-         if (maxcon /= zero) call twlogr (column(3), maxcon)
-      end if
+      if (any(qtask==[qsearc,qtimst]) .and. maxcon/=zero) call twlogr (column(3), maxcon)
 
-!     REMARK
+      ! REMARK
       if (qtask == qsearc) then
          if (xrepor == qdvrg) then
             string = 'DIVERGING'
@@ -3736,25 +3731,24 @@ module twopnt_core
                         padd, pmax, points, ratio, ratio1, ratio2, signal, success, toler0, &
                         toler1, toler2, u, vary1, vary2, weight, x)
 
-          integer, intent(in)     :: pmax
-          integer, intent(in)     :: comps
-          logical, intent(inout)    :: error, newx, success
-          logical, intent(inout)     :: active(comps)
-          logical, intent(inout)  :: mark(pmax)
-          real(RK), intent(inout) :: ratio1(pmax),ratio2(pmax),ratio(2),x(pmax)
-          real(RK), intent(inout) :: buffer(comps*pmax),u(comps,pmax)
-          integer, intent(inout), dimension(pmax) :: vary1,vary2,weight
+          integer,  intent(in)     :: text,leveld,levelm
+          integer,  intent(in)     :: pmax,padd
+          integer,  intent(in)     :: comps
+          integer,  intent(inout)  :: points
+          logical,  intent(inout)  :: error, newx, success
+          logical,  intent(inout)  :: active(comps)
+          logical,  intent(inout)  :: mark(pmax)
+          real(RK), intent(inout)  :: ratio1(pmax),ratio2(pmax),ratio(2),x(pmax)
+          real(RK), intent(inout)  :: buffer(comps*pmax),u(comps,pmax)
+          real(RK), intent(in)     :: toler0,toler1,toler2
+          integer,  intent(inout), dimension(pmax) :: vary1,vary2,weight
+          character(len=*), intent(inout) :: signal
 
           character(len=*), parameter :: id = 'REFINE:  '
 
-          ! set true to print examples of all messages.
-          logical, parameter :: mess = .false.
-
-          character signal*(*), word*80
-          real(RK) :: differ, left, length, lower, maxmag, mean, range, &
-            right, temp, temp1, temp2, toler0, toler1, toler2, upper
-          integer :: act, counted, former, itemp, j, k, least, leveld, levelm, &
-            more, most, new, old, padd, points, route, signif, text, total
+          character(len=80) :: word
+          real(RK) :: differ,left,length,lower,maxmag,mean,range,right,temp,temp1,temp2,upper
+          integer  :: act,counted,former,itemp,j,k,least,more,most,new,old,route,signif,total
           intrinsic :: abs, max, min, count, minval, maxval
 
           ! Save local variables during returns for reverse communication.
@@ -3774,26 +3768,6 @@ module twopnt_core
              ! invalid route
              if (text>0) write (text, 101) id, route
              return
-          end if
-
-          ! write all messages.
-          if (mess .and. text>0) then
-             route = 0
-             write (text, 1) id
-             write (text, 2) id
-             write (text, 4) id
-             write (text, 5) id
-             write (text, 10) id
-             write (text, 101) id, route
-             write (text, 102) id, comps, points
-             write (text, 103) id, padd
-             write (text, 104) id, points, pmax
-             write (text, 105) id
-             write (text, 106) id, toler0
-             write (text, 107) id, toler1, toler2
-             write (text, 108) id
-             write (text, 109) id
-             stop
           end if
 
           ! Levelm printing.
@@ -4085,11 +4059,11 @@ module twopnt_core
                              end if
                           end if
 
-                          if (1<k .and. k<points) then
-                             if (vary2(old)/=zero) then
-                                write (word, '(F4.2, I4)') ratio2(old), vary2(old)
+                          if (k>1 .and. k<points) then
+                             if (vary2(old)/=0) then
+                                 write (word, '(F4.2, I4)') ratio2(old), vary2(old)
                              else
-                                write (word, '(F4.2, I4)') ratio2(old)
+                                 write (word, '(F4.2, I4)') ratio2(old)
                              end if
                              write (text, 9) k, x(k), word
                           else
@@ -4544,6 +4518,7 @@ module twopnt_core
           logical,      intent(out)    :: error
 
           error = .false.
+          qtask = old_task
 
           select case (old_task)
 
