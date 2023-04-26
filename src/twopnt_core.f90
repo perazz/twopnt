@@ -4603,9 +4603,14 @@ module twopnt_core
           this%total(task) = this%total(task) + this%timer(task)
           if (this%grid <= gmax) this%detail(this%grid, task) = this%detail(this%grid, task) &
                                                               + this%timer(task)
-          if (any(task==[qgrid,qtotal])) &
-          this%detail(this%grid, qother) = this%detail(this%grid,task) &
-                                         - sum(this%detail(this%grid,[qfunct,qjacob,qsolve]))
+          ! Task-specific finalization
+          select case (task)
+             case (qgrid)
+                 this%detail(this%grid, qother) = this%detail(this%grid,task) &
+                                                - sum(this%detail(this%grid,[qfunct,qjacob,qsolve]))
+             case (qtotal)
+                 this%total(qother) = this%total(task)-sum(this%total([qfunct,qjacob,qsolve]))
+          end select
 
           if (this%grid<=gmax .and. present(event)) then
               if (event) this%event(this%grid, task) = this%event(this%grid, task) + 1
