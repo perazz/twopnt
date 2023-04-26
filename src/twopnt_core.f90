@@ -164,6 +164,8 @@ module twopnt_core
         contains
 
            procedure :: new => init_stats
+           procedure :: new_grid => stats_new_grid
+           procedure :: tick => tick_stats
            procedure :: tock => tock_stats
            procedure :: print_stats
 
@@ -2943,11 +2945,9 @@ module twopnt_core
 
       real(RK) ::  maxcon, ratio(2), stride, temp, ynorm
       type(twstat) :: stats
-      integer :: age, comps, count, desire, grid, groupa, &
-                 groupb,  j, jacobs, k, label, len1, &
-                 len2, length, nsteps, pmax, &
-                 points, psave, qtask, qtype, return, &
-                 route, step, steps, xrepor
+      integer :: age, comps, count, desire, groupa, groupb,  j, jacobs, label, len1, &
+                 len2, length, nsteps, pmax, points, psave, qtask, qtype, return, &
+                 route, steps, xrepor
       intrinsic :: max
       logical :: allow, exist, first, found, satisf, time
 
@@ -3163,7 +3163,7 @@ module twopnt_core
                desire = setup%steps1
             else
                qtask = qexit
-               if (1 < grid) then
+               if (stats%grid>1) then
                   report = 'SOME SOLVED'
                else
                   report = 'NOT SOLVED'
@@ -3175,7 +3175,7 @@ module twopnt_core
 
       else if (qtask == qrefin) then
          if (found) then
-            step = 0
+            stats%step = 0
             qtask = qsearc
             allow = .true.
          else
@@ -3199,7 +3199,7 @@ module twopnt_core
             end if
          else
             qtask = qexit
-            if (1 < grid) then
+            if (stats%grid>1) then
                report = 'SOME SOLVED'
             else
                report = 'NOT SOLVED'
@@ -3298,7 +3298,7 @@ module twopnt_core
 4010  continue
 
       ! INITIALIZE STATISTICS ON ENTRY TO THE SEARCH BLOCK.
-      call twtime(timer(qsearc))
+      call stats%tick(qsearc)
       first = .true.
       jacobs = 0
       maxcon = zero
@@ -3394,9 +3394,8 @@ module twopnt_core
 
 5010  continue
 
-!///  INITIALIZE STATISTICS ON ENTRY TO THE REFINE BLOCK.
-
-      call twtime (timer(qrefin))
+      !INITIALIZE STATISTICS ON ENTRY TO THE REFINE BLOCK.
+      call stats%tick(qrefin)
 
 !///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE REFINE BLOCK.
 
@@ -3408,7 +3407,7 @@ module twopnt_core
 
       ! Save group B values
       do j = 1, groupb
-         work%vsave(j) = u(groupa + comps * points + j)
+         work%vsave(j) = u(groupa+comps*points+j)
       end do
 
       exist = .false.
@@ -3445,25 +3444,12 @@ module twopnt_core
 
       if (.not. found) go to 5110
 
-!        COMPLETE STATISTICS FOR THE OLD GRID
-         call twlaps (timer(qgrid))
-         if (grid <= gmax) then
-            detail(grid, qgrid) = timer(qgrid)
-            detail(grid, qother) &
-               = detail(grid, qgrid) - (detail(grid, qfunct) &
-               + detail(grid, qjacob) + detail(grid, qsolve))
-         end if
+         ! Initialize statistics for the new grid
+         call stats%new_grid(points)
 
-!        INITIALIZE STATISTICS FOR THE NEW GRID
-         grid = grid + 1
-         if (grid <= gmax) then
-            call twtime (timer(qgrid))
-            gsize(grid) = points
-         end if
-
-!        INSERT THE GROUP B VALUES
+         ! Insert the group B values
          do j = 1, groupb
-            u(groupa + comps * points + j) = work%vsave(j)
+             u(groupa + comps * points + j) = work%vsave(j)
          end do
 
          ! Expand bounds to new grid size
@@ -3514,11 +3500,11 @@ module twopnt_core
 
 !///  INITIALIZE STATISTICS ON ENTRY TO THE EVOLVE BLOCK.
 
-      call twtime (timer(qtimst))
+      call stats%tick(qtimst)
       first = .true.
       jacobs = 0
       maxcon = 0.0
-      steps = step
+      steps = stats%step
 
 !///  PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE EVOLVE BLOCK.
 
@@ -3541,7 +3527,7 @@ module twopnt_core
         (error, text, &
          work%above, work%below, buffer, comps, condit, desire, &
          groupa, groupb, setup%leveld - 1, setup%levelm - 1, name, names, points, &
-         xrepor, work%s0, work%s1, signal, step, setup%steps2, setup%strid0, &
+         xrepor, work%s0, work%s1, signal, stats%step, setup%steps2, setup%strid0, &
          stride, found, setup%tdabs, setup%tdage, setup%tdec, setup%tdrel, time, setup%tinc, setup%tmax, &
          setup%tmin, u, work%v1, work%vsave, work%y0, work%y1, ynorm)
       if (error) go to 9019
@@ -3734,7 +3720,7 @@ module twopnt_core
 !     COUNT THE JACOBIANS
       if (qtype == qjacob) jacobs = jacobs + 1
 
-      call twtime (timer(qtype))
+      call stats%tick(qtype)
 
 !     GO TO 9932 WHEN ROUTE = 3
       route = 3
@@ -3754,7 +3740,8 @@ module twopnt_core
 !///  EVALUATE THE STEADY STATE FUNCTION.
 
 9941  continue
-      call twtime (timer(qfunct))
+
+      call stats%tick(qfunct)
 
       call twcopy (groupa + comps * points + groupb, u, buffer)
       signal = 'RESIDUAL'
@@ -4625,6 +4612,28 @@ module twopnt_core
           end if
 
       end subroutine tock_stats
+
+      subroutine tick_stats(this,task)
+         class(twstat), intent(inout) :: this
+         integer, intent(in) :: task
+         call twtime(this%timer(task))
+      end subroutine tick_stats
+
+      subroutine stats_new_grid(this,points)
+         class(twstat), intent(inout) :: this
+         integer, intent(in) :: points
+
+         ! Complete statistics for the last grid
+         call this%tock(qgrid)
+
+         ! Initialize statistics for the new grid
+         this%grid = this%grid + 1
+         if (this%grid <= gmax) then
+            call twtime (this%timer(qgrid))
+            this%gsize(this%grid) = points
+         end if
+
+      end subroutine stats_new_grid
 
       subroutine print_stats(this,text,adapt)
          class(twstat), intent(inout) :: this
