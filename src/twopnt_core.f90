@@ -2932,7 +2932,6 @@ module twopnt_core
       return
       end subroutine search
 
-
       ! TWOPNT driver.
       subroutine twopnt(setup, error, text, versio, &
                         above, active, below, buffer, comps, condit, groupa, groupb, &
@@ -3080,7 +3079,7 @@ module twopnt_core
 !///  PRINT LEVELS 11, 21, AND 22.
       if (setup%leveld>0 .and. text>0) then
          write (text, 10002) id, 'INITIAL GUESS:'
-!        GO TO 1100 WHEN RETURN = 2
+         ! GO TO 1100 WHEN RETURN = 2
          return = 2
          go to 9921
       end if
@@ -3162,19 +3161,16 @@ module twopnt_core
                             write (text, 10010) id
                          else if (report == 'NO SPACE') then
                             write (string, '(I10)') points
-                            call twsqez (length, string)
-                            write (text, 10011) &
-                               id, string (1 : length), ratio, setup%toler1, setup%toler2
+                            write (text, 10011) id, trim(string), ratio, setup%toler1, setup%toler2
                          else if (report == 'NOT SOLVED') then
                             write (text, 10012) id
                          else if (report == 'SOME SOLVED') then
                             write (string, '(I10)') points
-                            call twsqez (length, string)
-                            write (text, 10013) &
-                               id, string (1 : length), ratio, setup%toler1, setup%toler2
+                            write (text, 10013) id, trim(string), ratio, setup%toler1, setup%toler2
                          else
-                            error = .true.
-                            go to 9016
+                             error = .true.
+                             if (text>0) write (text, 16) id
+                             return
                          end if
                       end if
 
@@ -3208,7 +3204,10 @@ module twopnt_core
                              points, xrepor, work%s0, work%s1, signal, nsteps, found, &
                              u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
                              work%y1)
-                  if (error) go to 9017
+                  if (error) then
+                      if (text>0) write (text, 17) id
+                      return
+                  end if
 
                   ! PASS REQUESTS FROM SEARCH TO THE CALLER.
                   if (signal /= ' ') then
@@ -3512,7 +3511,8 @@ module twopnt_core
 
       go to (1110, 4040, 5120, 6040) label
       error = .true.
-      go to 9020
+      if (text>0) write (text, 20) id, label
+      return
 
 !///////////////////////////////////////////////////////////////////////
 !
@@ -3527,7 +3527,8 @@ module twopnt_core
 
       go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
       error = .true.
-      go to 9021
+      if (text>0) write (text, 21) id, return
+      return
 
 !///  PRINT THE LATEST SOLUTION.
 
@@ -3543,7 +3544,8 @@ module twopnt_core
 
       go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
       error = .true.
-      go to 9021
+      if (text>0) write (text, 21) id, return
+      return
 
 !///  PASS REQUESTS FROM SEARCH, REFINE, OR EVOLVE TO THE CALLER.
 
@@ -3580,7 +3582,8 @@ module twopnt_core
       go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) &
          return
       error = .true.
-      go to 9021
+      if (text>0) write (text, 21) id, return
+      return
 
 !///  EVALUATE THE STEADY STATE FUNCTION.
 
@@ -3602,7 +3605,8 @@ module twopnt_core
       go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) &
          return
       error = .true.
-      go to 9021
+      if (text>0) write (text, 21) id, return
+      return
 
 !///////////////////////////////////////////////////////////////////////
 !
@@ -3695,21 +3699,7 @@ module twopnt_core
 8010     continue
          if (lines < count) write (text, 80003)
       end if
-      if (.not. mess) return
-
-        9016  if (text>0) write (text, 16) id
-              if (.not. mess) return
-
-        9017  if (text>0) write (text, 17) id
-              if (.not. mess) return
-
-        9020  if (text>0) write (text, 20) id, label
-              if (.not. mess) return
-
-        9021  if (text>0) write (text, 21) id, return
-              if (.not. mess) return
-
-      stop
+      return
 
           ! Error messages
            1 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
