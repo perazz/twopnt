@@ -31,13 +31,14 @@ module twopnt_core
     integer, parameter, public :: RK = real64
 
     ! Numeric constants
-    real(RK), parameter, public :: zero    = 0.0_RK
-    real(RK), parameter, public :: half    = 0.5_RK
-    real(RK), parameter, public :: one     = 1.0_RK
-    real(RK), parameter, public :: pi      = acos(-1.0_RK)
-    real(RK), parameter, public :: minute  = 60.0_RK
-    real(RK), parameter, public :: hour    = 3600.0_RK
-    real(RK), parameter, public :: hundred = 100.0_RK
+    real(RK), parameter, public :: zero       = 0.0_RK
+    real(RK), parameter, public :: half       = 0.5_RK
+    real(RK), parameter, public :: one        = 1.0_RK
+    real(RK), parameter, public :: pi         = acos(-1.0_RK)
+    real(RK), parameter, public :: minute     = 60.0_RK
+    real(RK), parameter, public :: hour       = 3600.0_RK
+    real(RK), parameter, public :: hundred    = 100.0_RK
+    real(RK), parameter, public :: smallnum04 = 1.0e-4_RK
 
     ! Machine epsilon and the absolute and relative perturbations.
     real(RK), parameter, public :: eps   = epsilon(0.0_RK)
@@ -1364,7 +1365,7 @@ module twopnt_core
                 groupa + comps * points + groupb, count
              count = 0
              do 8010 j = 1, groupa + comps * points + groupb
-                if (a(j) == 0.0 .or. mess) then
+                if (a(j) == zero .or. mess) then
                    count = count + 1
                    if (count <= lines) then
                       if (j <= groupa) then
@@ -1391,7 +1392,7 @@ module twopnt_core
                 groupa + comps * points + groupb, count
              count = 0
              do 8020 j = 1, groupa + comps * points + groupb
-                if (a(j) == 0.0 .or. mess) then
+                if (a(j) == zero .or. mess) then
                    count = count + 1
                    if (count <= lines) then
                       if (j <= groupa) then
@@ -1573,9 +1574,8 @@ module twopnt_core
          v0, v1, vsave, y0, y1, ynorm
       integer &
          age, agej, comps, count, desire, first, groupa, groupb, j, &
-         last, length, leveld, levelm, names, number, points, qbnds, &
-         qdvrg, qnull, report, route, step, steps2, tdage, text, &
-         xrepor
+         last, length, leveld, levelm, names, number, points,  &
+         report, route, step, steps2, tdage, text, xrepor
       intrinsic &
          log10, max, min
       logical &
@@ -1583,8 +1583,6 @@ module twopnt_core
 
       parameter (id = 'EVOLVE:  ')
 
-!     REPORT CODES
-      parameter (qnull = 0, qbnds = 1, qdvrg = 2)
 
       dimension &
          above(groupa + comps * points + groupb), &
@@ -1640,10 +1638,10 @@ module twopnt_core
       error = .not. (0 < desire)
       if (error) go to 9003
 
-      error = .not. (1.0 <= tdec .and. 1.0 <= tinc)
+      error = .not. (one <= tdec .and. one <= tinc)
       if (error) go to 9004
 
-      error = .not. (0.0 < tmin .and. tmin <= tmax)
+      error = .not. (zero < tmin .and. tmin <= tmax)
       if (error) go to 9005
 
       error = .not. (tmin <= strid0 .and. strid0 <= tmax)
@@ -1652,7 +1650,7 @@ module twopnt_core
       error = .not. (0 <= step)
       if (error) go to 9007
 
-      error = 1.0 < tinc .and. .not. 0 < steps2
+      error = tinc>one .and. .not. 0 < steps2
       if (error) go to 9008
 
 !///  WRITE ALL MESSAGES.
@@ -1671,7 +1669,7 @@ module twopnt_core
 
       if (mess .and. text>0) then
          route = 0
-         ynorm = 1.0E-4
+         ynorm = smallnum04
          call twlogr (yword, ynorm)
 
          write (text, 10001) id, header, step, yword
@@ -1757,7 +1755,7 @@ module twopnt_core
 !///  IF AGE = STEPS2 AND STRIDE < HIGH AND 1 < TINC, THEN INCREASE
 !///  STRIDE.
 
-      if (age == steps2 .and. stride < high .and. 1.0 < tinc) &
+      if (age == steps2 .and. stride < high .and. tinc>one) &
          then
          age = 0
          exist = .false.
@@ -1778,7 +1776,7 @@ module twopnt_core
       call twcopy (groupa + comps * points + groupb, v0, vsave)
 
       count = 0
-      csave = 0.0
+      csave = zero
       jword = ' '
       jacob = .false.
 
@@ -1788,7 +1786,7 @@ module twopnt_core
          exist = .true.
          count = count + 1
          csave = max (condit, csave)
-         if (csave == 0.0) then
+         if (csave == zero) then
             write (jword, '(I3, 3X, A6)') count, '    NA'
          else
             write (jword, '(I3, 3X, F6.2)') count, log10 (csave)
@@ -1838,7 +1836,7 @@ module twopnt_core
 
 !///  IF ALSO LOW < STRIDE AND 1 < TDEC, THEN DECREASE STRIDE.
 
-         if (low < stride .and. 1.0 < tdec) then
+         if (low < stride .and. one < tdec) then
             age = 0
             call twcopy (groupa + comps * points + groupb, vsave, v0)
             exist = .false.
@@ -1854,7 +1852,7 @@ module twopnt_core
          go to 2010
       end if
 
-!///  IF NO CHANGE AND STRIDE < HIGH AND 1.0 < TINC, THEN
+!///  IF NO CHANGE AND STRIDE < HIGH AND tinc>one, THEN
 !///  INCREASE STRIDE.  OTHERWISE END, FAILURE.
 
       do 1070 j = 1, groupa + comps * points + groupb
@@ -1863,13 +1861,13 @@ module twopnt_core
       call twnorm (groupa + comps * points + groupb, change, buffer)
       call twlogr (cword, change)
 
-      if (change == 0.0) then
+      if (change == zero) then
          if (1 == levelm .and. text>0) then
             write (text, 10004) &
                step + 1, '  ZERO', log10 (stride), number, jword
          end if
 
-         if (1.0 < tinc .and. stride < high) then
+         if (tinc>one .and. stride < high) then
             age = 0
             exist = .false.
             low = stride * tdec
@@ -2165,11 +2163,11 @@ module twopnt_core
 !**** PRECISION > DOUBLE
       real(RK)    above, abs0, abs1, below, buffer, condit, deltab, deltad, rel0, &
          rel1, s0, s0norm, s1, s1norm, sj, temp, v0, v1, value, vj, &
-         xxabs, xxrel, y0, y0norm, y1, y1norm, zero
+         xxabs, xxrel, y0, y0norm, y1, y1norm
       integer &
          age, comps, count, entry, expone, groupa, groupb, i, j, k, &
          len1, len2, length, leveld, levelm, lines, names, number, &
-         points, qbnds, qdvrg, qnull, report, route, steps, text, xxage
+         points, report, route, steps, text, xxage
       intrinsic &
          abs, int, log10, max, min, mod
       logical &
@@ -2177,10 +2175,6 @@ module twopnt_core
 
       parameter (id = 'SEARCH:  ')
       parameter (lines = 20)
-      parameter (zero = 0.0)
-
-!     REPORT CODES
-      parameter (qnull = 0, qbnds = 1, qdvrg = 2)
 
       dimension &
          above(groupa + comps * points + groupb), &
@@ -2369,7 +2363,7 @@ module twopnt_core
 !     JACOBIAN EVALUATION SHOULD RETURN A NEW RESIDUAL TOO.
 
       if (0 < levelm .and. text>0) then
-         if (0.0 < condit) then
+         if (zero < condit) then
             write (column(2), '(F6.2)') log10 (condit)
          else
             column(2) = '    NA'
@@ -2400,13 +2394,13 @@ module twopnt_core
       call twcopy (groupa + comps * points + groupb, buffer, s0)
       call twnorm (groupa + comps * points + groupb, s0norm, s0)
 
-      abs0 = 0.0
-      rel0 = 0.0
+      abs0 = zero
+      rel0 = zero
       do 2060 j = 1, groupa + comps * points + groupb
          sj = abs (v0(j) - (v0(j) - s0(j)))
          vj = abs (v0(j))
          if (xxrel * vj < sj) abs0 = max (abs0, sj)
-         if (xxabs < sj .and. 0.0 < vj) &
+         if (xxabs < sj .and. zero < vj) &
             rel0 = max (rel0, sj / vj)
 2060  continue
 
@@ -2422,7 +2416,7 @@ module twopnt_core
 !     KEEPS V1 WITHIN BOUNDS.  IF V1 BELONGS ON THE BOUNDARY, THEN
 !     PROVISIONS ARE MADE TO FORCE IT THERE DESPITE ROUNDING ERROR.
 
-      deltab = 1.0
+      deltab = one
       force = .false.
       do 2080 j = 1, groupa + comps * points + groupb
          if (s0(j) > max (zero, v0(j) - below(j))) then
@@ -2444,12 +2438,12 @@ module twopnt_core
          end if
 2080  continue
 
-      error = deltab < 0.0
+      error = deltab < zero
       if (error) go to 9008
 
 !///  0 < DELTAB?
 
-      if (.not. (0.0 < deltab)) then
+      if (.not. (zero < deltab)) then
          if (0 < age) go to 2010
 
          if (0 < levelm .and. text>0) then
@@ -2458,16 +2452,16 @@ module twopnt_core
             call twlogr (column(4), abs0)
             call twlogr (column(5), rel0)
             column(6) = ' '
-            if (deltab /= 1.0) call twlogr (column(6), deltab)
+            if (deltab /= one) call twlogr (column(6), deltab)
             column(7) = ' '
-            if (deltad /= 1.0) call twlogr (column(7), deltad)
+            if (deltad /= one) call twlogr (column(7), deltad)
             write (text, 10004) number, column
             write (text, 10002) id
 
             count = 0
             do 2090 j = 1, groupa + comps * points + groupb
-               if ((below(j) == v0(j) .and. 0.0 < s0(j)) .or. &
-                  (v0(j) == above(j) .and. s0(j) < 0.0)) then
+               if ((below(j) == v0(j) .and. zero < s0(j)) .or. &
+                  (v0(j) == above(j) .and. s0(j) < zero)) then
                   count = count + 1
                   if (count <= lines) then
                      if (j <= groupa) then
@@ -2530,7 +2524,7 @@ module twopnt_core
 
 !///  DELTAD := 1.
 
-      deltad = 1.0
+      deltad = one
       expone = 0
 
 !///  V1 := V0 - DELTAB DELTAD S0.  EVALUATE Y1 := F(V1).  SOLVE
@@ -2573,13 +2567,13 @@ module twopnt_core
       call twcopy (groupa + comps * points + groupb, buffer, s1)
       call twnorm (groupa + comps * points + groupb, s1norm, s1)
 
-      abs1 = 0.0
-      rel1 = 0.0
+      abs1 = zero
+      rel1 = zero
       do 2160 j = 1, groupa + comps * points + groupb
          sj = abs (v1(j) - (v1(j) - s1(j)))
          vj = abs (v1(j))
          if (xxrel * vj < sj) abs1 = max (abs1, sj)
-         if (xxabs < sj .and. 0.0 < vj) &
+         if (xxabs < sj .and. zero < vj) &
             rel1 = max (rel1, sj / vj)
 2160  continue
 
@@ -2597,9 +2591,9 @@ module twopnt_core
                   call twlogr (column(4), abs0)
                   call twlogr (column(5), rel0)
                   column(6) = ' '
-                  if (deltab /= 1.0) call twlogr (column(6), deltab)
+                  if (deltab /= one) call twlogr (column(6), deltab)
                   column(7) = ' '
-                  if (deltad /= 1.0) call twlogr (column(7), deltad)
+                  if (deltad /= one) call twlogr (column(7), deltad)
                   write (text, 10004) number, column
                   write (text, 10003) id
                end if
@@ -2616,9 +2610,9 @@ module twopnt_core
          call twlogr (column(4), abs0)
          call twlogr (column(5), rel0)
          column(6) = ' '
-         if (deltab /= 1.0) call twlogr (column(6), deltab)
+         if (deltab /= one) call twlogr (column(6), deltab)
          column(7) = ' '
-         if (deltad /= 1.0) call twlogr (column(7), deltad)
+         if (deltad /= one) call twlogr (column(7), deltad)
          write (text, 10004) number, column
          column(2) = ' '
       end if
@@ -3295,9 +3289,7 @@ module twopnt_core
                   if (signal /= ' ') then
                      ! INSERT THE GROUP A AND B UNKNOWNS
                      buffer(1:groupa) = u(1:groupa)
-                     do j = 1, groupb
-                        buffer(groupa + comps*points + j) = work%vsave(j)
-                     end do
+                     buffer(groupa+comps*points+1:groupa+comps*points+groupb) = work%vsave(1:groupb)
 
                      ! GO TO 5030 WHEN RETURN = 6
                      return = 6
@@ -3359,7 +3351,7 @@ module twopnt_core
                   ! INITIALIZE STATISTICS ON ENTRY TO THE EVOLVE BLOCK.
                   call stats%tick(qtimst)
                   jacobs = 0
-                  maxcon = 0.0
+                  maxcon = zero
                   steps = stats%step
 
                   ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE EVOLVE BLOCK.
@@ -3487,7 +3479,7 @@ module twopnt_core
 
       ! COLUMN 3: LARGEST CONDITION NUMBER
       if (qtask == qsearc .or. qtask == qtimst) then
-         if (maxcon /= 0.0) call twlogr (column(3), maxcon)
+         if (maxcon /= zero) call twlogr (column(3), maxcon)
       end if
 
 !     REMARK
@@ -3584,7 +3576,7 @@ module twopnt_core
          qtype = qother
       end if
 
-!     COUNT THE JACOBIANS
+      ! COUNT THE JACOBIANS
       if (qtype == qjacob) jacobs = jacobs + 1
 
       call stats%tick(qtype)
