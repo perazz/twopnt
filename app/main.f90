@@ -264,15 +264,15 @@ program TWMAIN
     return
 
     ! ERROR HANDLING.
-    9001  IF (0 .LT. TEXT) WRITE (TEXT, 99001) ID; return
-    9002  IF (0 .LT. TEXT) WRITE (TEXT, 99002) ID; return
-    9003  IF (0 .LT. TEXT) WRITE (TEXT, 99003) ID; return
-    9004  IF (0 .LT. TEXT) WRITE (TEXT, 99004) ID; return
-    9005  IF (0 .LT. TEXT) WRITE (TEXT, 99005) ID; return
-    9006  IF (0 .LT. TEXT) WRITE (TEXT, 99006) ID; return
-    9007  IF (0 .LT. TEXT) WRITE (TEXT, 99007) ID; return
-    9008  IF (0 .LT. TEXT) WRITE (TEXT, 99008) ID; return
-    9009  IF (0 .LT. TEXT) THEN
+    9001  IF (TEXT>0) WRITE (TEXT, 99001) ID; return
+    9002  IF (TEXT>0) WRITE (TEXT, 99002) ID; return
+    9003  IF (TEXT>0) WRITE (TEXT, 99003) ID; return
+    9004  IF (TEXT>0) WRITE (TEXT, 99004) ID; return
+    9005  IF (TEXT>0) WRITE (TEXT, 99005) ID; return
+    9006  IF (TEXT>0) WRITE (TEXT, 99006) ID; return
+    9007  IF (TEXT>0) WRITE (TEXT, 99007) ID; return
+    9008  IF (TEXT>0) WRITE (TEXT, 99008) ID; return
+    9009  IF (TEXT>0) THEN
              CALL twlast(LENGTH, REPORT)
              WRITE (TEXT, 99009) ID, REPORT(1:LENGTH)
           END IF

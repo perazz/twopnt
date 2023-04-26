@@ -171,6 +171,20 @@ module twopnt_core
 
     end type twstat
 
+    ! TWOPNT state structure
+    type, public :: twstate
+
+       ! Present task: ENTRY
+       integer :: qtask = qentry
+
+       ! Allow further time evolution
+       logical :: allow = .true.
+
+       ! Solution found
+       logical :: found = .true.
+
+    end type twstate
+
     interface realloc
         module procedure realloc_int
         module procedure realloc_real
@@ -2949,7 +2963,7 @@ module twopnt_core
                  len2, length, nsteps, pmax, points, psave, qtask, qtype, return, &
                  route, steps, xrepor
       intrinsic :: max
-      logical :: allow, exist, first, found, satisf, time
+      logical :: allow, exist, found, satisf, time
 
       character(len=80) :: column(3),ctemp1,ctemp2,header(6),string
 
@@ -3036,18 +3050,12 @@ module twopnt_core
       if (error) return
 
       ! ONE-TIME INITIALIZATION.
-
-      ! ALLOW FURTHER TIME EVOLUTION
-      allow = .true.
-
-!     PRESENT TASK
-      qtask = qentry
+      allow = .true.  ! Allow further time evolution
+      qtask = qentry  ! Present task: ENTRY
+      found = .true.  ! SOLUTION FLAG
 
       ! Init solver statistics
       call stats%new(points)
-
-      ! SOLUTION FLAG
-      found = .true.
 
       ! EXPAND THE BOUNDS.
       call work%load_bounds(above,below,points,comps,groupa,groupb)
@@ -3178,7 +3186,6 @@ module twopnt_core
 
                   ! INITIALIZE STATISTICS ON ENTRY TO THE SEARCH BLOCK.
                   call stats%tick(qsearc)
-                  first = .true.
                   jacobs = 0
                   maxcon = zero
 
@@ -3352,7 +3359,6 @@ module twopnt_core
 
                   ! INITIALIZE STATISTICS ON ENTRY TO THE EVOLVE BLOCK.
                   call stats%tick(qtimst)
-                  first = .true.
                   jacobs = 0
                   maxcon = 0.0
                   steps = stats%step
