@@ -699,24 +699,20 @@ module twopnt_core
       ! COPY ONE VECTOR TO ANOTHER.
       pure subroutine twcopy (n, x, y)
           integer , intent(in)  :: n
-          real(RK), intent(in)  :: x(n)
-          real(RK), intent(out) ::  y(n)
-          y = x
+          real(RK), intent(in)  :: x(*)
+          real(RK), intent(out) ::  y(*)
+          y(1:n) = x(1:n)
           return
       end subroutine twcopy
 
       ! Compute the max-norm of a vector
-      pure subroutine twnorm (n, value, x)
+      pure real(RK) function twnorm (n, x)
           integer,  intent(in) :: n
           real(RK), intent(in) :: x(n)
-          real(RK), intent(out) :: value
-
-          intrinsic :: abs, max
-
-          value = zero
-          if (n>0) value = maxval(abs(x),1)
-
-      end subroutine twnorm
+          intrinsic :: abs,maxval
+          twnorm = zero
+          if (n>0) twnorm = maxval(abs(x),1)
+      end function twnorm
 
       ! SOLVE A SYSTEM OF LINEAR EQUATIONS USING THE MATRIX PREPARED BY TWPREP.
       subroutine twsolv(error, text, a, asize, buffer, comps, groupa, groupb, pivot, points)
@@ -1102,7 +1098,6 @@ module twopnt_core
           character(len=80) :: string
 
           ! Parameters
-          integer, parameter :: lines = 20
           character(len=*), parameter :: id = 'TWPREP:  '
 
           ! SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
@@ -1366,7 +1361,7 @@ module twopnt_core
              do 8010 j = 1, groupa + comps * points + groupb
                 if (a(j) == zero .or. mess) then
                    count = count + 1
-                   if (count <= lines) then
+                   if (count <= MAX_ERROR_LINES) then
                       if (j <= groupa) then
                          write (string, '(A, I10)') 'GROUP A ', j
                       else if (j <= groupa + comps * points) then
@@ -1382,7 +1377,7 @@ module twopnt_core
                    end if
                 end if
     8010     continue
-             if (lines < count) write (text, 80002)
+             if (MAX_ERROR_LINES < count) write (text, 80002)
           end if
           if (.not. mess) go to 99999
 
@@ -1393,7 +1388,7 @@ module twopnt_core
              do 8020 j = 1, groupa + comps * points + groupb
                 if (a(j) == zero .or. mess) then
                    count = count + 1
-                   if (count <= lines) then
+                   if (count <= MAX_ERROR_LINES) then
                       if (j <= groupa) then
                          write (string, '(A, I10)') 'GROUP A ', j
                       else if (j <= groupa + comps * points) then
@@ -1409,7 +1404,7 @@ module twopnt_core
                    end if
                 end if
     8020     continue
-             if (lines < count) write (text, 80002)
+             if (MAX_ERROR_LINES < count) write (text, 80002)
           end if
           if (.not. mess) go to 99999
 
@@ -1726,7 +1721,7 @@ module twopnt_core
          go to 99999
 1020     continue
          signal = ' '
-         call twnorm (groupa + comps * points + groupb, ynorm, buffer)
+         ynorm = twnorm (groupa + comps * points + groupb, buffer)
          call twlogr (yword, ynorm)
 
          if (1 == levelm) then
@@ -1847,7 +1842,7 @@ module twopnt_core
       do 1070 j = 1, groupa + comps * points + groupb
          buffer(j) = v0(j) - vsave(j)
 1070  continue
-      call twnorm (groupa + comps * points + groupb, change, buffer)
+      change = twnorm (groupa + comps * points + groupb, buffer)
       call twlogr (cword, change)
 
       if (change == zero) then
@@ -1893,7 +1888,7 @@ module twopnt_core
          go to 99999
 1090     continue
          signal = ' '
-         call twnorm (groupa + comps * points + groupb, ynorm, buffer)
+         ynorm = twnorm (groupa + comps * points + groupb, buffer)
          call twlogr (yword, ynorm)
 
          if (1 == levelm) write (text, 10005) &
@@ -2153,7 +2148,6 @@ module twopnt_core
           character(len=80) :: ctemp1,ctemp2,header(3,2),string
 
           character(len=*), parameter :: id = 'SEARCH:  '
-          integer,          parameter :: lines = 20
 
           ! SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
           save
@@ -2279,7 +2273,7 @@ module twopnt_core
     2040  continue
           signal = ' '
           call twcopy (groupa + comps * points + groupb, buffer, y0)
-          call twnorm (groupa + comps * points + groupb, y0norm, y0)
+          y0norm = twnorm (groupa + comps * points + groupb, y0)
 
           call twcopy (groupa + comps * points + groupb, y0, buffer)
           signal = 'SOLVE'
@@ -2289,7 +2283,7 @@ module twopnt_core
     2050  continue
           signal = ' '
           call twcopy (groupa + comps * points + groupb, buffer, s0)
-          call twnorm (groupa + comps * points + groupb, s0norm, s0)
+          s0norm = twnorm (groupa + comps * points + groupb, s0)
 
           abs0 = zero
           rel0 = zero
@@ -2338,8 +2332,7 @@ module twopnt_core
           error = deltab < zero
           if (error) go to 9008
 
-    !///  0 < DELTAB?
-
+          !///  0 < DELTAB?
           if (.not. (zero < deltab)) then
              if (0 < age) go to 2010
 
@@ -2360,7 +2353,7 @@ module twopnt_core
                    if ((below(j) == v0(j) .and. zero < s0(j)) .or. &
                       (v0(j) == above(j) .and. s0(j) < zero)) then
                       counter = counter + 1
-                      if (counter <= lines) then
+                      if (counter <= MAX_ERROR_LINES) then
                          if (j <= groupa) then
                             i = j
                          else if (j <= groupa + comps * points) then
@@ -2411,7 +2404,7 @@ module twopnt_core
                       end if
                    end if
     2090        continue
-                if (lines < counter) write (text, 80005)
+                if (MAX_ERROR_LINES < counter) write (text, 80005)
              end if
 
              report = qbnds
@@ -2429,22 +2422,14 @@ module twopnt_core
 
     2100  continue
 
-          temp = deltab * deltad
-          do 2110 j = 1, groupa + comps * points + groupb
-             v1(j) = v0(j) - temp * s0(j)
-    2110  continue
+          v1 = v0 - (deltab*deltad)*s0
 
-    !     KEEP V1 IN BOUNDS DESPITE ROUNDING ERROR.
+          ! KEEP V1 IN BOUNDS DESPITE ROUNDING ERROR.
+          v1 = min(max(v1,below),above)
 
-          do 2120 j = 1, groupa + comps * points + groupb
-             v1(j) = min (v1(j), above(j))
-    2120  continue
-          do 2130 j = 1, groupa + comps * points + groupb
-             v1(j) = max (v1(j), below(j))
-    2130  continue
           if (expone == 0 .and. force) v1(entry) = value
 
-          call twcopy (groupa + comps * points + groupb, v1, buffer)
+          call twcopy(groupa+comps*points+groupb,v1,buffer)
           signal = 'RESIDUAL'
     !     GO TO 2140 WHEN ROUTE = 4
           route = 4
@@ -2452,7 +2437,7 @@ module twopnt_core
     2140  continue
           signal = ' '
           call twcopy (groupa + comps * points + groupb, buffer, y1)
-          call twnorm (groupa + comps * points + groupb, y1norm, y1)
+          y1norm = twnorm (groupa + comps * points + groupb, y1)
 
           call twcopy (groupa + comps * points + groupb, y1, buffer)
           signal = 'SOLVE'
@@ -2462,7 +2447,7 @@ module twopnt_core
     2150  continue
           signal = ' '
           call twcopy (groupa + comps * points + groupb, buffer, s1)
-          call twnorm (groupa + comps * points + groupb, s1norm, s1)
+          s1norm = twnorm (groupa + comps * points + groupb, s1)
 
           abs1 = zero
           rel1 = zero
@@ -2636,7 +2621,7 @@ module twopnt_core
              do 8020 j = 1, groupa + comps * points + groupb
                 if (.not. (below(j) <= v0(j) .and. v0(j) <= above(j))) then
                    counter = counter + 1
-                   if (counter <= lines) then
+                   if (counter <= MAX_ERROR_LINES) then
                       if (j <= groupa) then
                          i = j
                       else if (j <= groupa + comps * points) then
@@ -2682,7 +2667,7 @@ module twopnt_core
                    end if
                 end if
     8020     continue
-             if (lines < counter) write (text, 80005)
+             if (MAX_ERROR_LINES < counter) write (text, 80005)
           end if
           return
 
@@ -2780,7 +2765,6 @@ module twopnt_core
 
       ! Local variables
       character(*), parameter :: id = 'TWOPNT:  '
-      integer,      parameter :: lines = 20
 
       real(RK) ::  maxcon, ratio(2), stride, temp, ynorm
       type(twstat) :: stats
@@ -3301,7 +3285,7 @@ module twopnt_core
          return
 
          7030 continue
-         call twnorm (groupa + comps * points + groupb, temp, buffer)
+         temp = twnorm (groupa + comps * points + groupb, buffer)
          call twlogr (column(2),temp)
       endif
 
