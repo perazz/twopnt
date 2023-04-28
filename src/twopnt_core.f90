@@ -2138,10 +2138,10 @@ module twopnt_core
           real(RK), dimension(groupa+comps*points+groupb), intent(in)    :: above,below
           real(RK), dimension(groupa+comps*points+groupb), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1
 
-          real(RK) :: abs0, abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, sj, temp, value, &
-                      vj, xxabs, xxrel, y0norm, y1norm
-          integer  :: age, counter, entry, expone, i, j, k, len1, len2, length, leveld, levelm, number, &
-                      route, steps, xxage
+          real(RK) :: abs0, abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, sj, temp, &
+                      value, vj, xxabs, xxrel, y0norm, y1norm
+          integer  :: age, counter, entry, expone, i, j, k, len1, len2, length, leveld, levelm, &
+                      number, route, steps, xxage
           intrinsic :: abs, int, log10, max, min, mod
           logical   :: exist, force, success
           character(len=16) :: column(7)
@@ -2191,12 +2191,11 @@ module twopnt_core
              return
           end if
 
-          counter = 0
-          do j = 1, groupa + comps * points + groupb
-             if (.not. (below(j) <= v0(j) .and. v0(j) <= above(j))) counter = counter + 1
-          end do
-          error = counter /= 0
-          if (error) go to 9005
+          error = any(.not.(below<=v0 .and. v0<=above))
+          if (error) then
+             call print_invalid_ranges(id,text,name,groupa,groupb,comps,points,below,above,v0)
+             return
+          end if
 
           error = .not. (zero<=xxabs .and. zero<=xxrel)
           if (error) go to 9006
@@ -2614,62 +2613,7 @@ module twopnt_core
 
 
 
-    9005  if (text>0) then
-             write (text, 99005) id, groupa, groupb, comps, points, &
-                groupa + comps * points + groupb, counter
-             counter = 0
-             do 8020 j = 1, groupa + comps * points + groupb
-                if (.not. (below(j) <= v0(j) .and. v0(j) <= above(j))) then
-                   counter = counter + 1
-                   if (counter <= MAX_ERROR_LINES) then
-                      if (j <= groupa) then
-                         i = j
-                      else if (j <= groupa + comps * points) then
-                         i = groupa + mod (j - groupa - 1, comps) + 1
-                      else
-                         i = j - groupa - comps * points
-                      end if
 
-                      if (names == comps + groupa + groupb) then
-                         ctemp1 = name(i)
-                      else
-                         ctemp1 = ' '
-                      end if
-                      call twsqez (len1, ctemp1)
-
-                      if (j <= groupa) then
-                         write (ctemp2, 80001) 'A', i
-                      else if (j <= groupa + comps * points) then
-                         write (ctemp2, 80002) 'C', i, &
-                            'P', int ((j - groupa - 1) / comps) + 1
-                      else
-                         write (ctemp2, 80001) 'B', i
-                      end if
-                      call twsqez (len2, ctemp2)
-
-                      if (ctemp1 == ' ') then
-                         string = ctemp2
-                         length = len2
-                      else if (len1 + 2 + len2 <= 30) then
-                         string = ctemp1 (1 : len1) // '  ' // ctemp2
-                         length = len1 + 2 + len2
-                      else if (len1 + 1 + len2 <= 30) then
-                         string = ctemp1 (1 : len1) // ' ' // ctemp2
-                         length = len1 + 1 + len2
-                      else
-                         len1 = 30 - len2 - 4
-                         string = ctemp1 (1 : len1) // '... ' // ctemp2
-                         length = 30
-                      end if
-
-                      write (text, 80007) &
-                         below(j), v0(j), above(j), string (1 : length)
-                   end if
-                end if
-    8020     continue
-             if (MAX_ERROR_LINES < counter) write (text, 80005)
-          end if
-          return
 
     9006  if (text>0) write (text, 99006) id, xxabs, xxrel
           return
@@ -2768,13 +2712,13 @@ module twopnt_core
 
       real(RK) ::  maxcon, ratio(2), stride, temp, ynorm
       type(twstat) :: stats
-      integer :: age, comps, count, desire, groupa, groupb,  j, jacobs, label, len1, &
-                 len2, length, nsteps, pmax, points, psave, qtask, qtype, return, &
+      integer :: age, comps, count, desire, groupa, groupb,  j, jacobs, label, &
+                 length, nsteps, pmax, points, psave, qtask, qtype, return, &
                  route, steps, xrepor
       intrinsic :: max
       logical :: allow, exist, found, satisf, time
 
-      character(len=80) :: column(3),ctemp1,ctemp2,header(6),string
+      character(len=80) :: column(3),header(6),string
 
       ! SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
       logical,      parameter :: mess = .false.
@@ -4181,8 +4125,8 @@ module twopnt_core
       end function identify_request
 
       ! Print the identifier for this variable's unknown class
-      elemental subroutine unknown_class_id(i,groupa,comps,groupb,clss,localid)
-          integer, intent(in) :: i,groupa,comps,groupb
+      elemental subroutine unknown_class_id(i,groupa,comps,clss,localid)
+          integer, intent(in) :: i,groupa,comps
           character, intent(out) :: clss
           integer  , intent(out) :: localid
           if (i<=groupa) then
@@ -4198,8 +4142,8 @@ module twopnt_core
       end subroutine unknown_class_id
 
       ! Print the identifier for this variable's unknown class
-      pure function unknown_class_name(i,groupa,comps,groupb) result(s)
-          integer, intent(in) :: i,groupa,comps,groupb
+      pure function unknown_class_name(i,groupa,comps) result(s)
+          integer, intent(in) :: i,groupa,comps
           character(len=:), allocatable :: s
           if (i<=groupa) then
              s = 'GROUP A UNKNOWNS'
@@ -4245,7 +4189,7 @@ module twopnt_core
             end if
             call twsqez(len1,ctemp1)
 
-            call unknown_class_id(j,groupa,comps,groupb,c,local)
+            call unknown_class_id(j,groupa,comps,c,local)
             write(ctemp2,2) c,local
             call twsqez (len2, ctemp2)
 
@@ -4288,6 +4232,97 @@ module twopnt_core
 
       end subroutine print_invalid_bounds
 
+      subroutine print_invalid_ranges(id,text,name,groupa,groupb,comps,points,below,above,v0)
+         integer , intent(in) :: text,groupa,groupb,comps,points
+         real(RK), intent(in) :: below(groupa+comps*points+groupb)
+         real(RK), intent(in) :: above(groupa+comps*points+groupb)
+         real(RK), intent(in) :: v0   (groupa+comps*points+groupb)
+         character(len=*), intent(in) :: id,name(:)
+
+         integer :: i,j,counter,len1,len2,local,length
+         intrinsic :: count
+         character(len=80) :: ctemp1,ctemp2,string
+         character :: c
+
+         if (text==0) return
+
+         counter = count(.not.(below<=v0.and.v0<=above))
+
+         write (text, 1) id, groupa,groupb,comps,points,groupa+comps*points+groupb,counter
+
+         counter = 0
+         loop_bounds: do j = 1, groupa + comps*points + groupb
+
+            if (below(j)<=v0(j) .and. v0(j)<=above(j)) cycle loop_bounds
+
+            counter = counter + 1
+            if (counter > MAX_ERROR_LINES) exit loop_bounds
+
+            if (j <= groupa) then
+               i = j
+            else if (j <= groupa + comps * points) then
+               i = groupa + mod (j - groupa - 1, comps) + 1
+            else
+               i = j - groupa - comps * points
+            end if
+
+            ! Use variable names, if provided
+            if (size(name) == comps + groupa + groupb) then
+                ctemp1 = name(i)
+            else
+                ctemp1 = ' '
+            end if
+            call twsqez(len1,ctemp1)
+
+            if (j <= groupa) then
+                write (ctemp2, 2) 'A', i
+            else if (j <= groupa + comps * points) then
+                write (ctemp2, 3) 'C', i, 'P', int((j-groupa-1)/comps) + 1
+            else
+                write (ctemp2, 2) 'B', i
+            end if
+            call twsqez (len2, ctemp2)
+
+            ! Limit to 40 columns
+            if (ctemp1 == ' ') then
+               string = ctemp2
+               length = len2
+            else if (len1 + 2 + len2 <= 30) then
+               string = ctemp1 (1 : len1) // '  ' // ctemp2
+               length = len1 + 2 + len2
+            else if (len1 + 1 + len2 <= 30) then
+               string = ctemp1 (1 : len1) // ' ' // ctemp2
+               length = len1 + 1 + len2
+            else
+               len1   = 30 - len2 - 4
+               string = ctemp1 (1 : len1) // '... ' // ctemp2
+               length = 30
+            end if
+
+            write (text, 5) below(j), v0(j), above(j), string(1:length)
+
+         end do loop_bounds
+
+         if (MAX_ERROR_LINES<counter) write (text, 4)
+         return
+
+         ! Formats section
+         1 format(/1X, a9, 'ERROR.  THE GUESSES FOR SOME UNKNOWNS ARE OUT OF' &
+                 /10X, 'BOUNDS.' &
+                //10X, i10, '  GROUP A UNKNOWNS (A)' &
+                 /10X, i10, '  GROUP B UNKNOWNS (B)' &
+                 /10X, i10, '  COMPONENTS AT POINTS (C)' &
+                 /10X, i10, '  POINTS (P)' &
+                 /10X, i10, '  TOTAL UNKNOWNS' &
+                 /10X, i10, '  NUMBER OUT OF BOUNDS' &
+                //10X, '     LOWER                   UPPER' &
+                 /10X, '     BOUND       VALUE       BOUND   UNKNOWN'/)
+         2 format('(',a,1x,i10,')')
+         3 format('(',a,1x,i10,1x,a,1x,i10,')')
+         4 format(10X, '  ... MORE')
+         5 format(10X, 1p, e10.2, 2X, e10.2, 2X, e10.2, 3X, a)
+
+      end subroutine print_invalid_ranges
 
 
       subroutine print_stats(this,text,adapt)
