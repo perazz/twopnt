@@ -84,10 +84,10 @@ program TWMAIN
     call settings%set(ERROR, TEXT, 'ADAPT', .TRUE.)
     IF (ERROR) GO TO 9001
 
-    call settings%set(ERROR, TEXT, 'LEVELD', 1)
+    call settings%set(ERROR, TEXT, 'LEVELD', 2)
     IF (ERROR) GO TO 9002
 
-    call settings%set(ERROR, TEXT, 'LEVELM', 1)
+    call settings%set(ERROR, TEXT, 'LEVELM', 2)
     IF (ERROR) GO TO 9002
 
     call settings%set(ERROR, TEXT, 'STEPS1', 50)

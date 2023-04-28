@@ -564,7 +564,7 @@ module twopnt_core
           logical, intent(out) :: error
           integer, intent(in)  :: text,comps,groupa,groupb,points
           logical, intent(in)  :: grid
-          real(RK), intent(in) :: buffer(groupa + comps * points + groupb), x(*)
+          real(RK), intent(in) :: buffer(groupa+comps*points+groupb), x(*)
 
           ! Local variables
           character(len=80) :: string, title(6)
@@ -583,17 +583,17 @@ module twopnt_core
 
           !///  WRITE ALL MESSAGES.
           if (mess .and. text>0) then
-              write (text, 1) id, comps, points, groupa, groupb, groupa + comps * points + groupb
+              write (text, 1) id, comps, points, groupa, groupb, groupa+comps*points+groupb
               stop
           end if
 
           !///  CHECK THE ARGUMENTS.
           error = .not. (((0 < comps) .eqv. (points>0)) .and. &
                            0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
-                           0 <= groupb .and. 0 < groupa + comps * points + groupb)
+                           0 <= groupb .and. 0 < groupa+comps*points+groupb)
           if (error) then
               if (text>0) write (text, 1) id, comps, points, groupa, groupb, &
-                                            groupa + comps * points + groupb
+                                            groupa+comps*points+groupb
               return
           end if
 
@@ -718,9 +718,9 @@ module twopnt_core
       subroutine twsolv(error, text, a, asize, buffer, comps, groupa, groupb, pivot, points)
 
           integer , intent(in) :: asize,text,comps,groupa,groupb,points
-          integer , intent(in) :: pivot(groupa + comps * points + groupb)
+          integer , intent(in) :: pivot(groupa+comps*points+groupb)
           real(RK), intent(in) :: a(asize)
-          real(RK), intent(inout) :: buffer(groupa + comps * points + groupb)
+          real(RK), intent(inout) :: buffer(groupa+comps*points+groupb)
           logical , intent(out) :: error
 
           ! Local variables
@@ -741,7 +741,7 @@ module twopnt_core
           end if
 
           ! CHECK THE ARGUMENTS.
-          n = groupa + comps * points + groupb
+          n = groupa+comps*points+groupb
           error = .not. (((0 < comps) .eqv. (points>0)) .and. &
                            0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
                            0 <= groupb .and. 0 < n)
@@ -1085,8 +1085,8 @@ module twopnt_core
 
           integer,  intent(in)    :: text ! output unit
           integer,  intent(in)    :: asize,groupa,groupb,comps,points
-          integer,  intent(inout) :: pivot (groupa + comps * points + groupb)
-          real(RK), intent(inout) :: buffer(groupa + comps * points + groupb)
+          integer,  intent(inout) :: pivot (groupa+comps*points+groupb)
+          real(RK), intent(inout) :: buffer(groupa+comps*points+groupb)
           real(RK), intent(inout) :: a(asize), condit
           logical , intent(inout) :: return_call
 
@@ -1118,7 +1118,7 @@ module twopnt_core
           endif
 
           ! CHECK THE ARGUMENTS.
-          n = groupa + comps * points + groupb
+          n = groupa+comps*points+groupb
           error = .not. (((0 < comps) .eqv. (points>0)) .and. &
                   0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
                   0 <= groupb .and. 0 < n)
@@ -1356,9 +1356,9 @@ module twopnt_core
 
     9004  if (text>0) then
              write (text, 99004) id, comps, points, groupa, groupb, &
-                groupa + comps * points + groupb, count
+                groupa+comps*points+groupb, count
              count = 0
-             do 8010 j = 1, groupa + comps * points + groupb
+             do 8010 j = 1, groupa+comps*points+groupb
                 if (a(j) == zero .or. mess) then
                    count = count + 1
                    if (count <= MAX_ERROR_LINES) then
@@ -1383,9 +1383,9 @@ module twopnt_core
 
     9005  if (text>0) then
              write (text, 99005) id, comps, points, groupa, groupb, &
-                groupa + comps * points + groupb, count
+                groupa+comps*points+groupb, count
              count = 0
-             do 8020 j = 1, groupa + comps * points + groupb
+             do 8020 j = 1, groupa+comps*points+groupb
                 if (a(j) == zero .or. mess) then
                    count = count + 1
                    if (count <= MAX_ERROR_LINES) then
@@ -1579,17 +1579,17 @@ module twopnt_core
 
 
       dimension &
-         above(groupa + comps * points + groupb), &
-         below(groupa + comps * points + groupb), &
-         buffer(groupa + comps * points + groupb), header(2, 3), &
+         above(groupa+comps*points+groupb), &
+         below(groupa+comps*points+groupb), &
+         buffer(groupa+comps*points+groupb), header(2, 3), &
          name(names), &
-         s0(groupa + comps * points + groupb), &
-         s1(groupa + comps * points + groupb), &
-         v0(groupa + comps * points + groupb), &
-         v1(groupa + comps * points + groupb), &
-         vsave(groupa + comps * points + groupb), &
-         y0(groupa + comps * points + groupb), &
-         y1(groupa + comps * points + groupb)
+         s0(groupa+comps*points+groupb), &
+         s1(groupa+comps*points+groupb), &
+         v0(groupa+comps*points+groupb), &
+         v1(groupa+comps*points+groupb), &
+         vsave(groupa+comps*points+groupb), &
+         y0(groupa+comps*points+groupb), &
+         y1(groupa+comps*points+groupb)
 
 !///  SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
 
@@ -1626,7 +1626,7 @@ module twopnt_core
 
       error = .not. (((0 < comps) .eqv. (points>0)) .and. &
          0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
-         0 <= groupb .and. 0 < groupa + comps * points + groupb)
+         0 <= groupb .and. 0 < groupa+comps*points+groupb)
       if (error) go to 9002
 
       error = .not. (0 < desire)
@@ -1696,7 +1696,7 @@ module twopnt_core
          age = 0
 
 !        RETAIN THE LATEST SOLUTION FOR USE BY THE FUNCTION
-         call twcopy (groupa + comps * points + groupb, v0, buffer)
+         call twcopy (groupa+comps*points+groupb, v0, buffer)
          signal = 'RETAIN'
 !        GO TO 1010 WHEN ROUTE = 1
          route = 1
@@ -1712,8 +1712,8 @@ module twopnt_core
 
 !///  PRINT.
 
-      if (.not. (0 < levelm .and. text>0)) go to 1030
-         call twcopy (groupa + comps * points + groupb, v0, buffer)
+      if (.not. (levelm>0 .and. text>0)) go to 1030
+         call twcopy (groupa+comps*points+groupb, v0, buffer)
          signal = 'RESIDUAL'
          time = .false.
 !        GO TO 1020 WHEN ROUTE = 2
@@ -1721,7 +1721,7 @@ module twopnt_core
          go to 99999
 1020     continue
          signal = ' '
-         ynorm = twnorm (groupa + comps * points + groupb, buffer)
+         ynorm = twnorm (groupa+comps*points+groupb, buffer)
          call twlogr (yword, ynorm)
 
          if (1 == levelm) then
@@ -1767,7 +1767,7 @@ module twopnt_core
 1050  continue
 
 !     STORE THE LATEST SOLUTION SHOULD THE SEARCH FAIL
-      call twcopy (groupa + comps * points + groupb, v0, vsave)
+      call twcopy (groupa+comps*points+groupb, v0, vsave)
 
       count = 0
       csave = zero
@@ -1822,7 +1822,7 @@ module twopnt_core
 
          if (low < stride .and. one < tdec) then
             age = 0
-            call twcopy (groupa + comps * points + groupb, vsave, v0)
+            call twcopy (groupa+comps*points+groupb, vsave, v0)
             exist = .false.
             high = stride / tinc
             stride = max (low, stride / tdec)
@@ -1839,10 +1839,10 @@ module twopnt_core
 !///  IF NO CHANGE AND STRIDE < HIGH AND tinc>one, THEN
 !///  INCREASE STRIDE.  OTHERWISE END, FAILURE.
 
-      do 1070 j = 1, groupa + comps * points + groupb
+      do 1070 j = 1, groupa+comps*points+groupb
          buffer(j) = v0(j) - vsave(j)
 1070  continue
-      change = twnorm (groupa + comps * points + groupb, buffer)
+      change = twnorm (groupa+comps*points+groupb, buffer)
       call twlogr (cword, change)
 
       if (change == zero) then
@@ -1871,7 +1871,7 @@ module twopnt_core
 !     RETAIN THE LATEST SOLUTION FOR USE BY THE FUNCTION.
 !     GO TO 1080 WHEN ROUTE = 4
       route = 4
-      call twcopy (groupa + comps * points + groupb, v0, buffer)
+      call twcopy (groupa+comps*points+groupb, v0, buffer)
       signal = 'RETAIN'
       go to 99999
 1080  continue
@@ -1879,8 +1879,8 @@ module twopnt_core
 
 !///  PRINT.
 
-      if (.not. (0 < levelm .and. text>0)) go to 1100
-         call twcopy (groupa + comps * points + groupb, v0, buffer)
+      if (.not. (levelm>0 .and. text>0)) go to 1100
+         call twcopy (groupa+comps*points+groupb, v0, buffer)
          signal = 'RESIDUAL'
          time = .false.
 !        GO TO 1090 WHEN ROUTE = 5
@@ -1888,7 +1888,7 @@ module twopnt_core
          go to 99999
 1090     continue
          signal = ' '
-         ynorm = twnorm (groupa + comps * points + groupb, buffer)
+         ynorm = twnorm (groupa+comps*points+groupb, buffer)
          call twlogr (yword, ynorm)
 
          if (1 == levelm) write (text, 10005) &
@@ -1909,7 +1909,7 @@ module twopnt_core
 
 !///  PRINT.
 
-      if (0 < levelm .and. text>0) then
+      if (levelm>0 .and. text>0) then
          if (1 == levelm) then
             if (step == first) then
                write (text, 10006) id
@@ -1930,7 +1930,7 @@ module twopnt_core
 
          if (first < last .and. 1 == leveld) then
             write (text, 20008) id
-            call twcopy (groupa + comps * points + groupb, v0, buffer)
+            call twcopy (groupa+comps*points+groupb, v0, buffer)
             signal = 'SHOW'
 !           GO TO 2020 WHEN ROUTE = 6
             route = 6
@@ -2041,7 +2041,7 @@ module twopnt_core
       if (.not. mess) go to 99999
 
 9002  if (text>0) write (text, 99002) id, &
-         comps, points, groupa, groupb, groupa + comps * points + groupb
+         comps, points, groupa, groupb, groupa+comps*points+groupb
       if (.not. mess) go to 99999
 
 9003  if (text>0) write (text, 99003) id, desire
@@ -2131,6 +2131,7 @@ module twopnt_core
           integer         , intent(in)    :: groupa, comps, points, groupb
           integer         , intent(out)   :: report
           logical         , intent(out)   :: error
+          logical         , intent(in)    :: exist ! Do we have a Jacobian already
           integer         , intent(in)    :: text
           integer         , intent(in)    :: names
           character(len=*), intent(in)    :: name(names)
@@ -2143,9 +2144,9 @@ module twopnt_core
           integer  :: age, counter, entry, expone, i, j, k, len1, len2, length, leveld, levelm, &
                       number, route, steps, xxage
           intrinsic :: abs, int, log10, max, min, mod
-          logical   :: exist, force, success
+          logical   :: force,success,converged
           character(len=16) :: column(7)
-          character(len=80) :: ctemp1,ctemp2,header(3,2),string
+          character(len=80) :: ctemp1,ctemp2,string
 
           character(len=*), parameter :: id = 'SEARCH:  '
 
@@ -2209,30 +2210,14 @@ module twopnt_core
              return
           end if
 
-    !///  PRINT THE HEADER.
+          ! PRINT THE HEADER.
+          if (levelm>=1 .and. text>0) call print_search_header(text,id)
 
-    !                     123456789_123456789_123456789_123456789_1234
-    !                     123456   123456   123456   123456   123456
-          header(1, 1) = '         LOG10                              '
-          header(2, 1) = '  SLTN   -----------------------------------'
-          header(3, 1) = 'NUMBER   NORM F   COND J   NORM S      ABS A'
-
-    !                     123456789_123456789_123
-    !                     123456   123456  123456
-          header(1, 2) = '                       '
-          header(2, 2) = '-----------------------'
-          header(3, 2) = 'ND REL    DELTA B AND D'
-
-          if (levelm >= 1) then
-             if (text>0) write (text, 10001) &
-                id, ((header(j, k), k = 1, 2), j = 1, 3)
-          end if
-
-    !///////////////////////////////////////////////////////////////////////
-    !
-    !     SIR ISSAC NEWTON'S ALGORITHM.
-    !
-    !///////////////////////////////////////////////////////////////////////
+          !///////////////////////////////////////////////////////////////////////
+          !
+          !     SIR ISSAC NEWTON'S ALGORITHM.
+          !
+          !///////////////////////////////////////////////////////////////////////
 
     !///  J EXIST?
 
@@ -2240,69 +2225,55 @@ module twopnt_core
 
     !///  AGE < XXAGE?
 
-          if (age < xxage) go to 2030
+          update_jacobian: if (age>=xxage .or. .not.exist) then
 
-    !///  EVALUATE J AT V0.  RE-EVALUATE Y0 := F(V0) IN CASE F CHANGES WHEN
-    !///  J DOES.  SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
+             ! EVALUATE J AT V0.  RE-EVALUATE Y0 := F(V0) IN CASE F CHANGES WHEN
+             ! J DOES. SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
 
-    2010  continue
+        2010  continue
 
-          call twcopy (groupa + comps * points + groupb, v0, buffer)
-          signal = 'PREPARE'
-    !     GO TO 2020 WHEN ROUTE = 1
-          route = 1
-          go to 99999
-    2020  continue
-          signal = ' '
-          age = 0
+              call twcopy(groupa+comps*points+groupb,v0,buffer)
+              signal = 'PREPARE'
 
-    !     JACOBIAN EVALUATION SHOULD RETURN A NEW RESIDUAL TOO.
+              ! GO TO 2020 WHEN ROUTE = 1
+              route = 1
+              go to 99999
 
-          if (0 < levelm .and. text>0) then
-             if (zero < condit) then
-                write (column(2), '(F6.2)') log10 (condit)
-             else
-                column(2) = '    NA'
-             end if
-          end if
 
-    !///  EVALUATE Y0 := F(V0).  SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
+              2020 continue
+              signal = ' '
+              age = 0
 
-    2030  continue
+              ! JACOBIAN EVALUATION SHOULD RETURN A NEW RESIDUAL TOO.
+              if (levelm>0 .and. text>0) call twlogr(column(2),condit)
 
-          call twcopy (groupa + comps * points + groupb, v0, buffer)
+          endif update_jacobian
+
+          ! EVALUATE Y0 := F(V0).  SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
+          call twcopy (groupa+comps*points+groupb,v0,buffer)
           signal = 'RESIDUAL'
     !     GO TO 2040 WHEN ROUTE = 2
           route = 2
           go to 99999
-    2040  continue
-          signal = ' '
-          call twcopy (groupa + comps * points + groupb, buffer, y0)
-          y0norm = twnorm (groupa + comps * points + groupb, y0)
 
-          call twcopy (groupa + comps * points + groupb, y0, buffer)
+          2040 continue
+          signal = ' '
+          call twcopy (groupa+comps*points+groupb, buffer, y0)
+          y0norm = twnorm (groupa+comps*points+groupb, y0)
+
+          call twcopy (groupa+comps*points+groupb, y0, buffer)
           signal = 'SOLVE'
     !     GO TO 2050 WHEN ROUTE = 3
           route = 3
           go to 99999
     2050  continue
           signal = ' '
-          call twcopy (groupa + comps * points + groupb, buffer, s0)
-          s0norm = twnorm (groupa + comps * points + groupb, s0)
+          call twcopy (groupa+comps*points+groupb, buffer, s0)
+          s0norm = twnorm (groupa+comps*points+groupb, s0)
 
-          abs0 = zero
-          rel0 = zero
-          do 2060 j = 1, groupa + comps * points + groupb
-             sj = abs (v0(j) - (v0(j) - s0(j)))
-             vj = abs (v0(j))
-             if (xxrel * vj < sj) abs0 = max (abs0, sj)
-             if (xxabs < sj .and. zero < vj) &
-                rel0 = max (rel0, sj / vj)
-    2060  continue
-
-    !///  CHECK FOR SUCCESS.
-
-          if (abs0 <= xxabs .and. rel0 <= xxrel) go to 2170
+          ! Check for success
+          call check_convergence(xxrel,xxabs,v0,s0,abs0,rel0,success)
+          if (success) goto 2170
 
     !///  CHOOSE DELTAB.
 
@@ -2314,7 +2285,7 @@ module twopnt_core
 
           deltab = one
           force = .false.
-          do 2080 j = 1, groupa + comps * points + groupb
+          do 2080 j = 1, groupa+comps*points+groupb
              if (s0(j) > max (zero, v0(j) - below(j))) then
                 temp = (v0(j) - below(j)) / s0(j)
                 if (temp < deltab) then
@@ -2344,7 +2315,7 @@ module twopnt_core
           if (.not. (zero < deltab)) then
              if (0 < age) go to 2010
 
-             if (0 < levelm .and. text>0) then
+             if (levelm>0 .and. text>0) then
                 call twlogr (column(1), y0norm)
                 call twlogr (column(3), s0norm)
                 call twlogr (column(4), abs0)
@@ -2357,7 +2328,7 @@ module twopnt_core
                 write (text, 10002) id
 
                 counter = 0
-                do 2090 j = 1, groupa + comps * points + groupb
+                do 2090 j = 1, groupa+comps*points+groupb
                    if ((below(j) == v0(j) .and. zero < s0(j)) .or. &
                       (v0(j) == above(j) .and. s0(j) < zero)) then
                       counter = counter + 1
@@ -2420,8 +2391,7 @@ module twopnt_core
              go to 99999
           end if
 
-    !///  DELTAD := 1.
-
+          ! DELTAD := 1.
           deltad = one
           expone = 0
 
@@ -2444,28 +2414,20 @@ module twopnt_core
           go to 99999
     2140  continue
           signal = ' '
-          call twcopy (groupa + comps * points + groupb, buffer, y1)
-          y1norm = twnorm (groupa + comps * points + groupb, y1)
+          call twcopy (groupa+comps*points+groupb, buffer, y1)
+          y1norm = twnorm (groupa+comps*points+groupb, y1)
 
-          call twcopy (groupa + comps * points + groupb, y1, buffer)
+          call twcopy (groupa+comps*points+groupb, y1, buffer)
           signal = 'SOLVE'
     !     GO TO 2150 WHEN ROUTE = 5
           route = 5
           go to 99999
     2150  continue
           signal = ' '
-          call twcopy (groupa + comps * points + groupb, buffer, s1)
-          s1norm = twnorm (groupa + comps * points + groupb, s1)
+          call twcopy (groupa+comps*points+groupb, buffer, s1)
+          s1norm = twnorm (groupa+comps*points+groupb, s1)
 
-          abs1 = zero
-          rel1 = zero
-          do 2160 j = 1, groupa + comps * points + groupb
-             sj = abs (v1(j) - (v1(j) - s1(j)))
-             vj = abs (v1(j))
-             if (xxrel * vj < sj) abs1 = max (abs1, sj)
-             if (xxabs < sj .and. zero < vj) &
-                rel1 = max (rel1, sj / vj)
-    2160  continue
+          call check_convergence(xxrel,xxabs,v1,s1,abs1,rel1,converged)
 
     !///  NORM S1 < OR = NORM S0?
 
@@ -2475,7 +2437,7 @@ module twopnt_core
              expone = expone + 1
              if (expone <= 5) go to 2100
                 if (0 < age) go to 2010
-                   if (0 < levelm .and. text>0) then
+                   if (levelm>0 .and. text>0) then
                       call twlogr (column(1), y0norm)
                       call twlogr (column(3), s0norm)
                       call twlogr (column(4), abs0)
@@ -2494,7 +2456,7 @@ module twopnt_core
 
     !///  PRINT.
 
-          if (0 < levelm .and. text>0) then
+          if (levelm>0 .and. text>0) then
              call twlogr (column(1), y0norm)
              call twlogr (column(3), s0norm)
              call twlogr (column(4), abs0)
@@ -2511,19 +2473,21 @@ module twopnt_core
 
           age = age + 1
           number = number + 1
-          call twcopy (groupa + comps * points + groupb, s1, s0)
-          call twcopy (groupa + comps * points + groupb, v1, v0)
-          call twcopy (groupa + comps * points + groupb, y1, y0)
+          call twcopy (groupa+comps*points+groupb, s1, s0)
+          call twcopy (groupa+comps*points+groupb, v1, v0)
+          call twcopy (groupa+comps*points+groupb, y1, y0)
           s0norm = s1norm
           y0norm = y1norm
           abs0 = abs1
           rel0 = rel1
 
     !///  S0 SMALL VS V0?
-
-          if (.not. (abs0 <= xxabs .and. rel0 <= xxrel)) then
-             if (age < xxage) go to 2070
-             go to 2010
+          if (.not.converged) then
+             if (age < xxage) then
+                  go to 2070
+             else
+                  go to 2010
+             endif
           end if
 
     !///  SUCCESS.
@@ -2532,7 +2496,7 @@ module twopnt_core
 
     !///  PRINT.
 
-          if (0 < levelm .and. text>0) then
+          if (levelm>0 .and. text>0) then
              call twlogr (column(1), y0norm)
              call twlogr (column(3), s0norm)
              call twlogr (column(4), abs0)
@@ -2543,7 +2507,7 @@ module twopnt_core
                 write (text, 10004) number, column
                 write (text, 10005) id
                 signal = 'SHOW'
-                call twcopy (groupa + comps * points + groupb, v0, buffer)
+                call twcopy (groupa+comps*points+groupb, v0, buffer)
     !           GO TO 2180 WHEN ROUTE = 6
                 route = 6
                 go to 99999
@@ -2564,15 +2528,9 @@ module twopnt_core
     !
     !///////////////////////////////////////////////////////////////////////
 
-    10001 format &
-            (/1X, a9, 'SOLVE NONLINEAR, NONDIFFERENTIAL EQUATIONS.' &
-            /4(/10X, a44, a23)/)
-
-    10002 format &
-           (/1X, a9, 'FAILURE.  THE SEARCH FOR THE FOLLOWING UNKNOWNS GOES' &
-            /10X, 'OUT OF BOUNDS.' &
-           //10X, 'BOUND       VALUE   UNKNOWN' &
-            /)
+    10002 format(/1X, a9, 'FAILURE.  THE SEARCH FOR THE FOLLOWING UNKNOWNS GOES' &
+                /10X, 'OUT OF BOUNDS.' &
+               //10X, 'BOUND       VALUE   UNKNOWN'/)
 
     10003 format &
             (/1X, a9, 'FAILURE.  THE SEARCH DIVERGES.')
@@ -2652,6 +2610,51 @@ module twopnt_core
 
           return
       end subroutine search
+
+      pure subroutine check_convergence(RTOL,ATOL,v0,s0,abs0,rel0,converged)
+          real(RK), intent(in)  :: RTOL,ATOL
+          real(RK), intent(in)  :: v0(:),s0(size(v0))
+          real(RK), intent(out) :: abs0,rel0 ! relative, absolute accuracy
+          logical , intent(out) :: converged
+
+          real(RK) :: sj,vj
+          integer :: j
+          intrinsic :: max, abs, size
+
+          abs0 = zero
+          rel0 = zero
+          do j = 1, size(v0)
+             sj = abs(v0(j) - (v0(j) - s0(j)))
+             vj = abs(v0(j))
+             if (sj>RTOL*vj) abs0 = max (abs0, sj)
+             if (sj>ATOL .and. vj>zero) rel0 = max (rel0, sj / vj)
+          end do
+
+          converged = rel0<=RTOL .and. abs0<=ATOL
+
+      end subroutine check_convergence
+
+
+      subroutine print_search_header(iunit,id)
+          integer, intent(in) :: iunit
+          character(*), intent(in) :: id
+
+          character(len=80) :: header(3,2)
+
+          ! PRINT THE HEADER.
+          !               123456789_123456789_123456789_123456789_1234
+          !               123456   123456   123456   123456   123456
+          header(1, 1) = '         LOG10                              '
+          header(2, 1) = '  SLTN   -----------------------------------'
+          header(3, 1) = 'NUMBER   NORM F   COND J   NORM S      ABS A'
+          header(1, 2) = '                       '
+          header(2, 2) = '-----------------------'
+          header(3, 2) = 'ND REL    DELTA B AND D'
+          if (iunit>0) write(iunit,1) id, header
+
+          1 format(/1X, a9, 'SOLVE NONLINEAR, NONDIFFERENTIAL EQUATIONS.'/4(/10X,a44,a23)/)
+
+      end subroutine print_search_header
 
       ! TWOPNT driver.
       subroutine twopnt(setup, error, text, versio, &
@@ -2743,7 +2746,7 @@ module twopnt_core
       error = .not. (groupa+comps*points+groupb > 0)
       if (error) then
           if (text>0) write (text, 8) id, comps, points, groupa, groupb, &
-                                           groupa + comps * points + groupb
+                                           groupa+comps*points+groupb
           return
       end if
 
@@ -2784,12 +2787,12 @@ module twopnt_core
       ! SAVE THE INITIAL SOLUTION.
       psave = points
       if (setup%adapt .and. points>0) call twcopy(points, x, work%xsave)
-      call twcopy (groupa + comps * points + groupb, u, work%usave)
+      call twcopy (groupa+comps*points+groupb, u, work%usave)
 
 !     GO TO 1090 WHEN RETURN = 1
       return = 1
       ! Save the last solution
-      call twcopy (groupa + comps * points + groupb, u, buffer)
+      call twcopy (groupa+comps*points+groupb, u, buffer)
       signal = 'SAVE'
       ! GO TO 9912 WHEN ROUTE = 1
       route = 1
@@ -2850,7 +2853,7 @@ module twopnt_core
                      ! BE CAREFUL NOT TO ASSIGN A VALUE TO A PARAMETER
                      if (points /= psave) points = psave
                      if (setup%adapt .and. points>0) call twcopy(points, work%xsave, x)
-                     call twcopy(groupa + comps * points + groupb, work%usave, u)
+                     call twcopy(groupa+comps*points+groupb, work%usave, u)
                   end if
 
                   ! PRINT LEVEL 11 OR 21.
@@ -2913,7 +2916,7 @@ module twopnt_core
                   ! PREPARE TO CALL SEARCH.
 
                   ! Save the solution should the search fail
-                  call twcopy (groupa + comps * points + groupb, u, work%vsave)
+                  call twcopy (groupa+comps*points+groupb, u, work%vsave)
                   exist = .false.
 
                   ! CALL SEARCH.
@@ -2948,7 +2951,7 @@ module twopnt_core
                      ! GO TO 4030 WHEN RETURN = 5
                      return = 5
                      ! Save the last solution
-                     call twcopy (groupa + comps * points + groupb, u, buffer)
+                     call twcopy (groupa+comps*points+groupb, u, buffer)
                      signal = 'SAVE'
                      ! GO TO 9912 WHEN ROUTE = 1
                      route = 1
@@ -3110,7 +3113,7 @@ module twopnt_core
                      return = 9
 
                      ! Save the last solution
-                     call twcopy (groupa + comps * points + groupb, u, buffer)
+                     call twcopy (groupa+comps*points+groupb, u, buffer)
                      signal = 'SAVE'
                      ! GO TO 9912 WHEN ROUTE = 1
                      route = 1
@@ -3176,7 +3179,7 @@ module twopnt_core
          ! EVALUATE THE STEADY STATE FUNCTION.
          call stats%tick(qfunct)
 
-         call twcopy (groupa + comps * points + groupb, u, buffer)
+         call twcopy (groupa+comps*points+groupb, u, buffer)
          signal = 'RESIDUAL'
          time = .false.
 
@@ -3194,7 +3197,7 @@ module twopnt_core
          return
 
          7030 continue
-         temp = twnorm (groupa + comps * points + groupb, buffer)
+         temp = twnorm (groupa+comps*points+groupb, buffer)
          call twlogr (column(2),temp)
       endif
 
@@ -3262,7 +3265,7 @@ module twopnt_core
 
 9921  continue
 
-      call twcopy (groupa + comps * points + groupb, u, buffer)
+      call twcopy (groupa+comps*points+groupb, u, buffer)
       signal = 'SHOW'
 !     GO TO 9922 WHEN ROUTE = 2
       route = 2
