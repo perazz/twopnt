@@ -50,12 +50,6 @@ module twopnt_core
     integer,  parameter, public :: qbnds = 1
     integer,  parameter, public :: qdvrg = 2
 
-    ! LOCATION OF DATA IN ARRAYS DETAIL, EVENT, TIMER, AND TOTAL.  THE
-!     LOCATIONS ARE CHOSEN TO SIMPLIFY WRITE STATEMENTS.  DETAIL USES
-!     ONLY 1 : 8, EVENT USES ONLY 5 : 8, TIMER USES 1 : 9, AND TOTAL
-!     USES ONLY 2 : 9.  IN ADDITION, 2, 3, 4, 10, AND 11 ARE USED AS
-!     MNEMONIC VALUES FOR QTASK.
-
     ! Task codes
     integer,  parameter, public :: qgrid  =  1
     integer,  parameter, public :: qtimst =  2
@@ -1797,24 +1791,14 @@ module twopnt_core
          end if
       end if
 
-!     SUBROUTINE SEARCH &
-!       (ERROR, TEXT, &
-!        ABOVE, AGE, BELOW, BUFFER, COMPS, CONDIT, EXIST, GROUPA, &
-!        GROUPB, LEVELD, LEVELM, NAME, NAMES, POINTS, REPORT, S0, S1, &
-!        SIGNAL, STEPS, success, V0, V1, XXABS, XXAGE, XXREL, Y0, Y0NORM, &
-!        Y1)
-
-      call search &
-        (error, text, &
-         above, agej, below, buffer, comps, condit, exist, groupa, &
-         groupb, leveld - 1, levelm - 1, name, names, points, xrepor, &
-         s0, s1, signal, number, xsucce, v0, v1, tdabs, tdage, tdrel, &
-         y0, dummy, y1)
+      call search(error, text, above, agej, below, buffer, comps, condit, exist, groupa, &
+                  groupb, leveld - 1, levelm - 1, name, names, points, xrepor, &
+                  s0, s1, signal, number, xsucce, v0, v1, tdabs, tdage, tdrel, y0, dummy, y1)
       if (error) go to 9009
 
       if (signal /= ' ') then
          jacob = signal == 'PREPARE'
-         time = .true.
+         time  = .true.
 !        GO TO 1060 WHEN ROUTE = 3
          route = 3
          go to 99999
@@ -2142,792 +2126,714 @@ module twopnt_core
 99999 continue
       return
       end
-      subroutine search &
-        (error, text, &
-         above, age, below, buffer, comps, condit, exist, groupa, &
-         groupb, leveld, levelm, name, names, points, report, s0, s1, &
-         signal, steps, success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, &
-         y1)
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     T W O P N T
-!
-!     SEARCH
-!
-!     PERFORM THE DAMPED, MODIFIED NEWTON'S SEARCH.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      !implicit complex (a - z)
-
-      character &
-         column*16, ctemp1*80, ctemp2*80, header*80, id*9, name*(*), &
-         signal*(*), string*80
-!**** PRECISION > DOUBLE
-      real(RK)    above, abs0, abs1, below, buffer, condit, deltab, deltad, rel0, &
-         rel1, s0, s0norm, s1, s1norm, sj, temp, v0, v1, value, vj, &
-         xxabs, xxrel, y0, y0norm, y1, y1norm
-      integer &
-         age, comps, count, entry, expone, groupa, groupb, i, j, k, &
-         len1, len2, length, leveld, levelm, lines, names, number, &
-         points, report, route, steps, text, xxage
-      intrinsic &
-         abs, int, log10, max, min, mod
-      logical &
-         error, exist, force, mess, success
-
-      parameter (id = 'SEARCH:  ')
-      parameter (lines = 20)
-
-      dimension &
-         above(groupa + comps * points + groupb), &
-         below(groupa + comps * points + groupb), &
-         buffer(groupa + comps * points + groupb), column(7), &
-         header(3, 2), name(names), &
-         s0(groupa + comps * points + groupb), &
-         s1(groupa + comps * points + groupb), &
-         v0(groupa + comps * points + groupb), &
-         v1(groupa + comps * points + groupb), &
-         y0(groupa + comps * points + groupb), &
-         y1(groupa + comps * points + groupb)
-
-!///  SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
-
-      save
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     PROLOGUE.
-!
-!///////////////////////////////////////////////////////////////////////
-
-!///  EVERY-TIME INITIALIZATION.
-
-!     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
-      mess = .false.
-
-!     TURN OFF ALL COMPLETION STATUS FLAGS.
-      error = .false.
-      report = qnull
-      success = .false.
-
-!///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
-
-      if (signal /= ' ') then
-         go to (2020, 2040, 2050, 2140, 2150, 2180) route
-         error = .true.
-         go to 9001
-      end if
-
-!///  ONE-TIME INITIALIZATION.
-
-      number = 0
-
-!///  CHECK THE ARGUMENTS.
-
-      error = .not. (((0 < comps) .eqv. (points>0)) .and. &
-         0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
-         0 <= groupb .and. 0 < groupa + comps * points + groupb)
-      if (error) go to 9002
-
-      error = .not. (names == 1 .or. &
-         names == groupa + comps + groupb)
-      if (error) go to 9003
-
-      count = 0
-      do j = 1, groupa + comps * points + groupb
-         if (.not. (below(j) < above(j))) count = count + 1
-      end do
-      error = count /= 0
-      if (error) go to 9004
-
-      count = 0
-      do j = 1, groupa + comps * points + groupb
-         if (.not. (below(j) <= v0(j) .and. v0(j) <= above(j))) count = count + 1
-      end do
-      error = count /= 0
-      if (error) go to 9005
-
-      error = .not. (zero<=xxabs .and. zero<=xxrel)
-      if (error) go to 9006
-
-      error = .not. (0 < xxage)
-      if (error) go to 9007
-
-!///  WRITE ALL MESSAGES.
-
-      if (mess .and. text>0) then
-         route = 0
-
-         write (text, 10003) id
-         write (text, 10002) id
-         count = 0
-         do 1030 j = 1, groupa + comps * points + groupb
-            count = count + 1
-            if (count <= lines) then
-               if (j <= groupa) then
-                  i = j
-               else if (j <= groupa + comps * points) then
-                  i = groupa + mod (j - groupa - 1, comps) + 1
-               else
-                  i = j - groupa - comps * points
-               end if
-
-               if (names == comps + groupa + groupb) then
-                  ctemp1 = name(i)
-               else
-                  ctemp1 = ' '
-               end if
-               call twsqez (len1, ctemp1)
-
-               if (j <= groupa) then
-                  write (ctemp2, 80001) 'A', i
-               else if (j <= groupa + comps * points) then
-                  write (ctemp2, 80002) 'C', i, &
-                     'P', int ((j - groupa - 1) / comps) + 1
-               else
-                  write (ctemp2, 80001) 'B', i
-               end if
-               call twsqez (len2, ctemp2)
-
-               if (ctemp1 == ' ') then
-                  string = ctemp2
-                  length = len2
-               else if (len1 + 2 + len2 <= 30) then
-                  string = ctemp1 (1 : len1) // '  ' // ctemp2
-                  length = len1 + 2 + len2
-               else if (len1 + 1 + len2 <= 30) then
-                  string = ctemp1 (1 : len1) // ' ' // ctemp2
-                  length = len1 + 1 + len2
-               else
-                  len1 = 30 - len2 - 4
-                  string = ctemp1 (1 : len1) // '... ' // ctemp2
-                  length = 30
-               end if
-
-               write (text, 80003) 'LOWER', v0(j), string (1 : length)
-            end if
-1030     continue
-         if (lines < count) write (text, 80004)
-         write (text, 10001) id
-         write (text, 10006) id
-         write (text, 10005) id
-
-         go to 9001
-      end if
-
-!///  PRINT THE HEADER.
-
-!                     123456789_123456789_123456789_123456789_1234
-!                     123456   123456   123456   123456   123456
-      header(1, 1) = '         LOG10                              '
-      header(2, 1) = '  SLTN   -----------------------------------'
-      header(3, 1) = 'NUMBER   NORM F   COND J   NORM S      ABS A'
-
-!                     123456789_123456789_123
-!                     123456   123456  123456
-      header(1, 2) = '                       '
-      header(2, 2) = '-----------------------'
-      header(3, 2) = 'ND REL    DELTA B AND D'
-
-      if (levelm >= 1 .or. mess) then
-         if (text>0) write (text, 10001) &
-            id, ((header(j, k), k = 1, 2), j = 1, 3)
-      end if
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     SIR ISSAC NEWTON'S ALGORITHM.
-!
-!///////////////////////////////////////////////////////////////////////
-
-!///  J EXIST?
-
-      if (.not. exist) go to 2010
-
-!///  AGE < XXAGE?
-
-      if (age < xxage) go to 2030
-
-!///  EVALUATE J AT V0.  RE-EVALUATE Y0 := F(V0) IN CASE F CHANGES WHEN
-!///  J DOES.  SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
-
-2010  continue
-
-      call twcopy (groupa + comps * points + groupb, v0, buffer)
-      signal = 'PREPARE'
-!     GO TO 2020 WHEN ROUTE = 1
-      route = 1
-      go to 99999
-2020  continue
-      signal = ' '
-      age = 0
-
-!     JACOBIAN EVALUATION SHOULD RETURN A NEW RESIDUAL TOO.
-
-      if (0 < levelm .and. text>0) then
-         if (zero < condit) then
-            write (column(2), '(F6.2)') log10 (condit)
-         else
-            column(2) = '    NA'
-         end if
-      end if
-
-!///  EVALUATE Y0 := F(V0).  SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
-
-2030  continue
-
-      call twcopy (groupa + comps * points + groupb, v0, buffer)
-      signal = 'RESIDUAL'
-!     GO TO 2040 WHEN ROUTE = 2
-      route = 2
-      go to 99999
-2040  continue
-      signal = ' '
-      call twcopy (groupa + comps * points + groupb, buffer, y0)
-      call twnorm (groupa + comps * points + groupb, y0norm, y0)
-
-      call twcopy (groupa + comps * points + groupb, y0, buffer)
-      signal = 'SOLVE'
-!     GO TO 2050 WHEN ROUTE = 3
-      route = 3
-      go to 99999
-2050  continue
-      signal = ' '
-      call twcopy (groupa + comps * points + groupb, buffer, s0)
-      call twnorm (groupa + comps * points + groupb, s0norm, s0)
-
-      abs0 = zero
-      rel0 = zero
-      do 2060 j = 1, groupa + comps * points + groupb
-         sj = abs (v0(j) - (v0(j) - s0(j)))
-         vj = abs (v0(j))
-         if (xxrel * vj < sj) abs0 = max (abs0, sj)
-         if (xxabs < sj .and. zero < vj) &
-            rel0 = max (rel0, sj / vj)
-2060  continue
-
-!///  CHECK FOR SUCCESS.
-
-      if (abs0 <= xxabs .and. rel0 <= xxrel) go to 2170
-
-!///  CHOOSE DELTAB.
-
-2070  continue
-
-!     DELTAB IS THE LARGEST DAMPING COEFFICIENT BETWEEN 0 AND 1 THAT
-!     KEEPS V1 WITHIN BOUNDS.  IF V1 BELONGS ON THE BOUNDARY, THEN
-!     PROVISIONS ARE MADE TO FORCE IT THERE DESPITE ROUNDING ERROR.
-
-      deltab = one
-      force = .false.
-      do 2080 j = 1, groupa + comps * points + groupb
-         if (s0(j) > max (zero, v0(j) - below(j))) then
-            temp = (v0(j) - below(j)) / s0(j)
-            if (temp < deltab) then
-               deltab = temp
-               entry = j
-               force = .true.
-               value = below(j)
-            end if
-         else if (s0(j) < min (zero, v0(j) - above(j))) then
-            temp = (v0(j) - above(j)) / s0(j)
-            if (temp < deltab) then
-               deltab = temp
-               entry = j
-               force = .true.
-               value = above(j)
-            end if
-         end if
-2080  continue
-
-      error = deltab < zero
-      if (error) go to 9008
-
-!///  0 < DELTAB?
-
-      if (.not. (zero < deltab)) then
-         if (0 < age) go to 2010
-
-         if (0 < levelm .and. text>0) then
-            call twlogr (column(1), y0norm)
-            call twlogr (column(3), s0norm)
-            call twlogr (column(4), abs0)
-            call twlogr (column(5), rel0)
-            column(6) = ' '
-            if (deltab /= one) call twlogr (column(6), deltab)
-            column(7) = ' '
-            if (deltad /= one) call twlogr (column(7), deltad)
-            write (text, 10004) number, column
-            write (text, 10002) id
-
-            count = 0
-            do 2090 j = 1, groupa + comps * points + groupb
-               if ((below(j) == v0(j) .and. zero < s0(j)) .or. &
-                  (v0(j) == above(j) .and. s0(j) < zero)) then
-                  count = count + 1
-                  if (count <= lines) then
-                     if (j <= groupa) then
-                        i = j
-                     else if (j <= groupa + comps * points) then
-                        i = groupa + mod (j - groupa - 1, comps) + 1
-                     else
-                        i = j - groupa - comps * points
-                     end if
-
-                     if (names == comps + groupa + groupb) then
-                        ctemp1 = name(i)
-                     else
-                        ctemp1 = ' '
-                     end if
-                     call twsqez (len1, ctemp1)
-
-                     if (j <= groupa) then
-                        write (ctemp2, 80001) 'A', i
-                     else if (j <= groupa + comps * points) then
-                        write (ctemp2, 80002) 'C', i, &
-                           'P', int ((j - groupa - 1) / comps) + 1
-                     else
-                        write (ctemp2, 80001) 'B', i
-                     end if
-                     call twsqez (len2, ctemp2)
-
-                     if (ctemp1 == ' ') then
-                        string = ctemp2
-                        length = len2
-                     else if (len1 + 2 + len2 <= 30) then
-                        string = ctemp1 (1 : len1) // '  ' // ctemp2
-                        length = len1 + 2 + len2
-                     else if (len1 + 1 + len2 <= 30) then
-                        string = ctemp1 (1 : len1) // ' ' // ctemp2
-                        length = len1 + 1 + len2
-                     else
-                        len1 = 30 - len2 - 4
-                        string = ctemp1 (1 : len1) // '... ' // ctemp2
-                        length = 30
-                     end if
-
-                     if (below(j) == v0(j)) then
-                        write (text, 80003) &
-                           'LOWER', v0(j), string (1 : length)
-                     else
-                        write (text, 80003) &
-                           'UPPER', v0(j), string (1 : length)
-                     end if
-                  end if
-               end if
-2090        continue
-            if (lines < count) write (text, 80005)
-         end if
-
-         report = qbnds
-         success = .false.
-         go to 99999
-      end if
-
-!///  DELTAD := 1.
-
-      deltad = one
-      expone = 0
-
-!///  V1 := V0 - DELTAB DELTAD S0.  EVALUATE Y1 := F(V1).  SOLVE
-!///  J S1 = Y1.  EVALUATE ABS1 AND REL1.
-
-2100  continue
-
-      temp = deltab * deltad
-      do 2110 j = 1, groupa + comps * points + groupb
-         v1(j) = v0(j) - temp * s0(j)
-2110  continue
-
-!     KEEP V1 IN BOUNDS DESPITE ROUNDING ERROR.
-
-      do 2120 j = 1, groupa + comps * points + groupb
-         v1(j) = min (v1(j), above(j))
-2120  continue
-      do 2130 j = 1, groupa + comps * points + groupb
-         v1(j) = max (v1(j), below(j))
-2130  continue
-      if (expone == 0 .and. force) v1(entry) = value
-
-      call twcopy (groupa + comps * points + groupb, v1, buffer)
-      signal = 'RESIDUAL'
-!     GO TO 2140 WHEN ROUTE = 4
-      route = 4
-      go to 99999
-2140  continue
-      signal = ' '
-      call twcopy (groupa + comps * points + groupb, buffer, y1)
-      call twnorm (groupa + comps * points + groupb, y1norm, y1)
-
-      call twcopy (groupa + comps * points + groupb, y1, buffer)
-      signal = 'SOLVE'
-!     GO TO 2150 WHEN ROUTE = 5
-      route = 5
-      go to 99999
-2150  continue
-      signal = ' '
-      call twcopy (groupa + comps * points + groupb, buffer, s1)
-      call twnorm (groupa + comps * points + groupb, s1norm, s1)
-
-      abs1 = zero
-      rel1 = zero
-      do 2160 j = 1, groupa + comps * points + groupb
-         sj = abs (v1(j) - (v1(j) - s1(j)))
-         vj = abs (v1(j))
-         if (xxrel * vj < sj) abs1 = max (abs1, sj)
-         if (xxabs < sj .and. zero < vj) &
-            rel1 = max (rel1, sj / vj)
-2160  continue
-
-!///  NORM S1 < OR = NORM S0?
-
-      if (s1norm <= s0norm) then
-      else
-         deltad = half * deltad
-         expone = expone + 1
-         if (expone <= 5) go to 2100
-            if (0 < age) go to 2010
-               if (0 < levelm .and. text>0) then
-                  call twlogr (column(1), y0norm)
-                  call twlogr (column(3), s0norm)
-                  call twlogr (column(4), abs0)
-                  call twlogr (column(5), rel0)
-                  column(6) = ' '
-                  if (deltab /= one) call twlogr (column(6), deltab)
-                  column(7) = ' '
-                  if (deltad /= one) call twlogr (column(7), deltad)
-                  write (text, 10004) number, column
-                  write (text, 10003) id
-               end if
-               report = qdvrg
-               success = .false.
-               go to 99999
-      end if
-
-!///  PRINT.
-
-      if (0 < levelm .and. text>0) then
-         call twlogr (column(1), y0norm)
-         call twlogr (column(3), s0norm)
-         call twlogr (column(4), abs0)
-         call twlogr (column(5), rel0)
-         column(6) = ' '
-         if (deltab /= one) call twlogr (column(6), deltab)
-         column(7) = ' '
-         if (deltad /= one) call twlogr (column(7), deltad)
-         write (text, 10004) number, column
-         column(2) = ' '
-      end if
-
-!///  S0 := S1, U := V1, Y0 := Y1, AGE := AGE + 1.
-
-      age = age + 1
-      number = number + 1
-      call twcopy (groupa + comps * points + groupb, s1, s0)
-      call twcopy (groupa + comps * points + groupb, v1, v0)
-      call twcopy (groupa + comps * points + groupb, y1, y0)
-      s0norm = s1norm
-      y0norm = y1norm
-      abs0 = abs1
-      rel0 = rel1
-
-!///  S0 SMALL VS V0?
-
-      if (.not. (abs0 <= xxabs .and. rel0 <= xxrel)) then
-         if (age < xxage) go to 2070
-         go to 2010
-      end if
-
-!///  SUCCESS.
-
-2170  continue
-
-!///  PRINT.
-
-      if (0 < levelm .and. text>0) then
-         call twlogr (column(1), y0norm)
-         call twlogr (column(3), s0norm)
-         call twlogr (column(4), abs0)
-         call twlogr (column(5), rel0)
-         column(6) = ' '
-         column(7) = ' '
-         if (0 < leveld) then
-            write (text, 10004) number, column
-            write (text, 10005) id
-            signal = 'SHOW'
-            call twcopy (groupa + comps * points + groupb, v0, buffer)
-!           GO TO 2180 WHEN ROUTE = 6
-            route = 6
-            go to 99999
-         else
-            write (text, 10004) number, column
-            write (text, 10006) id
-         end if
-      end if
-
-2180  continue
-      signal = ' '
-
-      success = .true.
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     INFORMATIVE MESSAGES.
-!
-!///////////////////////////////////////////////////////////////////////
-
-10001 format &
-        (/1X, a9, 'SOLVE NONLINEAR, NONDIFFERENTIAL EQUATIONS.' &
-        /4(/10X, a44, a23)/)
-
-10002 format &
-       (/1X, a9, 'FAILURE.  THE SEARCH FOR THE FOLLOWING UNKNOWNS GOES' &
-        /10X, 'OUT OF BOUNDS.' &
-       //10X, 'BOUND       VALUE   UNKNOWN' &
-        /)
-
-10003 format &
-        (/1X, a9, 'FAILURE.  THE SEARCH DIVERGES.')
-
-10004 format &
-        (10X, i6, 3(3X, a6), 2(3X, a6, 2X, a6))
-
-10005 format &
-        (/1X, a9, 'SUCCESS.  THE SOLUTION:')
-
-10006 format &
-        (/1X, a9, 'SUCCESS.')
-
-80001 format &
-         ('(', a, ' ', i10, ')')
-
-80002 format &
-        ('(', a, ' ', i10, ' ', a, ' ', i10, ')')
-
-80003 format &
-        (10X, a5, 2X, 1p, e10.2, 3X, a)
-
-80004 format &
-        (30X, '... MORE')
-
-80005 format &
-        (10X, '  ... MORE')
-
-80006 format &
-        (10X, 1p, e10.2, 2X, e10.2, 3X, a)
-
-80007 format &
-        (10X, 1p, e10.2, 2X, e10.2, 2X, e10.2, 3X, a)
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     ERROR MESSAGES.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      go to 99999
-
-9001  if (text>0) write (text, 99001) id, route
-      if (.not. mess) go to 99999
-
-9002  if (text>0) write (text, 99002) id, &
-         comps, points, groupa, groupb, groupa + comps * points + groupb
-      if (.not. mess) go to 99999
-
-9003  if (text>0) write (text, 99003) id, &
-         names, comps, groupa, groupb, groupa + comps + groupb
-      if (.not. mess) go to 99999
-
-9004  if (text>0) then
-         write (text, 99004) id, &
-            groupa, groupb, comps, groupa + comps + groupb, count
-         count = 0
-         do 8010 j = 1, groupa + comps + groupb
-            if (.not. (below(j) < above(j)) .or. mess) then
-               count = count + 1
-               if (count <= lines) then
-                  if (names == comps + groupa + groupb) then
-                     ctemp1 = name(j)
-                  else
-                     ctemp1 = ' '
-                  end if
-                  call twsqez (len1, ctemp1)
-
-                  if (j <= groupa) then
-                     write (ctemp2, 80001) 'A', j
-                  else if (j <= groupa + comps) then
-                     write (ctemp2, 80001) 'C', j - groupa
-                  else
-                     write (ctemp2, 80001) 'B', j - groupa - comps
-                  end if
-                  call twsqez (len2, ctemp2)
-
-                  if (ctemp1 == ' ') then
-                     string = ctemp2
-                     length = len2
-                  else if (len1 + 2 + len2 <= 40) then
-                     string = ctemp1 (1 : len1) // '  ' // ctemp2
-                     length = len1 + 2 + len2
-                  else if (len1 + 1 + len2 <= 40) then
-                     string = ctemp1 (1 : len1) // ' ' // ctemp2
-                     length = len1 + 1 + len2
-                  else
-                     len1 = 40 - len2 - 4
-                     string = ctemp1 (1 : len1) // '... ' // ctemp2
-                     length = 40
-                  end if
-
-                  write (text, 80006) &
-                     below(j), above(j), string (1 : length)
-               end if
-            end if
-8010     continue
-         if (lines < count) write (text, 80005)
-      end if
-      if (.not. mess) go to 99999
-
-9005  if (text>0) then
-         write (text, 99005) id, groupa, groupb, comps, points, &
-            groupa + comps * points + groupb, count
-         count = 0
-         do 8020 j = 1, groupa + comps * points + groupb
-            if (.not. (below(j) <= v0(j) .and. v0(j) <= above(j)) &
-               .or. mess) then
-               count = count + 1
-               if (count <= lines) then
-                  if (j <= groupa) then
-                     i = j
-                  else if (j <= groupa + comps * points) then
-                     i = groupa + mod (j - groupa - 1, comps) + 1
-                  else
-                     i = j - groupa - comps * points
-                  end if
-
-                  if (names == comps + groupa + groupb) then
-                     ctemp1 = name(i)
-                  else
-                     ctemp1 = ' '
-                  end if
-                  call twsqez (len1, ctemp1)
-
-                  if (j <= groupa) then
-                     write (ctemp2, 80001) 'A', i
-                  else if (j <= groupa + comps * points) then
-                     write (ctemp2, 80002) 'C', i, &
-                        'P', int ((j - groupa - 1) / comps) + 1
-                  else
-                     write (ctemp2, 80001) 'B', i
-                  end if
-                  call twsqez (len2, ctemp2)
-
-                  if (ctemp1 == ' ') then
-                     string = ctemp2
-                     length = len2
-                  else if (len1 + 2 + len2 <= 30) then
-                     string = ctemp1 (1 : len1) // '  ' // ctemp2
-                     length = len1 + 2 + len2
-                  else if (len1 + 1 + len2 <= 30) then
-                     string = ctemp1 (1 : len1) // ' ' // ctemp2
-                     length = len1 + 1 + len2
-                  else
-                     len1 = 30 - len2 - 4
-                     string = ctemp1 (1 : len1) // '... ' // ctemp2
-                     length = 30
-                  end if
-
-                  write (text, 80007) &
-                     below(j), v0(j), above(j), string (1 : length)
-               end if
-            end if
-8020     continue
-         if (lines < count) write (text, 80005)
-      end if
-      if (.not. mess) go to 99999
-
-9006  if (text>0) write (text, 99006) id, xxabs, xxrel
-      if (.not. mess) go to 99999
-
-9007  if (text>0) write (text, 99007) id, xxage
-      if (.not. mess) go to 99999
-
-9008  if (text>0) write (text, 99008) id, deltab
-      if (.not. mess) go to 99999
-
-99001 format &
-        (/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-       //10X, i10, '  ROUTE')
-
-99002 format &
-        (/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
-        /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE, NUMBERS OF ALL TYPES' &
-        /10X, 'OF UNKNOWNS MUST BE AT LEAST ZERO, AND TOTAL UNKNOWNS' &
-        /10X, 'MUST BE POSITIVE.' &
-       //10X, i10, '  COMPS, COMPONENTS' &
-        /10X, i10, '  POINTS' &
-        /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-        /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-        /10X, i10, '  TOTAL UNKNOWNS')
-
-99003 format &
-        (/1X, a9, 'ERROR.  THE NUMBER OF NAMES IS WRONG.' &
-       //10X, i10, '  NAMES' &
-       //10X, i10, '  COMPS, COMPONENTS' &
-        /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-        /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-        /10X, i10, '  TOTAL NUMBER')
-
-99004 format &
-        (/1X, a9, 'ERROR.  THE LOWER AND UPPER BOUNDS ON SOME UNKNOWNS' &
-        /10X, 'ARE OUT OF ORDER.' &
-       //10X, i10, '  GROUP A UNKNOWNS (A)' &
-        /10X, i10, '  GROUP B UNKNOWNS (B)' &
-        /10X, i10, '  COMPONENTS AT POINTS (C)' &
-        /10X, i10, '  TOTAL TYPES OF UNKNOWNS' &
-        /10X, i10, '  NUMBER OF BOUNDS OUT OF ORDER' &
-       //10X, '     LOWER       UPPER' &
-        /10X, '     BOUND       BOUND   UNKNOWN' &
-        /)
-
-99005 format &
-        (/1X, a9, 'ERROR.  THE GUESSES FOR SOME UNKNOWNS ARE OUT OF' &
-        /10X, 'BOUNDS.' &
-       //10X, i10, '  GROUP A UNKNOWNS (A)' &
-        /10X, i10, '  GROUP B UNKNOWNS (B)' &
-        /10X, i10, '  COMPONENTS AT POINTS (C)' &
-        /10X, i10, '  POINTS (P)' &
-        /10X, i10, '  TOTAL UNKNOWNS' &
-        /10X, i10, '  NUMBER OUT OF BOUNDS' &
-       //10X, '     LOWER                   UPPER' &
-        /10X, '     BOUND       VALUE       BOUND   UNKNOWN' &
-        /)
-
-99006 format &
-        (/1X, a9, 'ERROR.  THE BOUNDS FOR THE ABSOLUTE AND RELATIVE' &
-        /10X, 'CONVERGENCE TESTS MUST BE ZERO OR POSITIVE.' &
-       //10X, 1p, e10.2, '  SSABS OR TDABS, ABSOLUTE ERROR' &
-        /10X, 1p, e10.2, '  SSREL OR TDREL, RELATIVE ERROR')
-
-99007 format &
-        (/1X, a9, 'ERROR.  THE RETIREMENT AGE OF THE JACOBIAN MATRIX' &
-        /10X, 'MUST BE POSITIVE.' &
-       //10X, i10, '  SSAGE OR TDAGE, MATRIX RETIREMENT AGE')
-
-99008 format &
-        (/1X, a9, 'ERROR.  THE DAMPING COEFFICIENT FOR STAYING' &
-        /10X, 'IN BOUNDS IS NEGATIVE.' &
-       //10X, 1p, e10.2, '  DELTA B')
-
-!///  EXIT.
-
-      stop
-99999 continue
-
-!     COPY THE PROTECTED LOCAL VARIABLE
-      steps = number
-
-      return
+
+      ! Perform the damped, modified Newton's search
+      subroutine search(error, text, above, age, below, buffer, comps, condit, exist, groupa, &
+                        groupb, leveld, levelm, name, names, points, report, s0, s1, signal, steps, &
+                        success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1)
+
+          integer         , intent(in)    :: groupa, comps, points, groupb
+          logical         , intent(out)   :: error
+          integer         , intent(in)    :: text
+          integer         , intent(in)    :: names
+          character(len=*), intent(in)    :: name(names)
+          character(len=*), intent(inout) :: signal
+          real(RK)        , intent(in)    :: above(groupa + comps * points + groupb)
+          real(RK)        , intent(in)    :: below(groupa + comps * points + groupb)
+
+          real(RK) :: abs0, abs1, buffer, condit, deltab, deltad, rel0, &
+             rel1, s0, s0norm, s1, s1norm, sj, temp, v0, v1, value, vj, &
+             xxabs, xxrel, y0, y0norm, y1, y1norm
+          integer ::  age, counter, entry, expone, i, j, k, &
+             len1, len2, length, leveld, levelm, number, &
+             report, route, steps, xxage
+          intrinsic :: abs, int, log10, max, min, mod
+          logical :: exist, force, success
+          character(len=16) :: column(7)
+          character(len=80) :: ctemp1,ctemp2,header(3,2),string
+
+          character(len=*), parameter :: id = 'SEARCH:  '
+          integer,          parameter :: lines = 20
+
+          dimension &
+             buffer(groupa + comps * points + groupb), &
+             s0(groupa + comps * points + groupb), &
+             s1(groupa + comps * points + groupb), &
+             v0(groupa + comps * points + groupb), &
+             v1(groupa + comps * points + groupb), &
+             y0(groupa + comps * points + groupb), &
+             y1(groupa + comps * points + groupb)
+
+    !///  SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
+
+          save
+
+    !///////////////////////////////////////////////////////////////////////
+    !
+    !     PROLOGUE.
+    !
+    !///////////////////////////////////////////////////////////////////////
+
+    !///  EVERY-TIME INITIALIZATION.
+
+    !     TURN OFF ALL COMPLETION STATUS FLAGS.
+          error = .false.
+          report = qnull
+          success = .false.
+
+    !///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
+
+          if (signal /= ' ') then
+             go to (2020, 2040, 2050, 2140, 2150, 2180) route
+             error = .true.
+             go to 9001
+          end if
+
+    !///  ONE-TIME INITIALIZATION.
+
+          number = 0
+
+    !///  CHECK THE ARGUMENTS.
+
+          error = .not. (((0 < comps) .eqv. (points>0)) .and. &
+             0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
+             0 <= groupb .and. 0 < groupa + comps * points + groupb)
+          if (error) go to 9002
+
+          error = .not. (names == 1 .or. &
+             names == groupa + comps + groupb)
+          if (error) go to 9003
+
+          counter = 0
+          do j = 1, groupa + comps * points + groupb
+             if (.not. (below(j) < above(j))) counter = counter + 1
+          end do
+          error = counter /= 0
+          if (error) go to 9004
+
+          counter = 0
+          do j = 1, groupa + comps * points + groupb
+             if (.not. (below(j) <= v0(j) .and. v0(j) <= above(j))) counter = counter + 1
+          end do
+          error = counter /= 0
+          if (error) go to 9005
+
+          error = .not. (zero<=xxabs .and. zero<=xxrel)
+          if (error) go to 9006
+
+          error = .not. (0 < xxage)
+          if (error) go to 9007
+
+    !///  PRINT THE HEADER.
+
+    !                     123456789_123456789_123456789_123456789_1234
+    !                     123456   123456   123456   123456   123456
+          header(1, 1) = '         LOG10                              '
+          header(2, 1) = '  SLTN   -----------------------------------'
+          header(3, 1) = 'NUMBER   NORM F   COND J   NORM S      ABS A'
+
+    !                     123456789_123456789_123
+    !                     123456   123456  123456
+          header(1, 2) = '                       '
+          header(2, 2) = '-----------------------'
+          header(3, 2) = 'ND REL    DELTA B AND D'
+
+          if (levelm >= 1) then
+             if (text>0) write (text, 10001) &
+                id, ((header(j, k), k = 1, 2), j = 1, 3)
+          end if
+
+    !///////////////////////////////////////////////////////////////////////
+    !
+    !     SIR ISSAC NEWTON'S ALGORITHM.
+    !
+    !///////////////////////////////////////////////////////////////////////
+
+    !///  J EXIST?
+
+          if (.not. exist) go to 2010
+
+    !///  AGE < XXAGE?
+
+          if (age < xxage) go to 2030
+
+    !///  EVALUATE J AT V0.  RE-EVALUATE Y0 := F(V0) IN CASE F CHANGES WHEN
+    !///  J DOES.  SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
+
+    2010  continue
+
+          call twcopy (groupa + comps * points + groupb, v0, buffer)
+          signal = 'PREPARE'
+    !     GO TO 2020 WHEN ROUTE = 1
+          route = 1
+          go to 99999
+    2020  continue
+          signal = ' '
+          age = 0
+
+    !     JACOBIAN EVALUATION SHOULD RETURN A NEW RESIDUAL TOO.
+
+          if (0 < levelm .and. text>0) then
+             if (zero < condit) then
+                write (column(2), '(F6.2)') log10 (condit)
+             else
+                column(2) = '    NA'
+             end if
+          end if
+
+    !///  EVALUATE Y0 := F(V0).  SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
+
+    2030  continue
+
+          call twcopy (groupa + comps * points + groupb, v0, buffer)
+          signal = 'RESIDUAL'
+    !     GO TO 2040 WHEN ROUTE = 2
+          route = 2
+          go to 99999
+    2040  continue
+          signal = ' '
+          call twcopy (groupa + comps * points + groupb, buffer, y0)
+          call twnorm (groupa + comps * points + groupb, y0norm, y0)
+
+          call twcopy (groupa + comps * points + groupb, y0, buffer)
+          signal = 'SOLVE'
+    !     GO TO 2050 WHEN ROUTE = 3
+          route = 3
+          go to 99999
+    2050  continue
+          signal = ' '
+          call twcopy (groupa + comps * points + groupb, buffer, s0)
+          call twnorm (groupa + comps * points + groupb, s0norm, s0)
+
+          abs0 = zero
+          rel0 = zero
+          do 2060 j = 1, groupa + comps * points + groupb
+             sj = abs (v0(j) - (v0(j) - s0(j)))
+             vj = abs (v0(j))
+             if (xxrel * vj < sj) abs0 = max (abs0, sj)
+             if (xxabs < sj .and. zero < vj) &
+                rel0 = max (rel0, sj / vj)
+    2060  continue
+
+    !///  CHECK FOR SUCCESS.
+
+          if (abs0 <= xxabs .and. rel0 <= xxrel) go to 2170
+
+    !///  CHOOSE DELTAB.
+
+    2070  continue
+
+    !     DELTAB IS THE LARGEST DAMPING COEFFICIENT BETWEEN 0 AND 1 THAT
+    !     KEEPS V1 WITHIN BOUNDS.  IF V1 BELONGS ON THE BOUNDARY, THEN
+    !     PROVISIONS ARE MADE TO FORCE IT THERE DESPITE ROUNDING ERROR.
+
+          deltab = one
+          force = .false.
+          do 2080 j = 1, groupa + comps * points + groupb
+             if (s0(j) > max (zero, v0(j) - below(j))) then
+                temp = (v0(j) - below(j)) / s0(j)
+                if (temp < deltab) then
+                   deltab = temp
+                   entry = j
+                   force = .true.
+                   value = below(j)
+                end if
+             else if (s0(j) < min (zero, v0(j) - above(j))) then
+                temp = (v0(j) - above(j)) / s0(j)
+                if (temp < deltab) then
+                   deltab = temp
+                   entry = j
+                   force = .true.
+                   value = above(j)
+                end if
+             end if
+    2080  continue
+
+          error = deltab < zero
+          if (error) go to 9008
+
+    !///  0 < DELTAB?
+
+          if (.not. (zero < deltab)) then
+             if (0 < age) go to 2010
+
+             if (0 < levelm .and. text>0) then
+                call twlogr (column(1), y0norm)
+                call twlogr (column(3), s0norm)
+                call twlogr (column(4), abs0)
+                call twlogr (column(5), rel0)
+                column(6) = ' '
+                if (deltab /= one) call twlogr (column(6), deltab)
+                column(7) = ' '
+                if (deltad /= one) call twlogr (column(7), deltad)
+                write (text, 10004) number, column
+                write (text, 10002) id
+
+                counter = 0
+                do 2090 j = 1, groupa + comps * points + groupb
+                   if ((below(j) == v0(j) .and. zero < s0(j)) .or. &
+                      (v0(j) == above(j) .and. s0(j) < zero)) then
+                      counter = counter + 1
+                      if (counter <= lines) then
+                         if (j <= groupa) then
+                            i = j
+                         else if (j <= groupa + comps * points) then
+                            i = groupa + mod (j - groupa - 1, comps) + 1
+                         else
+                            i = j - groupa - comps * points
+                         end if
+
+                         if (names == comps + groupa + groupb) then
+                            ctemp1 = name(i)
+                         else
+                            ctemp1 = ' '
+                         end if
+                         call twsqez (len1, ctemp1)
+
+                         if (j <= groupa) then
+                            write (ctemp2, 80001) 'A', i
+                         else if (j <= groupa + comps * points) then
+                            write (ctemp2, 80002) 'C', i, &
+                               'P', int ((j - groupa - 1) / comps) + 1
+                         else
+                            write (ctemp2, 80001) 'B', i
+                         end if
+                         call twsqez (len2, ctemp2)
+
+                         if (ctemp1 == ' ') then
+                            string = ctemp2
+                            length = len2
+                         else if (len1 + 2 + len2 <= 30) then
+                            string = ctemp1 (1 : len1) // '  ' // ctemp2
+                            length = len1 + 2 + len2
+                         else if (len1 + 1 + len2 <= 30) then
+                            string = ctemp1 (1 : len1) // ' ' // ctemp2
+                            length = len1 + 1 + len2
+                         else
+                            len1 = 30 - len2 - 4
+                            string = ctemp1 (1 : len1) // '... ' // ctemp2
+                            length = 30
+                         end if
+
+                         if (below(j) == v0(j)) then
+                            write (text, 80003) &
+                               'LOWER', v0(j), string (1 : length)
+                         else
+                            write (text, 80003) &
+                               'UPPER', v0(j), string (1 : length)
+                         end if
+                      end if
+                   end if
+    2090        continue
+                if (lines < counter) write (text, 80005)
+             end if
+
+             report = qbnds
+             success = .false.
+             go to 99999
+          end if
+
+    !///  DELTAD := 1.
+
+          deltad = one
+          expone = 0
+
+    !///  V1 := V0 - DELTAB DELTAD S0.  EVALUATE Y1 := F(V1).  SOLVE
+    !///  J S1 = Y1.  EVALUATE ABS1 AND REL1.
+
+    2100  continue
+
+          temp = deltab * deltad
+          do 2110 j = 1, groupa + comps * points + groupb
+             v1(j) = v0(j) - temp * s0(j)
+    2110  continue
+
+    !     KEEP V1 IN BOUNDS DESPITE ROUNDING ERROR.
+
+          do 2120 j = 1, groupa + comps * points + groupb
+             v1(j) = min (v1(j), above(j))
+    2120  continue
+          do 2130 j = 1, groupa + comps * points + groupb
+             v1(j) = max (v1(j), below(j))
+    2130  continue
+          if (expone == 0 .and. force) v1(entry) = value
+
+          call twcopy (groupa + comps * points + groupb, v1, buffer)
+          signal = 'RESIDUAL'
+    !     GO TO 2140 WHEN ROUTE = 4
+          route = 4
+          go to 99999
+    2140  continue
+          signal = ' '
+          call twcopy (groupa + comps * points + groupb, buffer, y1)
+          call twnorm (groupa + comps * points + groupb, y1norm, y1)
+
+          call twcopy (groupa + comps * points + groupb, y1, buffer)
+          signal = 'SOLVE'
+    !     GO TO 2150 WHEN ROUTE = 5
+          route = 5
+          go to 99999
+    2150  continue
+          signal = ' '
+          call twcopy (groupa + comps * points + groupb, buffer, s1)
+          call twnorm (groupa + comps * points + groupb, s1norm, s1)
+
+          abs1 = zero
+          rel1 = zero
+          do 2160 j = 1, groupa + comps * points + groupb
+             sj = abs (v1(j) - (v1(j) - s1(j)))
+             vj = abs (v1(j))
+             if (xxrel * vj < sj) abs1 = max (abs1, sj)
+             if (xxabs < sj .and. zero < vj) &
+                rel1 = max (rel1, sj / vj)
+    2160  continue
+
+    !///  NORM S1 < OR = NORM S0?
+
+          if (s1norm <= s0norm) then
+          else
+             deltad = half * deltad
+             expone = expone + 1
+             if (expone <= 5) go to 2100
+                if (0 < age) go to 2010
+                   if (0 < levelm .and. text>0) then
+                      call twlogr (column(1), y0norm)
+                      call twlogr (column(3), s0norm)
+                      call twlogr (column(4), abs0)
+                      call twlogr (column(5), rel0)
+                      column(6) = ' '
+                      if (deltab /= one) call twlogr (column(6), deltab)
+                      column(7) = ' '
+                      if (deltad /= one) call twlogr (column(7), deltad)
+                      write (text, 10004) number, column
+                      write (text, 10003) id
+                   end if
+                   report = qdvrg
+                   success = .false.
+                   go to 99999
+          end if
+
+    !///  PRINT.
+
+          if (0 < levelm .and. text>0) then
+             call twlogr (column(1), y0norm)
+             call twlogr (column(3), s0norm)
+             call twlogr (column(4), abs0)
+             call twlogr (column(5), rel0)
+             column(6) = ' '
+             if (deltab /= one) call twlogr (column(6), deltab)
+             column(7) = ' '
+             if (deltad /= one) call twlogr (column(7), deltad)
+             write (text, 10004) number, column
+             column(2) = ' '
+          end if
+
+    !///  S0 := S1, U := V1, Y0 := Y1, AGE := AGE + 1.
+
+          age = age + 1
+          number = number + 1
+          call twcopy (groupa + comps * points + groupb, s1, s0)
+          call twcopy (groupa + comps * points + groupb, v1, v0)
+          call twcopy (groupa + comps * points + groupb, y1, y0)
+          s0norm = s1norm
+          y0norm = y1norm
+          abs0 = abs1
+          rel0 = rel1
+
+    !///  S0 SMALL VS V0?
+
+          if (.not. (abs0 <= xxabs .and. rel0 <= xxrel)) then
+             if (age < xxage) go to 2070
+             go to 2010
+          end if
+
+    !///  SUCCESS.
+
+    2170  continue
+
+    !///  PRINT.
+
+          if (0 < levelm .and. text>0) then
+             call twlogr (column(1), y0norm)
+             call twlogr (column(3), s0norm)
+             call twlogr (column(4), abs0)
+             call twlogr (column(5), rel0)
+             column(6) = ' '
+             column(7) = ' '
+             if (0 < leveld) then
+                write (text, 10004) number, column
+                write (text, 10005) id
+                signal = 'SHOW'
+                call twcopy (groupa + comps * points + groupb, v0, buffer)
+    !           GO TO 2180 WHEN ROUTE = 6
+                route = 6
+                go to 99999
+             else
+                write (text, 10004) number, column
+                write (text, 10006) id
+             end if
+          end if
+
+    2180  continue
+          signal = ' '
+
+          success = .true.
+
+    !///////////////////////////////////////////////////////////////////////
+    !
+    !     INFORMATIVE MESSAGES.
+    !
+    !///////////////////////////////////////////////////////////////////////
+
+    10001 format &
+            (/1X, a9, 'SOLVE NONLINEAR, NONDIFFERENTIAL EQUATIONS.' &
+            /4(/10X, a44, a23)/)
+
+    10002 format &
+           (/1X, a9, 'FAILURE.  THE SEARCH FOR THE FOLLOWING UNKNOWNS GOES' &
+            /10X, 'OUT OF BOUNDS.' &
+           //10X, 'BOUND       VALUE   UNKNOWN' &
+            /)
+
+    10003 format &
+            (/1X, a9, 'FAILURE.  THE SEARCH DIVERGES.')
+
+    10004 format &
+            (10X, i6, 3(3X, a6), 2(3X, a6, 2X, a6))
+
+    10005 format &
+            (/1X, a9, 'SUCCESS.  THE SOLUTION:')
+
+    10006 format &
+            (/1X, a9, 'SUCCESS.')
+
+    80001 format &
+             ('(', a, ' ', i10, ')')
+
+    80002 format &
+            ('(', a, ' ', i10, ' ', a, ' ', i10, ')')
+
+    80003 format &
+            (10X, a5, 2X, 1p, e10.2, 3X, a)
+
+    80004 format &
+            (30X, '... MORE')
+
+    80005 format &
+            (10X, '  ... MORE')
+
+    80006 format &
+            (10X, 1p, e10.2, 2X, e10.2, 3X, a)
+
+    80007 format &
+            (10X, 1p, e10.2, 2X, e10.2, 2X, e10.2, 3X, a)
+
+    !///////////////////////////////////////////////////////////////////////
+    !
+    !     ERROR MESSAGES.
+    !
+    !///////////////////////////////////////////////////////////////////////
+
+          go to 99999
+
+    9001  if (text>0) write (text, 99001) id, route
+          return
+
+    9002  if (text>0) write (text, 99002) id, &
+             comps, points, groupa, groupb, groupa + comps * points + groupb
+          return
+
+    9003  if (text>0) write (text, 99003) id, &
+             names, comps, groupa, groupb, groupa + comps + groupb
+          return
+
+    9004  if (text>0) then
+             write (text, 99004) id, &
+                groupa, groupb, comps, groupa + comps + groupb, counter
+             counter = 0
+             do 8010 j = 1, groupa + comps + groupb
+                if (.not. (below(j) < above(j))) then
+                   counter = counter + 1
+                   if (counter <= lines) then
+                      if (names == comps + groupa + groupb) then
+                         ctemp1 = name(j)
+                      else
+                         ctemp1 = ' '
+                      end if
+                      call twsqez (len1, ctemp1)
+
+                      if (j <= groupa) then
+                         write (ctemp2, 80001) 'A', j
+                      else if (j <= groupa + comps) then
+                         write (ctemp2, 80001) 'C', j - groupa
+                      else
+                         write (ctemp2, 80001) 'B', j - groupa - comps
+                      end if
+                      call twsqez (len2, ctemp2)
+
+                      if (ctemp1 == ' ') then
+                         string = ctemp2
+                         length = len2
+                      else if (len1 + 2 + len2 <= 40) then
+                         string = ctemp1 (1 : len1) // '  ' // ctemp2
+                         length = len1 + 2 + len2
+                      else if (len1 + 1 + len2 <= 40) then
+                         string = ctemp1 (1 : len1) // ' ' // ctemp2
+                         length = len1 + 1 + len2
+                      else
+                         len1 = 40 - len2 - 4
+                         string = ctemp1 (1 : len1) // '... ' // ctemp2
+                         length = 40
+                      end if
+
+                      write (text, 80006) &
+                         below(j), above(j), string (1 : length)
+                   end if
+                end if
+    8010     continue
+             if (lines < counter) write (text, 80005)
+          end if
+          return
+
+    9005  if (text>0) then
+             write (text, 99005) id, groupa, groupb, comps, points, &
+                groupa + comps * points + groupb, counter
+             counter = 0
+             do 8020 j = 1, groupa + comps * points + groupb
+                if (.not. (below(j) <= v0(j) .and. v0(j) <= above(j))) then
+                   counter = counter + 1
+                   if (counter <= lines) then
+                      if (j <= groupa) then
+                         i = j
+                      else if (j <= groupa + comps * points) then
+                         i = groupa + mod (j - groupa - 1, comps) + 1
+                      else
+                         i = j - groupa - comps * points
+                      end if
+
+                      if (names == comps + groupa + groupb) then
+                         ctemp1 = name(i)
+                      else
+                         ctemp1 = ' '
+                      end if
+                      call twsqez (len1, ctemp1)
+
+                      if (j <= groupa) then
+                         write (ctemp2, 80001) 'A', i
+                      else if (j <= groupa + comps * points) then
+                         write (ctemp2, 80002) 'C', i, &
+                            'P', int ((j - groupa - 1) / comps) + 1
+                      else
+                         write (ctemp2, 80001) 'B', i
+                      end if
+                      call twsqez (len2, ctemp2)
+
+                      if (ctemp1 == ' ') then
+                         string = ctemp2
+                         length = len2
+                      else if (len1 + 2 + len2 <= 30) then
+                         string = ctemp1 (1 : len1) // '  ' // ctemp2
+                         length = len1 + 2 + len2
+                      else if (len1 + 1 + len2 <= 30) then
+                         string = ctemp1 (1 : len1) // ' ' // ctemp2
+                         length = len1 + 1 + len2
+                      else
+                         len1 = 30 - len2 - 4
+                         string = ctemp1 (1 : len1) // '... ' // ctemp2
+                         length = 30
+                      end if
+
+                      write (text, 80007) &
+                         below(j), v0(j), above(j), string (1 : length)
+                   end if
+                end if
+    8020     continue
+             if (lines < counter) write (text, 80005)
+          end if
+          return
+
+    9006  if (text>0) write (text, 99006) id, xxabs, xxrel
+          return
+
+    9007  if (text>0) write (text, 99007) id, xxage
+          return
+
+    9008  if (text>0) write (text, 99008) id, deltab
+          return
+
+    99001 format &
+            (/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
+           //10X, i10, '  ROUTE')
+
+    99002 format &
+            (/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
+            /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE, NUMBERS OF ALL TYPES' &
+            /10X, 'OF UNKNOWNS MUST BE AT LEAST ZERO, AND TOTAL UNKNOWNS' &
+            /10X, 'MUST BE POSITIVE.' &
+           //10X, i10, '  COMPS, COMPONENTS' &
+            /10X, i10, '  POINTS' &
+            /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+            /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+            /10X, i10, '  TOTAL UNKNOWNS')
+
+    99003 format &
+            (/1X, a9, 'ERROR.  THE NUMBER OF NAMES IS WRONG.' &
+           //10X, i10, '  NAMES' &
+           //10X, i10, '  COMPS, COMPONENTS' &
+            /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+            /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+            /10X, i10, '  TOTAL NUMBER')
+
+    99004 format &
+            (/1X, a9, 'ERROR.  THE LOWER AND UPPER BOUNDS ON SOME UNKNOWNS' &
+            /10X, 'ARE OUT OF ORDER.' &
+           //10X, i10, '  GROUP A UNKNOWNS (A)' &
+            /10X, i10, '  GROUP B UNKNOWNS (B)' &
+            /10X, i10, '  COMPONENTS AT POINTS (C)' &
+            /10X, i10, '  TOTAL TYPES OF UNKNOWNS' &
+            /10X, i10, '  NUMBER OF BOUNDS OUT OF ORDER' &
+           //10X, '     LOWER       UPPER' &
+            /10X, '     BOUND       BOUND   UNKNOWN' &
+            /)
+
+    99005 format &
+            (/1X, a9, 'ERROR.  THE GUESSES FOR SOME UNKNOWNS ARE OUT OF' &
+            /10X, 'BOUNDS.' &
+           //10X, i10, '  GROUP A UNKNOWNS (A)' &
+            /10X, i10, '  GROUP B UNKNOWNS (B)' &
+            /10X, i10, '  COMPONENTS AT POINTS (C)' &
+            /10X, i10, '  POINTS (P)' &
+            /10X, i10, '  TOTAL UNKNOWNS' &
+            /10X, i10, '  NUMBER OUT OF BOUNDS' &
+           //10X, '     LOWER                   UPPER' &
+            /10X, '     BOUND       VALUE       BOUND   UNKNOWN' &
+            /)
+
+    99006 format &
+            (/1X, a9, 'ERROR.  THE BOUNDS FOR THE ABSOLUTE AND RELATIVE' &
+            /10X, 'CONVERGENCE TESTS MUST BE ZERO OR POSITIVE.' &
+           //10X, 1p, e10.2, '  SSABS OR TDABS, ABSOLUTE ERROR' &
+            /10X, 1p, e10.2, '  SSREL OR TDREL, RELATIVE ERROR')
+
+    99007 format &
+            (/1X, a9, 'ERROR.  THE RETIREMENT AGE OF THE JACOBIAN MATRIX' &
+            /10X, 'MUST BE POSITIVE.' &
+           //10X, i10, '  SSAGE OR TDAGE, MATRIX RETIREMENT AGE')
+
+    99008 format &
+            (/1X, a9, 'ERROR.  THE DAMPING COEFFICIENT FOR STAYING' &
+            /10X, 'IN BOUNDS IS NEGATIVE.' &
+           //10X, 1p, e10.2, '  DELTA B')
+
+    !///  EXIT.
+
+          stop
+    99999 continue
+
+    !     COPY THE PROTECTED LOCAL VARIABLE
+          steps = number
+
+          return
       end subroutine search
 
       ! TWOPNT driver.
@@ -3493,10 +3399,8 @@ module twopnt_core
             string = '?'
          end if
       else if (qtask == qtimst) then
-         if (xrepor == qbnds .or. xrepor == qdvrg .or. &
-            xrepor == qnull) then
-            write (string, '(I10, A, 1P, E10.1, A)') &
-               steps, ' TIME STEPS, ', stride, ' LAST STRIDE'
+         if (xrepor == qbnds .or. xrepor == qdvrg .or. xrepor == qnull) then
+            write (string, '(I10, A, 1P, E10.1, A)') steps, ' TIME STEPS, ', stride, ' LAST STRIDE'
          else
             string = '?'
          end if
@@ -3505,8 +3409,7 @@ module twopnt_core
       else if (qtask == qrefin) then
          if (found) then
             write (string, '(F10.2, A, F10.2, A, I10, A)') &
-               ratio(1), ' AND ', ratio(2), ' RATIOS, ', points, &
-               ' GRID POINTS'
+               ratio(1), ' AND ', ratio(2), ' RATIOS, ', points, ' GRID POINTS'
          else
             write (string, '(F10.2, A, F10.2, A)') &
                ratio(1), ' AND ', ratio(2), ' RATIOS'
@@ -3558,25 +3461,15 @@ module twopnt_core
 
 9931  continue
 
-!     IDENTIFY THE REQUEST.  THIS MUST BE SAVED TO GATHER STATISTICS
-!     AT REENTRY.  THE REVERSE COMMUNICATION FLAGS WILL NOT BE SAVED
-!     BECAUSE THEY ARE CLEARED AT EVERY ENTRY.
-      if (signal == 'RESIDUAL') then
-         qtype = qfunct
-      else if (signal == 'PREPARE') then
-         qtype = qjacob
-      else if (signal == 'SOLVE') then
-         qtype = qsolve
-      else
-         qtype = qother
-      end if
+      ! THIS MUST BE SAVED TO GATHER STATISTICS AT REENTRY.
+      ! THE REVERSE COMMUNICATION FLAGS WILL NOT BE SAVED BECAUSE THEY ARE CLEARED AT EVERY ENTRY.
+      qtype = identify_request(signal)
 
       ! COUNT THE JACOBIANS
       if (qtype == qjacob) jacobs = jacobs + 1
-
       call stats%tick(qtype)
 
-!     GO TO 9932 WHEN ROUTE = 3
+      !  GO TO 9932 WHEN ROUTE = 3
       route = 3
       return
 9932  continue
@@ -3586,8 +3479,7 @@ module twopnt_core
 
       call stats%tock(qtype,event=.true.)
 
-      go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) &
-         return
+      go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
       error = .true.
       if (text>0) write (text, 21) id, return
       return
@@ -4411,6 +4303,19 @@ module twopnt_core
          end if
 
       end subroutine stats_new_grid
+
+      ! Identify the request
+      integer function identify_request(signal) result(qtype)
+         character(len=*), intent(in) :: signal
+
+         select case (signal)
+            case ('RESIDUAL'); qtype = qfunct
+            case ('PREPARE');  qtype = qjacob
+            case ('SOLVE');    qtype = qsolve
+            case default;      qtype = qother
+         end select
+
+      end function identify_request
 
       subroutine print_stats(this,text,adapt)
          class(twstat), intent(inout) :: this
