@@ -16,7 +16,7 @@
 !     VERSION 3.29 OF APRIL 1998
 !
 !     References:
-!         J. F. Grcar, "The Twopnt Program for Boundary Value Problems, Sandia National Labs
+!         J. F. Grcar, "The Twopnt Program for Boundary Value Problems", Sandia National Labs
 !         Report SAND91-8230, Livermore, California, April 1992.  Reprinted February 1996.
 !
 !
@@ -2198,10 +2198,16 @@ module twopnt_core
           end if
 
           error = .not. (zero<=xxabs .and. zero<=xxrel)
-          if (error) go to 9006
+          if (error) then
+             if (text>0) write (text, 99006) id, xxabs, xxrel
+             return
+          end if
 
-          error = .not. (0 < xxage)
-          if (error) go to 9007
+          error = .not. xxage>0
+          if (error) then
+             if (text>0) write (text, 99007) id, xxage
+             return
+          end if
 
     !///  PRINT THE HEADER.
 
@@ -2329,7 +2335,10 @@ module twopnt_core
     2080  continue
 
           error = deltab < zero
-          if (error) go to 9008
+          if (error) then
+              if (text>0) write (text, 99008) id, deltab
+              return
+          end if
 
           !///  0 < DELTAB?
           if (.not. (zero < deltab)) then
@@ -2586,17 +2595,7 @@ module twopnt_core
     80003 format &
             (10X, a5, 2X, 1p, e10.2, 3X, a)
 
-    80004 format &
-            (30X, '... MORE')
-
-    80005 format &
-            (10X, '  ... MORE')
-
-    80006 format &
-            (10X, 1p, e10.2, 2X, e10.2, 3X, a)
-
-    80007 format &
-            (10X, 1p, e10.2, 2X, e10.2, 2X, e10.2, 3X, a)
+    80005 format(10X, '  ... MORE')
 
     !///////////////////////////////////////////////////////////////////////
     !
@@ -2605,24 +2604,6 @@ module twopnt_core
     !///////////////////////////////////////////////////////////////////////
 
           go to 99999
-
-
-
-
-
-
-
-
-
-
-    9006  if (text>0) write (text, 99006) id, xxabs, xxrel
-          return
-
-    9007  if (text>0) write (text, 99007) id, xxage
-          return
-
-    9008  if (text>0) write (text, 99008) id, deltab
-          return
 
     99001 format &
             (/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
@@ -2647,19 +2628,6 @@ module twopnt_core
             /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
             /10X, i10, '  TOTAL NUMBER')
 
-    99005 format &
-            (/1X, a9, 'ERROR.  THE GUESSES FOR SOME UNKNOWNS ARE OUT OF' &
-            /10X, 'BOUNDS.' &
-           //10X, i10, '  GROUP A UNKNOWNS (A)' &
-            /10X, i10, '  GROUP B UNKNOWNS (B)' &
-            /10X, i10, '  COMPONENTS AT POINTS (C)' &
-            /10X, i10, '  POINTS (P)' &
-            /10X, i10, '  TOTAL UNKNOWNS' &
-            /10X, i10, '  NUMBER OUT OF BOUNDS' &
-           //10X, '     LOWER                   UPPER' &
-            /10X, '     BOUND       VALUE       BOUND   UNKNOWN' &
-            /)
-
     99006 format &
             (/1X, a9, 'ERROR.  THE BOUNDS FOR THE ABSOLUTE AND RELATIVE' &
             /10X, 'CONVERGENCE TESTS MUST BE ZERO OR POSITIVE.' &
@@ -2676,12 +2644,10 @@ module twopnt_core
             /10X, 'IN BOUNDS IS NEGATIVE.' &
            //10X, 1p, e10.2, '  DELTA B')
 
-    !///  EXIT.
+          ! EXIT.
+          99999 continue
 
-          stop
-    99999 continue
-
-    !     COPY THE PROTECTED LOCAL VARIABLE
+          ! COPY THE PROTECTED LOCAL VARIABLE
           steps = number
 
           return
@@ -2712,9 +2678,8 @@ module twopnt_core
 
       real(RK) ::  maxcon, ratio(2), stride, temp, ynorm
       type(twstat) :: stats
-      integer :: age, comps, count, desire, groupa, groupb,  j, jacobs, label, &
-                 length, nsteps, pmax, points, psave, qtask, qtype, return, &
-                 route, steps, xrepor
+      integer :: age, comps, desire, groupa, groupb, j, jacobs, label, length, nsteps, pmax, &
+                 points, psave, qtask, qtype, return, route, steps, xrepor
       intrinsic :: max
       logical :: allow, exist, found, satisf, time
 
@@ -3369,15 +3334,6 @@ module twopnt_core
           10 format(/1X, a9, 'ERROR.  THERE ARE TOO MANY POINTS.' &
                   //10X, i10, '  POINTS' &
                    /10X, i10, '  PMAX, LIMIT ON POINTS')
-          11 format(/1X, a9, 'ERROR.  THE LOWER AND UPPER BOUNDS ON SOME UNKNOWNS' &
-                   /10X, 'ARE OUT OF ORDER.' &
-                  //10X, i10, '  GROUP A UNKNOWNS (A)' &
-                   /10X, i10, '  GROUP B UNKNOWNS (B)' &
-                   /10X, i10, '  COMPONENTS AT POINTS (C)' &
-                   /10X, i10, '  TOTAL TYPES OF UNKNOWNS' &
-                   /10X, i10, '  NUMBER OF BOUNDS OUT OF ORDER' &
-                  //10X, '     LOWER       UPPER' &
-                   /10X, '     BOUND       BOUND   UNKNOWN'/)
           14 format(/1X, a9, 'ERROR.  NEITHER THE INITIAL TIME EVOLUTION NOR THE' &
                    /10X, 'SEARCH FOR THE STEADY STATE IS ALLOWED.')
           15 format(/1X, a9, 'ERROR.  UNKNOWN TASK.')
@@ -3419,9 +3375,7 @@ module twopnt_core
        10021 format(/1X, a9, 'EVOLVE PERFORMED A TIME EVOLUTION.')
        10022 format(/1X, a9, 'EVOLVE DID NOT PERFORM A TIME EVOLUTION.')
        10023 format(10X, a8, 3X, a6, 2X, a6, 3X, a)
-       80001 format('(', a, ' ', i10, ')')
-       80002 format(10X, 1p, e10.2, 2X, e10.2, 3X, a)
-       80003 format(10X, '  ... MORE')
+
 
       end subroutine twopnt
 
@@ -4239,10 +4193,8 @@ module twopnt_core
          real(RK), intent(in) :: v0   (groupa+comps*points+groupb)
          character(len=*), intent(in) :: id,name(:)
 
-         integer :: i,j,counter,len1,len2,local,length
-         intrinsic :: count
+         integer :: i,j,counter,len1,len2,length
          character(len=80) :: ctemp1,ctemp2,string
-         character :: c
 
          if (text==0) return
 

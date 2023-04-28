@@ -16,7 +16,7 @@
 !     VERSION 3.29 OF APRIL 1998
 !
 !     References:
-!         J. F. Grcar, "The Twopnt Program for Boundary Value Problems, Sandia National Labs
+!         J. F. Grcar, "The Twopnt Program for Boundary Value Problems", Sandia National Labs
 !         Report SAND91-8230, Livermore, California, April 1992.  Reprinted February 1996.
 !
 ! *************************************************************************************************
