@@ -2139,12 +2139,11 @@ module twopnt_core
           real(RK), dimension(groupa+comps*points+groupb), intent(in)    :: above,below
           real(RK), dimension(groupa+comps*points+groupb), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1
 
-          real(RK) :: abs0, abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, temp, &
+          real(RK) :: abs0, abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, &
                       value, xxabs, xxrel, y0norm, y1norm
-          integer  :: age, entry, expone, j, leveld, levelm, &
-                      number, route, steps, xxage
+          integer  :: age, entry, expone, leveld, levelm, number, route, steps, xxage
           intrinsic :: abs, int, log10, max, min, mod
-          logical   :: force,success,converged
+          logical   :: force,success,converged,update_jac
           character(len=16) :: column(7)
 
           character(len=*), parameter :: id = 'SEARCH:  '
@@ -2166,9 +2165,6 @@ module twopnt_core
              if (text>0) write (text, 99001) id, route
              return
           end if
-
-          ! ONE-TIME INITIALIZATION.
-          number = 0
 
           ! CHECK THE ARGUMENTS.
           error = .not. all([comps,points,groupa,groupb]>=0)
@@ -2218,18 +2214,18 @@ module twopnt_core
           !
           !///////////////////////////////////////////////////////////////////////
 
-    !///  J EXIST?
+          ! Number of steps
+          number     = 0
+          update_jac = .false.
+          converged  = .false.
 
-          if (.not. exist) go to 2010
+          newton_iterations: do while (.not.converged)
 
-    !///  AGE < XXAGE?
-
-          update_jacobian: if (age>=xxage .or. .not.exist) then
-
-             ! EVALUATE J AT V0.  RE-EVALUATE Y0 := F(V0) IN CASE F CHANGES WHEN
-             ! J DOES. SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
-
-        2010  continue
+          ! Evaluate Jacobian at v0. Re-evaluate y0=F(v0) in case F changes when the Jacobian does.
+          ! Solve J*s0 = v0; Evaluate relative and absolute errors
+          update_jacobian: if (age>=xxage &                      ! Jacobian is too old
+                         .or. (age>0 .and. update_jac) &         ! Jacobian not new, probably inaccurate
+                         .or. (number==0 .and. .not.exist)) then ! First initialization
 
               call twcopy(groupa+comps*points+groupb,v0,buffer)
               signal = 'PREPARE'
@@ -2238,7 +2234,6 @@ module twopnt_core
               route = 1
               go to 99999
 
-
               2020 continue
               signal = ' '
               age = 0
@@ -2246,63 +2241,43 @@ module twopnt_core
               ! JACOBIAN EVALUATION SHOULD RETURN A NEW RESIDUAL TOO.
               if (levelm>0 .and. text>0) call twlogr(column(2),condit)
 
+              ! Turn off Jacobian request
+              update_jac = .false.
+
           endif update_jacobian
 
           ! EVALUATE Y0 := F(V0).  SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
-          call twcopy (groupa+comps*points+groupb,v0,buffer)
-          signal = 'RESIDUAL'
-    !     GO TO 2040 WHEN ROUTE = 2
-          route = 2
-          go to 99999
+          update_F: if (age==0 .or. number==0) then
 
-          2040 continue
-          signal = ' '
-          call twcopy (groupa+comps*points+groupb, buffer, y0)
-          y0norm = twnorm (groupa+comps*points+groupb, y0)
+              buffer = v0
+              signal = 'RESIDUAL'
+        !     GO TO 2040 WHEN ROUTE = 2
+              route = 2
+              go to 99999
 
-          call twcopy (groupa+comps*points+groupb, y0, buffer)
-          signal = 'SOLVE'
-    !     GO TO 2050 WHEN ROUTE = 3
-          route = 3
-          go to 99999
-    2050  continue
-          signal = ' '
-          call twcopy (groupa+comps*points+groupb, buffer, s0)
-          s0norm = twnorm (groupa+comps*points+groupb, s0)
+              2040 continue
+              signal = ' '
+              y0     = buffer
+              y0norm = twnorm(groupa+comps*points+groupb,y0)
 
-          ! Check for success
-          call check_convergence(xxrel,xxabs,v0,s0,abs0,rel0,success)
-          if (success) goto 2170
+              buffer = y0
+              signal = 'SOLVE'
+        !     GO TO 2050 WHEN ROUTE = 3
+              route = 3
+              go to 99999
+        2050  continue
+              signal = ' '
+              s0     = buffer
+              s0norm = twnorm(groupa+comps*points+groupb,s0)
 
-    !///  CHOOSE DELTAB.
+              ! Check for success
+              call check_convergence(xxrel,xxabs,v0,s0,abs0,rel0,success)
+              if (success) exit newton_iterations
 
-    2070  continue
+          endif update_F
 
-    !     DELTAB IS THE LARGEST DAMPING COEFFICIENT BETWEEN 0 AND 1 THAT
-    !     KEEPS V1 WITHIN BOUNDS.  IF V1 BELONGS ON THE BOUNDARY, THEN
-    !     PROVISIONS ARE MADE TO FORCE IT THERE DESPITE ROUNDING ERROR.
-
-          deltab = one
-          force = .false.
-          do 2080 j = 1, groupa+comps*points+groupb
-             if (s0(j) > max (zero, v0(j) - below(j))) then
-                temp = (v0(j) - below(j)) / s0(j)
-                if (temp < deltab) then
-                   deltab = temp
-                   entry = j
-                   force = .true.
-                   value = below(j)
-                end if
-             else if (s0(j) < min (zero, v0(j) - above(j))) then
-                temp = (v0(j) - above(j)) / s0(j)
-                if (temp < deltab) then
-                   deltab = temp
-                   entry = j
-                   force = .true.
-                   value = above(j)
-                end if
-             end if
-    2080  continue
+          ! CHOOSE DELTAB.
+          call newton_damping(v0,s0,above,below,deltab,force,entry,value)
 
           error = deltab < zero
           if (error) then
@@ -2312,7 +2287,11 @@ module twopnt_core
 
           !///  0 < DELTAB?
           if (.not. (zero < deltab)) then
-             if (0 < age) go to 2010
+
+             ! If deltab becomes negative after some iterations, try a recovery by updating
+             ! the Jacobian.
+             update_jac = age>0
+             if (update_jac) cycle newton_iterations
 
              if (levelm>0 .and. text>0) then
                 call twlogr (column(1), y0norm)
@@ -2338,8 +2317,8 @@ module twopnt_core
           deltad = one
           expone = 0
 
-    !///  V1 := V0 - DELTAB DELTAD S0.  EVALUATE Y1 := F(V1).  SOLVE
-    !///  J S1 = Y1.  EVALUATE ABS1 AND REL1.
+          !///  V1 := V0 - DELTAB DELTAD S0.  EVALUATE Y1 := F(V1).  SOLVE
+          !///  J S1 = Y1.  EVALUATE ABS1 AND REL1.
 
     2100  continue
 
@@ -2374,12 +2353,16 @@ module twopnt_core
 
     !///  NORM S1 < OR = NORM S0?
 
-          if (s1norm <= s0norm) then
-          else
+          if (.not. s1norm <= s0norm) then
+
              deltad = half * deltad
              expone = expone + 1
              if (expone <= 5) go to 2100
-                if (0 < age) go to 2010
+
+                ! Check if we can try updating the Jacobian
+                update_jac = age>0
+                if (update_jac) cycle newton_iterations
+
                    if (levelm>0 .and. text>0) then
                       call twlogr (column(1), y0norm)
                       call twlogr (column(3), s0norm)
@@ -2412,30 +2395,18 @@ module twopnt_core
              column(2) = ' '
           end if
 
-    !///  S0 := S1, U := V1, Y0 := Y1, AGE := AGE + 1.
-
-          age = age + 1
+          ! Advance step
+          age    = age + 1
           number = number + 1
-          call twcopy (groupa+comps*points+groupb, s1, s0)
-          call twcopy (groupa+comps*points+groupb, v1, v0)
-          call twcopy (groupa+comps*points+groupb, y1, y0)
-          s0norm = s1norm
-          y0norm = y1norm
-          abs0 = abs1
-          rel0 = rel1
+          s0     = s1; s0norm = s1norm
+          v0     = v1; y0norm = y1norm
+          y0     = y1
+          abs0   = abs1
+          rel0   = rel1
 
-    !///  S0 SMALL VS V0?
-          if (.not.converged) then
-             if (age < xxage) then
-                  go to 2070
-             else
-                  go to 2010
-             endif
-          end if
+          end do newton_iterations
 
-    !///  SUCCESS.
-
-    2170  continue
+          ! SUCCESS!
 
     !///  PRINT.
 
@@ -2553,6 +2524,48 @@ module twopnt_core
           converged = rel0<=RTOL .and. abs0<=ATOL
 
       end subroutine check_convergence
+
+      ! Deltab is the largest damping coefficient in [0,1] that keeps v1 within bounds.
+      ! If v1 belongs on the boundary, then provisions are made to force it there despite
+      ! rounding error.
+      pure subroutine newton_damping(v0,s0,above,below,deltab,force,entry,value)
+         real(RK), intent(out) :: deltab !> Damped Newton parameter
+         logical , intent(out) :: force  !>
+         integer , intent(out) :: entry
+         real(RK), intent(out) :: value
+         real(RK), intent(in)  :: v0(:)
+         real(RK), intent(in), dimension(size(v0)) :: s0,above,below
+
+         integer :: j
+         real(RK) :: temp
+
+         ! Initialize no damping
+         deltab = one
+         entry  = 0
+         force  = .false.
+         value  = zero
+
+         do j = 1, size(v0)
+            if (s0(j)>max(zero, v0(j) - below(j))) then
+                temp = (v0(j) - below(j)) / s0(j)
+                if (temp<deltab) then
+                   deltab = temp
+                   entry = j
+                   force = .true.
+                   value = below(j)
+                end if
+             else if (s0(j) < min (zero, v0(j) - above(j))) then
+                temp = (v0(j) - above(j)) / s0(j)
+                if (temp<deltab) then
+                   deltab = temp
+                   entry = j
+                   force = .true.
+                   value = above(j)
+                end if
+             end if
+         end do
+
+      end subroutine newton_damping
 
 
       subroutine print_search_header(iunit,id)
