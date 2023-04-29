@@ -2302,18 +2302,8 @@ module twopnt_core
                  if (update_jac) cycle newton_iterations
 
                  if (levelm>0 .and. text>0) then
-                    call twlogr (column(1), y0norm)
-                    call twlogr (column(3), s0norm)
-                    call twlogr (column(4), abs0)
-                    call twlogr (column(5), rel0)
-                    column(6) = ' '
-                    if (deltab /= one) call twlogr(column(6), deltab)
-                    column(7) = ' '
-                    if (deltad /= one) call twlogr(column(7), deltad)
-                    write (text, 2) number, column
-
+                    call print_newt_summary(text,number,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
                     call print_invalid_ranges(id,text,name,groupa,groupb,comps,points,below,above,v0,s0)
-
                  end if
 
                  report  = qbnds
@@ -2429,7 +2419,6 @@ module twopnt_core
 
           ! Informative messages.
           1 format(/1X, a9, 'FAILURE.  THE SEARCH DIVERGES.')
-          2 format(10X, i6, 3(3X, a6), 2(3X, a6, 2X, a6))
           3 format(/1X, a9, 'SUCCESS.  THE SOLUTION:')
           4 format(/1X, a9, 'SUCCESS.')
 
