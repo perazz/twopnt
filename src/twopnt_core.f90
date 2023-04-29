@@ -2139,14 +2139,13 @@ module twopnt_core
           real(RK), dimension(groupa+comps*points+groupb), intent(in)    :: above,below
           real(RK), dimension(groupa+comps*points+groupb), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1
 
-          real(RK) :: abs0, abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, sj, temp, &
-                      value, vj, xxabs, xxrel, y0norm, y1norm
-          integer  :: age, counter, entry, expone, i, j, k, len1, len2, length, leveld, levelm, &
+          real(RK) :: abs0, abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, temp, &
+                      value, xxabs, xxrel, y0norm, y1norm
+          integer  :: age, entry, expone, j, leveld, levelm, &
                       number, route, steps, xxage
           intrinsic :: abs, int, log10, max, min, mod
           logical   :: force,success,converged
           character(len=16) :: column(7)
-          character(len=80) :: ctemp1,ctemp2,string
 
           character(len=*), parameter :: id = 'SEARCH:  '
 
@@ -2321,69 +2320,13 @@ module twopnt_core
                 call twlogr (column(4), abs0)
                 call twlogr (column(5), rel0)
                 column(6) = ' '
-                if (deltab /= one) call twlogr (column(6), deltab)
+                if (deltab /= one) call twlogr(column(6), deltab)
                 column(7) = ' '
-                if (deltad /= one) call twlogr (column(7), deltad)
+                if (deltad /= one) call twlogr(column(7), deltad)
                 write (text, 10004) number, column
-                write (text, 10002) id
 
-                counter = 0
-                do 2090 j = 1, groupa+comps*points+groupb
-                   if ((below(j) == v0(j) .and. zero < s0(j)) .or. &
-                      (v0(j) == above(j) .and. s0(j) < zero)) then
-                      counter = counter + 1
-                      if (counter <= MAX_ERROR_LINES) then
-                         if (j <= groupa) then
-                            i = j
-                         else if (j <= groupa + comps * points) then
-                            i = groupa + mod (j - groupa - 1, comps) + 1
-                         else
-                            i = j - groupa - comps * points
-                         end if
+                call print_invalid_ranges(id,text,name,groupa,groupb,comps,points,below,above,v0,s0)
 
-                         if (names == comps + groupa + groupb) then
-                            ctemp1 = name(i)
-                         else
-                            ctemp1 = ' '
-                         end if
-                         call twsqez (len1, ctemp1)
-
-                         if (j <= groupa) then
-                            write (ctemp2, 80001) 'A', i
-                         else if (j <= groupa + comps * points) then
-                            write (ctemp2, 80002) 'C', i, &
-                               'P', int ((j - groupa - 1) / comps) + 1
-                         else
-                            write (ctemp2, 80001) 'B', i
-                         end if
-                         call twsqez (len2, ctemp2)
-
-                         if (ctemp1 == ' ') then
-                            string = ctemp2
-                            length = len2
-                         else if (len1 + 2 + len2 <= 30) then
-                            string = ctemp1 (1 : len1) // '  ' // ctemp2
-                            length = len1 + 2 + len2
-                         else if (len1 + 1 + len2 <= 30) then
-                            string = ctemp1 (1 : len1) // ' ' // ctemp2
-                            length = len1 + 1 + len2
-                         else
-                            len1 = 30 - len2 - 4
-                            string = ctemp1 (1 : len1) // '... ' // ctemp2
-                            length = 30
-                         end if
-
-                         if (below(j) == v0(j)) then
-                            write (text, 80003) &
-                               'LOWER', v0(j), string (1 : length)
-                         else
-                            write (text, 80003) &
-                               'UPPER', v0(j), string (1 : length)
-                         end if
-                      end if
-                   end if
-    2090        continue
-                if (MAX_ERROR_LINES < counter) write (text, 80005)
              end if
 
              report = qbnds
@@ -2527,33 +2470,10 @@ module twopnt_core
     !     INFORMATIVE MESSAGES.
     !
     !///////////////////////////////////////////////////////////////////////
-
-    10002 format(/1X, a9, 'FAILURE.  THE SEARCH FOR THE FOLLOWING UNKNOWNS GOES' &
-                /10X, 'OUT OF BOUNDS.' &
-               //10X, 'BOUND       VALUE   UNKNOWN'/)
-
-    10003 format &
-            (/1X, a9, 'FAILURE.  THE SEARCH DIVERGES.')
-
-    10004 format &
-            (10X, i6, 3(3X, a6), 2(3X, a6, 2X, a6))
-
-    10005 format &
-            (/1X, a9, 'SUCCESS.  THE SOLUTION:')
-
-    10006 format &
-            (/1X, a9, 'SUCCESS.')
-
-    80001 format &
-             ('(', a, ' ', i10, ')')
-
-    80002 format &
-            ('(', a, ' ', i10, ' ', a, ' ', i10, ')')
-
-    80003 format &
-            (10X, a5, 2X, 1p, e10.2, 3X, a)
-
-    80005 format(10X, '  ... MORE')
+    10003 format(/1X, a9, 'FAILURE.  THE SEARCH DIVERGES.')
+    10004 format(10X, i6, 3(3X, a6), 2(3X, a6, 2X, a6))
+    10005 format(/1X, a9, 'SUCCESS.  THE SOLUTION:')
+    10006 format(/1X, a9, 'SUCCESS.')
 
     !///////////////////////////////////////////////////////////////////////
     !
@@ -4189,26 +4109,40 @@ module twopnt_core
 
       end subroutine print_invalid_bounds
 
-      subroutine print_invalid_ranges(id,text,name,groupa,groupb,comps,points,below,above,v0)
+      subroutine print_invalid_ranges(id,text,name,groupa,groupb,comps,points,below,above,v0,s0)
          integer , intent(in) :: text,groupa,groupb,comps,points
-         real(RK), intent(in) :: below(groupa+comps*points+groupb)
-         real(RK), intent(in) :: above(groupa+comps*points+groupb)
-         real(RK), intent(in) :: v0   (groupa+comps*points+groupb)
+         real(RK), intent(in) :: below (groupa+comps*points+groupb)
+         real(RK), intent(in) :: above (groupa+comps*points+groupb)
+         real(RK), intent(in) :: v0    (groupa+comps*points+groupb)
+         real(RK), intent(in), optional :: s0(groupa+comps*points+groupb)
          character(len=*), intent(in) :: id,name(:)
 
          integer :: i,j,counter,len1,len2,length
+         logical :: search,verified(groupa+comps*points+groupb)
          character(len=80) :: ctemp1,ctemp2,string
 
          if (text==0) return
 
-         counter = count(.not.(below<=v0.and.v0<=above))
+         search = present(s0)
 
-         write (text, 1) id, groupa,groupb,comps,points,groupa+comps*points+groupb,counter
+         if (search) then
+             verified = (below==v0.and.s0>zero).or.(above==v0.and.s0<zero)
+         else
+             verified = (below<=v0.and.v0<=above)
+         end if
+
+         counter = count(.not.verified)
+
+         if (search) then
+            write (text,7) id
+         else
+            write (text,1) id, groupa,groupb,comps,points,groupa+comps*points+groupb,counter
+         end if
 
          counter = 0
          loop_bounds: do j = 1, groupa + comps*points + groupb
 
-            if (below(j)<=v0(j) .and. v0(j)<=above(j)) cycle loop_bounds
+            if (verified(j)) cycle loop_bounds
 
             counter = counter + 1
             if (counter > MAX_ERROR_LINES) exit loop_bounds
@@ -4254,7 +4188,11 @@ module twopnt_core
                length = 30
             end if
 
-            write (text, 5) below(j), v0(j), above(j), string(1:length)
+            if (search) then
+                write (text, 6) merge('LOWER','UPPER',below(j)==v0(j)),v0(j),string(1:length)
+            else
+                write (text, 5) below(j), v0(j), above(j), string(1:length)
+            end if
 
          end do loop_bounds
 
@@ -4276,6 +4214,11 @@ module twopnt_core
          3 format('(',a,1x,i10,1x,a,1x,i10,')')
          4 format(10X, '  ... MORE')
          5 format(10X, 1p, e10.2, 2X, e10.2, 2X, e10.2, 3X, a)
+         6 format(10X, a5, 2X, 1p, e10.2, 3X, a)
+
+         7 format(/1X, a9, 'FAILURE.  THE SEARCH FOR THE FOLLOWING UNKNOWNS GOES' &
+                 /10X, 'OUT OF BOUNDS.' &
+                //10X, 'BOUND       VALUE   UNKNOWN'/)
 
       end subroutine print_invalid_ranges
 
