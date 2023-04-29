@@ -191,6 +191,26 @@ module twopnt_core
         module procedure realloc_real
     end interface realloc
 
+    ! Procedure interfaces
+    abstract interface
+
+       ! Residual function calculation:
+       subroutine twopnt_residual(error,text,points,time,stride,x,buffer)
+          import RK
+          implicit none
+          logical, intent(out) :: error  ! .true. if something went wrong
+          integer, intent(in)  :: text   ! output unit (0 for NONE)
+          integer, intent(in)  :: points ! Number of 1D variables
+          logical, intent(in)  :: time   ! Time-resolved or steady state
+          real(RK), intent(in) :: stride !
+          real(RK), intent(in) :: x(*)   ! dimensioned >=PMAX, contains the grid
+          real(RK), intent(inout) :: buffer(*) ! on input: contains the approximate solution
+                                               ! on output:
+       end subroutine twopnt_residual
+
+    end interface
+
+
     contains
 
        ! Initialize the control structure

@@ -84,10 +84,10 @@ program TWMAIN
     call settings%set(ERROR, TEXT, 'ADAPT', .TRUE.)
     IF (ERROR) GO TO 9001
 
-    call settings%set(ERROR, TEXT, 'LEVELD', 2)
+    call settings%set(ERROR, TEXT, 'LEVELD', 1)
     IF (ERROR) GO TO 9002
 
-    call settings%set(ERROR, TEXT, 'LEVELM', 2)
+    call settings%set(ERROR, TEXT, 'LEVELM', 1)
     IF (ERROR) GO TO 9002
 
     call settings%set(ERROR, TEXT, 'STEPS1', 50)
@@ -192,11 +192,8 @@ program TWMAIN
 
              case ('RESIDUAL')
 
-                ! EVALUATE THE FUNCTION
-                CALL TWFUNC(ERROR, TEXT, &
-                            BUFFER, F, F0, G, G0, H, K, LAMBDA, MU, OMEGA, POINTS, RHO, &
-                            STRIDE, T, T0, TIME, TMAX, TZERO, U0, WMAX, X)
-
+                ! Evaluate residual
+                call residual(error,text,points,time,stride,x,buffer)
                 IF (ERROR) GO TO 9005
 
              case ('PREPARE')
@@ -211,9 +208,7 @@ program TWMAIN
                     IF (ERROR) GO TO 9006
 
                     IF (return_call) THEN
-                        CALL TWFUNC(ERROR, TEXT, &
-                                    BUFFER, F, F0, G, G0, H, K, LAMBDA, MU, OMEGA, POINTS, RHO, &
-                                    STRIDE, T, T0, TIME, TMAX, TZERO, U0, WMAX, X)
+                        call residual(error,text,points,time,stride,x,buffer)
                         IF (ERROR) GO TO 9005
 
                     else
@@ -297,6 +292,22 @@ program TWMAIN
     99009 FORMAT(/1X, A9, 'ERROR.  TWOPNT DOES NOT SOLVE THE PROBLEM.'//10X, '   REPORT:  ', A)
 
     contains
+
+      !  Residual function interface:
+      subroutine residual(error,text,points,time,stride,x,buffer)
+         logical, intent(out) :: error  ! .true. if something went wrong
+         integer, intent(in)  :: text   ! output unit (0 for NONE)
+         integer, intent(in)  :: points ! Number of 1D variables
+         logical, intent(in)  :: time   ! Time-resolved or steady state
+         real(RK), intent(in) :: stride !
+         real(RK), intent(in) :: x(*)   ! dimensioned >=PMAX, contains the grid
+         real(RK), intent(inout) :: buffer(*) ! on input: contains the approximate solution
+
+         CALL TWFUNC(ERROR, TEXT, &
+                     BUFFER, F, F0, G, G0, H, K, LAMBDA, MU, OMEGA, POINTS, RHO, &
+                     STRIDE, T, T0, TIME, TMAX, TZERO, U0, WMAX, X)
+
+      end subroutine residual
 
       ! Compute density, viscosity and thermal conductivity of Argon at given T
       elemental subroutine AR_TRANSPORT(T,RHO,MU,K)
