@@ -2163,14 +2163,14 @@ module twopnt_core
           if (signal /= ' ') then
              go to (2020, 2040, 2050, 2140, 2150, 2180) route
              error = .true.
-             if (text>0) write (text, 99001) id, route
+             if (text>0) write (text, 5) id, route
              return
           end if
 
           ! Check number of variables
           error = .not. all([comps,points,groupa,groupb]>=0)
           sizes: if (error) then
-              if (text>0) write (text, 99002) id, comps,points,groupa,groupb,&
+              if (text>0) write (text, 6) id, comps,points,groupa,groupb,&
                                                   groupa+comps*points+groupb
               return
           endif sizes
@@ -2178,7 +2178,7 @@ module twopnt_core
           ! Check variable names
           error = .not. (names== 1 .or. names == groupa+comps+groupb)
           number_of_names: if (error) then
-              if (text>0) write (text, 99003) id, names, comps, groupa, groupb, groupa + comps + groupb
+              if (text>0) write (text, 7) id, names, comps, groupa, groupb, groupa + comps + groupb
               return
           end if number_of_names
 
@@ -2199,14 +2199,14 @@ module twopnt_core
           ! Check tolerances
           error = .not. (zero<=xxabs .and. zero<=xxrel)
           if (error) then
-             if (text>0) write (text, 99006) id, xxabs, xxrel
+             if (text>0) write (text, 8) id, xxabs, xxrel
              return
           end if
 
           ! Check Jacobian update age
           error = .not. xxage>0
           if (error) then
-             if (text>0) write (text, 99007) id, xxage
+             if (text>0) write (text, 9) id, xxage
              return
           end if
 
@@ -2289,7 +2289,7 @@ module twopnt_core
 
               error = deltab < zero
               if (error) then
-                  if (text>0) write (text, 99008) id, deltab
+                  if (text>0) write (text,10) id, deltab
                   return
               end if
 
@@ -2310,7 +2310,7 @@ module twopnt_core
                     if (deltab /= one) call twlogr(column(6), deltab)
                     column(7) = ' '
                     if (deltad /= one) call twlogr(column(7), deltad)
-                    write (text, 10004) number, column
+                    write (text, 2) number, column
 
                     call print_invalid_ranges(id,text,name,groupa,groupb,comps,points,below,above,v0,s0)
 
@@ -2378,7 +2378,7 @@ module twopnt_core
                     ! Failed too many times.
                     if (levelm>0 .and. text>0) then
                        call print_newt_summary(text,number,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
-                       write (text, 10003) id
+                       write (text, 1) id
                     end if
                     report  = qdvrg
                     success = .false.
@@ -2408,7 +2408,7 @@ module twopnt_core
 
              if (leveld>0) then
                 ! Ask to display the final solution
-                write (text, 10005) id
+                write (text, 3) id
                 signal = 'SHOW'
                 buffer = v0
     !           GO TO 2180 WHEN ROUTE = 6
@@ -2416,7 +2416,7 @@ module twopnt_core
                 steps = number ! Copy the protected local variable
                 return
              else
-                write (text, 10006) id
+                write (text, 4) id
              end if
           end if
 
@@ -2427,60 +2427,40 @@ module twopnt_core
           steps = number ! Copy the protected local variable
           return
 
-    !///////////////////////////////////////////////////////////////////////
-    !
-    !     INFORMATIVE MESSAGES.
-    !
-    !///////////////////////////////////////////////////////////////////////
-    10003 format(/1X, a9, 'FAILURE.  THE SEARCH DIVERGES.')
-    10004 format(10X, i6, 3(3X, a6), 2(3X, a6, 2X, a6))
-    10005 format(/1X, a9, 'SUCCESS.  THE SOLUTION:')
-    10006 format(/1X, a9, 'SUCCESS.')
+          ! Informative messages.
+          1 format(/1X, a9, 'FAILURE.  THE SEARCH DIVERGES.')
+          2 format(10X, i6, 3(3X, a6), 2(3X, a6, 2X, a6))
+          3 format(/1X, a9, 'SUCCESS.  THE SOLUTION:')
+          4 format(/1X, a9, 'SUCCESS.')
 
-    !///////////////////////////////////////////////////////////////////////
-    !
-    !     ERROR MESSAGES.
-    !
-    !///////////////////////////////////////////////////////////////////////
-
-    99001 format &
-            (/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-           //10X, i10, '  ROUTE')
-
-    99002 format &
-            (/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
-            /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE, NUMBERS OF ALL TYPES' &
-            /10X, 'OF UNKNOWNS MUST BE AT LEAST ZERO, AND TOTAL UNKNOWNS' &
-            /10X, 'MUST BE POSITIVE.' &
-           //10X, i10, '  COMPS, COMPONENTS' &
-            /10X, i10, '  POINTS' &
-            /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-            /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-            /10X, i10, '  TOTAL UNKNOWNS')
-
-    99003 format &
-            (/1X, a9, 'ERROR.  THE NUMBER OF NAMES IS WRONG.' &
-           //10X, i10, '  NAMES' &
-           //10X, i10, '  COMPS, COMPONENTS' &
-            /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-            /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-            /10X, i10, '  TOTAL NUMBER')
-
-    99006 format &
-            (/1X, a9, 'ERROR.  THE BOUNDS FOR THE ABSOLUTE AND RELATIVE' &
-            /10X, 'CONVERGENCE TESTS MUST BE ZERO OR POSITIVE.' &
-           //10X, 1p, e10.2, '  SSABS OR TDABS, ABSOLUTE ERROR' &
-            /10X, 1p, e10.2, '  SSREL OR TDREL, RELATIVE ERROR')
-
-    99007 format &
-            (/1X, a9, 'ERROR.  THE RETIREMENT AGE OF THE JACOBIAN MATRIX' &
-            /10X, 'MUST BE POSITIVE.' &
-           //10X, i10, '  SSAGE OR TDAGE, MATRIX RETIREMENT AGE')
-
-    99008 format &
-            (/1X, a9, 'ERROR.  THE DAMPING COEFFICIENT FOR STAYING' &
-            /10X, 'IN BOUNDS IS NEGATIVE.' &
-           //10X, 1p, e10.2, '  DELTA B')
+          ! Error messages.
+          5 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
+                 //10X, i10, '  ROUTE')
+          6 format(/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
+                  /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE, NUMBERS OF ALL TYPES' &
+                  /10X, 'OF UNKNOWNS MUST BE AT LEAST ZERO, AND TOTAL UNKNOWNS' &
+                  /10X, 'MUST BE POSITIVE.' &
+                 //10X, i10, '  COMPS, COMPONENTS' &
+                  /10X, i10, '  POINTS' &
+                  /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                  /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                  /10X, i10, '  TOTAL UNKNOWNS')
+          7 format(/1X, a9, 'ERROR.  THE NUMBER OF NAMES IS WRONG.' &
+                 //10X, i10, '  NAMES' &
+                 //10X, i10, '  COMPS, COMPONENTS' &
+                  /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                  /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                  /10X, i10, '  TOTAL NUMBER')
+          8 format(/1X, a9, 'ERROR.  THE BOUNDS FOR THE ABSOLUTE AND RELATIVE' &
+                  /10X, 'CONVERGENCE TESTS MUST BE ZERO OR POSITIVE.' &
+                 //10X, 1p, e10.2, '  SSABS OR TDABS, ABSOLUTE ERROR' &
+                  /10X, 1p, e10.2, '  SSREL OR TDREL, RELATIVE ERROR')
+          9 format(/1X, a9, 'ERROR.  THE RETIREMENT AGE OF THE JACOBIAN MATRIX' &
+                  /10X, 'MUST BE POSITIVE.' &
+                 //10X, i10, '  SSAGE OR TDAGE, MATRIX RETIREMENT AGE')
+         10 format(/1X, a9, 'ERROR.  THE DAMPING COEFFICIENT FOR STAYING' &
+                  /10X, 'IN BOUNDS IS NEGATIVE.' &
+                 //10X, 1p, e10.2, '  DELTA B')
 
       end subroutine search
 
