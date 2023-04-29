@@ -73,6 +73,7 @@ module twopnt_core
     logical, parameter :: DEBUG = .true.
     integer, parameter :: CONTRL_MAX_LEN = 40
     integer, parameter :: MAX_ERROR_LINES = 20
+    integer, parameter :: MAX_DECAY_ITERATIONS = 5
 
     ! Supported versions
 
@@ -706,7 +707,7 @@ module twopnt_core
       end subroutine twcopy
 
       ! Compute the max-norm of a vector
-      pure real(RK) function twnorm (n, x)
+      pure real(RK) function twnorm (n,x)
           integer,  intent(in) :: n
           real(RK), intent(in) :: x(n)
           intrinsic :: abs,maxval
@@ -2166,7 +2167,7 @@ module twopnt_core
              return
           end if
 
-          ! CHECK THE ARGUMENTS.
+          ! Check number of variables
           error = .not. all([comps,points,groupa,groupb]>=0)
           sizes: if (error) then
               if (text>0) write (text, 99002) id, comps,points,groupa,groupb,&
@@ -2174,6 +2175,7 @@ module twopnt_core
               return
           endif sizes
 
+          ! Check variable names
           error = .not. (names== 1 .or. names == groupa+comps+groupb)
           number_of_names: if (error) then
               if (text>0) write (text, 99003) id, names, comps, groupa, groupb, groupa + comps + groupb
@@ -2187,18 +2189,21 @@ module twopnt_core
              return
           end if
 
+          ! Check the unknowns are valid
           error = any(.not.(below<=v0 .and. v0<=above))
           if (error) then
              call print_invalid_ranges(id,text,name,groupa,groupb,comps,points,below,above,v0)
              return
           end if
 
+          ! Check tolerances
           error = .not. (zero<=xxabs .and. zero<=xxrel)
           if (error) then
              if (text>0) write (text, 99006) id, xxabs, xxrel
              return
           end if
 
+          ! Check Jacobian update age
           error = .not. xxage>0
           if (error) then
              if (text>0) write (text, 99007) id, xxage
@@ -2210,7 +2215,7 @@ module twopnt_core
 
           !///////////////////////////////////////////////////////////////////////
           !
-          !     SIR ISSAC NEWTON'S ALGORITHM.
+          !     SIR ISAAC NEWTON'S ALGORITHM.
           !
           !///////////////////////////////////////////////////////////////////////
 
@@ -2221,220 +2226,206 @@ module twopnt_core
 
           newton_iterations: do while (.not.converged)
 
-          ! Evaluate Jacobian at v0. Re-evaluate y0=F(v0) in case F changes when the Jacobian does.
-          ! Solve J*s0 = v0; Evaluate relative and absolute errors
-          update_jacobian: if (age>=xxage &                      ! Jacobian is too old
-                         .or. (age>0 .and. update_jac) &         ! Jacobian not new, probably inaccurate
-                         .or. (number==0 .and. .not.exist)) then ! First initialization
+              ! Evaluate Jacobian at v0. Re-evaluate y0=F(v0) in case F changes when the Jacobian does.
+              ! Solve J*s0 = v0; Evaluate relative and absolute errors
+              update_jacobian: if (age>=xxage &                      ! Jacobian is too old
+                             .or. (age>0 .and. update_jac) &         ! Jacobian not new, probably inaccurate
+                             .or. (number==0 .and. .not.exist)) then ! First initialization
 
-              call twcopy(groupa+comps*points+groupb,v0,buffer)
-              signal = 'PREPARE'
+                  call twcopy(groupa+comps*points+groupb,v0,buffer)
+                  signal = 'PREPARE'
 
-              ! GO TO 2020 WHEN ROUTE = 1
-              route = 1
-              go to 99999
+                  ! GO TO 2020 WHEN ROUTE = 1
+                  route = 1
+                  steps = number ! Copy the protected local variable
+                  return
 
-              2020 continue
-              signal = ' '
-              age = 0
+                  2020 continue
+                  signal = ' '
+                  age = 0
 
-              ! JACOBIAN EVALUATION SHOULD RETURN A NEW RESIDUAL TOO.
-              if (levelm>0 .and. text>0) call twlogr(column(2),condit)
+                  ! JACOBIAN EVALUATION SHOULD RETURN A NEW RESIDUAL TOO.
+                  if (levelm>0 .and. text>0) call twlogr(column(2),condit)
 
-              ! Turn off Jacobian request
-              update_jac = .false.
+                  ! Turn off Jacobian request
+                  update_jac = .false.
 
-          endif update_jacobian
+              endif update_jacobian
 
-          ! EVALUATE Y0 := F(V0).  SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
-          update_F: if (age==0 .or. number==0) then
+              ! EVALUATE Y0 := F(V0).  SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
+              update_F: if (age==0 .or. number==0) then
 
-              buffer = v0
+                  buffer = v0
+                  signal = 'RESIDUAL'
+            !     GO TO 2040 WHEN ROUTE = 2
+                  route = 2
+                  steps = number ! Copy the protected local variable
+                  return
+
+                  2040 continue
+                  signal = ' '
+                  y0     = buffer
+                  y0norm = twnorm(groupa+comps*points+groupb,y0)
+
+                  buffer = y0
+                  signal = 'SOLVE'
+            !     GO TO 2050 WHEN ROUTE = 3
+                  route = 3
+                  steps = number ! Copy the protected local variable
+                  return
+            2050  continue
+                  signal = ' '
+                  s0     = buffer
+                  s0norm = twnorm(groupa+comps*points+groupb,s0)
+
+                  ! Check for success
+                  call check_convergence(xxrel,xxabs,v0,s0,abs0,rel0,success)
+                  if (success) exit newton_iterations
+
+              endif update_F
+
+              ! CHOOSE DELTAB.
+              call newton_damping(v0,s0,above,below,deltab,force,entry,value)
+
+              error = deltab < zero
+              if (error) then
+                  if (text>0) write (text, 99008) id, deltab
+                  return
+              end if
+
+              !///  0 < DELTAB?
+              if (.not. (zero < deltab)) then
+
+                 ! If deltab becomes negative after some iterations, try a recovery by updating
+                 ! the Jacobian.
+                 update_jac = age>0
+                 if (update_jac) cycle newton_iterations
+
+                 if (levelm>0 .and. text>0) then
+                    call twlogr (column(1), y0norm)
+                    call twlogr (column(3), s0norm)
+                    call twlogr (column(4), abs0)
+                    call twlogr (column(5), rel0)
+                    column(6) = ' '
+                    if (deltab /= one) call twlogr(column(6), deltab)
+                    column(7) = ' '
+                    if (deltad /= one) call twlogr(column(7), deltad)
+                    write (text, 10004) number, column
+
+                    call print_invalid_ranges(id,text,name,groupa,groupb,comps,points,below,above,v0,s0)
+
+                 end if
+
+                 report  = qbnds
+                 success = .false.
+                 steps = number ! Copy the protected local variable
+                 return
+              end if
+
+              ! Exponential decay of the damping parameter.
+              deltad = one ! Current
+              expone = 0   ! Number of exponential decay iterations
+
+              !///  V1 := V0 - DELTAB DELTAD S0.  EVALUATE Y1 := F(V1).  SOLVE
+              !///  J S1 = Y1.  EVALUATE ABS1 AND REL1.
+
+        2100  continue
+
+              v1 = v0 - (deltab*deltad)*s0
+
+              ! KEEP V1 IN BOUNDS DESPITE ROUNDING ERROR.
+              v1 = min(max(v1,below),above)
+              if (expone==0 .and. force) v1(entry) = value
+
+              buffer = v1
               signal = 'RESIDUAL'
-        !     GO TO 2040 WHEN ROUTE = 2
-              route = 2
-              go to 99999
-
-              2040 continue
-              signal = ' '
-              y0     = buffer
-              y0norm = twnorm(groupa+comps*points+groupb,y0)
-
-              buffer = y0
-              signal = 'SOLVE'
-        !     GO TO 2050 WHEN ROUTE = 3
-              route = 3
-              go to 99999
-        2050  continue
-              signal = ' '
-              s0     = buffer
-              s0norm = twnorm(groupa+comps*points+groupb,s0)
-
-              ! Check for success
-              call check_convergence(xxrel,xxabs,v0,s0,abs0,rel0,success)
-              if (success) exit newton_iterations
-
-          endif update_F
-
-          ! CHOOSE DELTAB.
-          call newton_damping(v0,s0,above,below,deltab,force,entry,value)
-
-          error = deltab < zero
-          if (error) then
-              if (text>0) write (text, 99008) id, deltab
+        !     GO TO 2140 WHEN ROUTE = 4
+              route = 4
+              steps = number ! Copy the protected local variable
               return
-          end if
 
-          !///  0 < DELTAB?
-          if (.not. (zero < deltab)) then
+        2140  continue
+              signal = ' '
+              y1     = buffer
+              y1norm = twnorm (groupa+comps*points+groupb, y1)
 
-             ! If deltab becomes negative after some iterations, try a recovery by updating
-             ! the Jacobian.
-             update_jac = age>0
-             if (update_jac) cycle newton_iterations
+              buffer = y1
+              signal = 'SOLVE'
+        !     GO TO 2150 WHEN ROUTE = 5
+              route = 5
+              steps = number ! Copy the protected local variable
+              return
 
-             if (levelm>0 .and. text>0) then
-                call twlogr (column(1), y0norm)
-                call twlogr (column(3), s0norm)
-                call twlogr (column(4), abs0)
-                call twlogr (column(5), rel0)
-                column(6) = ' '
-                if (deltab /= one) call twlogr(column(6), deltab)
-                column(7) = ' '
-                if (deltad /= one) call twlogr(column(7), deltad)
-                write (text, 10004) number, column
+        2150  continue
+              signal = ' '
+              s1     = buffer
+              s1norm = twnorm (groupa+comps*points+groupb, s1)
 
-                call print_invalid_ranges(id,text,name,groupa,groupb,comps,points,below,above,v0,s0)
+              ! Check convergence
+              call check_convergence(xxrel,xxabs,v1,s1,abs1,rel1,converged)
 
-             end if
+              ! Check progress
+              if (.not. s1norm <= s0norm) then
 
-             report = qbnds
-             success = .false.
-             go to 99999
-          end if
+                 deltad = half * deltad
+                 expone = expone + 1
+                 if (expone <= MAX_DECAY_ITERATIONS) go to 2100
 
-          ! DELTAD := 1.
-          deltad = one
-          expone = 0
+                    ! Check if we can try updating the Jacobian
+                    update_jac = age>0
+                    if (update_jac) cycle newton_iterations
 
-          !///  V1 := V0 - DELTAB DELTAD S0.  EVALUATE Y1 := F(V1).  SOLVE
-          !///  J S1 = Y1.  EVALUATE ABS1 AND REL1.
+                    ! Failed too many times.
+                    if (levelm>0 .and. text>0) then
+                       call print_newt_summary(text,number,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
+                       write (text, 10003) id
+                    end if
+                    report  = qdvrg
+                    success = .false.
+                    steps = number ! Copy the protected local variable
+                    return
+              end if
 
-    2100  continue
+              ! Print summary.
+              if (levelm>0 .and. text>0) call print_newt_summary(text,number,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
 
-          v1 = v0 - (deltab*deltad)*s0
-
-          ! KEEP V1 IN BOUNDS DESPITE ROUNDING ERROR.
-          v1 = min(max(v1,below),above)
-
-          if (expone == 0 .and. force) v1(entry) = value
-
-          call twcopy(groupa+comps*points+groupb,v1,buffer)
-          signal = 'RESIDUAL'
-    !     GO TO 2140 WHEN ROUTE = 4
-          route = 4
-          go to 99999
-    2140  continue
-          signal = ' '
-          call twcopy (groupa+comps*points+groupb, buffer, y1)
-          y1norm = twnorm (groupa+comps*points+groupb, y1)
-
-          call twcopy (groupa+comps*points+groupb, y1, buffer)
-          signal = 'SOLVE'
-    !     GO TO 2150 WHEN ROUTE = 5
-          route = 5
-          go to 99999
-    2150  continue
-          signal = ' '
-          call twcopy (groupa+comps*points+groupb, buffer, s1)
-          s1norm = twnorm (groupa+comps*points+groupb, s1)
-
-          call check_convergence(xxrel,xxabs,v1,s1,abs1,rel1,converged)
-
-    !///  NORM S1 < OR = NORM S0?
-
-          if (.not. s1norm <= s0norm) then
-
-             deltad = half * deltad
-             expone = expone + 1
-             if (expone <= 5) go to 2100
-
-                ! Check if we can try updating the Jacobian
-                update_jac = age>0
-                if (update_jac) cycle newton_iterations
-
-                   if (levelm>0 .and. text>0) then
-                      call twlogr (column(1), y0norm)
-                      call twlogr (column(3), s0norm)
-                      call twlogr (column(4), abs0)
-                      call twlogr (column(5), rel0)
-                      column(6) = ' '
-                      if (deltab /= one) call twlogr (column(6), deltab)
-                      column(7) = ' '
-                      if (deltad /= one) call twlogr (column(7), deltad)
-                      write (text, 10004) number, column
-                      write (text, 10003) id
-                   end if
-                   report = qdvrg
-                   success = .false.
-                   go to 99999
-          end if
-
-    !///  PRINT.
-
-          if (levelm>0 .and. text>0) then
-             call twlogr (column(1), y0norm)
-             call twlogr (column(3), s0norm)
-             call twlogr (column(4), abs0)
-             call twlogr (column(5), rel0)
-             column(6) = ' '
-             if (deltab /= one) call twlogr (column(6), deltab)
-             column(7) = ' '
-             if (deltad /= one) call twlogr (column(7), deltad)
-             write (text, 10004) number, column
-             column(2) = ' '
-          end if
-
-          ! Advance step
-          age    = age + 1
-          number = number + 1
-          s0     = s1; s0norm = s1norm
-          v0     = v1; y0norm = y1norm
-          y0     = y1
-          abs0   = abs1
-          rel0   = rel1
+              ! Advance step
+              age    = age + 1
+              number = number + 1
+              s0     = s1; s0norm = s1norm
+              v0     = v1; y0norm = y1norm
+              y0     = y1
+              abs0   = abs1
+              rel0   = rel1
 
           end do newton_iterations
 
           ! SUCCESS!
 
-    !///  PRINT.
-
+          ! Print summary.
           if (levelm>0 .and. text>0) then
-             call twlogr (column(1), y0norm)
-             call twlogr (column(3), s0norm)
-             call twlogr (column(4), abs0)
-             call twlogr (column(5), rel0)
-             column(6) = ' '
-             column(7) = ' '
-             if (0 < leveld) then
-                write (text, 10004) number, column
+             call print_newt_summary(text,number,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
+
+             if (leveld>0) then
+                ! Ask to display the final solution
                 write (text, 10005) id
                 signal = 'SHOW'
-                call twcopy (groupa+comps*points+groupb, v0, buffer)
+                buffer = v0
     !           GO TO 2180 WHEN ROUTE = 6
                 route = 6
-                go to 99999
+                steps = number ! Copy the protected local variable
+                return
              else
-                write (text, 10004) number, column
                 write (text, 10006) id
              end if
           end if
 
     2180  continue
           signal = ' '
-
           success = .true.
+
+          steps = number ! Copy the protected local variable
+          return
 
     !///////////////////////////////////////////////////////////////////////
     !
@@ -2451,8 +2442,6 @@ module twopnt_core
     !     ERROR MESSAGES.
     !
     !///////////////////////////////////////////////////////////////////////
-
-          go to 99999
 
     99001 format &
             (/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
@@ -2493,13 +2482,6 @@ module twopnt_core
             /10X, 'IN BOUNDS IS NEGATIVE.' &
            //10X, 1p, e10.2, '  DELTA B')
 
-          ! EXIT.
-          99999 continue
-
-          ! COPY THE PROTECTED LOCAL VARIABLE
-          steps = number
-
-          return
       end subroutine search
 
       pure subroutine check_convergence(RTOL,ATOL,v0,s0,abs0,rel0,converged)
@@ -2566,6 +2548,34 @@ module twopnt_core
          end do
 
       end subroutine newton_damping
+
+      subroutine print_newt_summary(text,number,y0nrm,s0nrm,eabs,erel,db,dd,condit)
+          integer, intent(in) :: text
+          integer, intent(in) :: number ! of iterations
+          real(RK), intent(in) :: y0nrm,s0nrm
+          real(RK), intent(in) :: eabs,erel
+          real(RK), intent(in) :: db,dd
+          real(RK), optional, intent(in) :: condit
+
+          character(len=16) :: column(7)
+
+          if (text==0) return
+
+          column = ' '
+
+          call twlogr (column(1), y0nrm)
+          call twlogr (column(3), s0nrm)
+          call twlogr (column(4), eabs)
+          call twlogr (column(5), erel)
+          if (db /= one) call twlogr (column(6), db)
+          if (dd /= one) call twlogr (column(7), dd)
+          if (present(condit)) call twlogr (column(2),condit)
+
+          write (text, 1) number, column
+
+          1 format(10X, i6, 3(3X, a6), 2(3X, a6, 2X, a6))
+
+      end subroutine print_newt_summary
 
 
       subroutine print_search_header(iunit,id)
