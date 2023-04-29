@@ -2134,18 +2134,19 @@ module twopnt_core
           logical         , intent(out)   :: error
           logical         , intent(in)    :: exist ! Do we have a Jacobian already
           integer         , intent(in)    :: text
+          real(RK)        , intent(in)    :: xxabs,xxrel ! settings
+          integer         , intent(in)    :: xxage
           integer         , intent(in)    :: names
           character(len=*), intent(in)    :: name(names)
           character(len=*), intent(inout) :: signal
           real(RK), dimension(groupa+comps*points+groupb), intent(in)    :: above,below
           real(RK), dimension(groupa+comps*points+groupb), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1
 
-          real(RK) :: abs0, abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, &
-                      value, xxabs, xxrel, y0norm, y1norm
-          integer  :: age, entry, expone, leveld, levelm, number, route, steps, xxage
+          real(RK) :: abs0,abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, &
+                      value, y0norm, y1norm
+          integer  :: age, entry, expone, leveld, levelm, number, route, steps
           intrinsic :: abs, int, log10, max, min, mod
           logical   :: force,success,converged,update_jac
-          character(len=16) :: column(7)
 
           character(len=*), parameter :: id = 'SEARCH:  '
 
@@ -2170,15 +2171,14 @@ module twopnt_core
           ! Check number of variables
           error = .not. all([comps,points,groupa,groupb]>=0)
           sizes: if (error) then
-              if (text>0) write (text, 6) id, comps,points,groupa,groupb,&
-                                                  groupa+comps*points+groupb
+              if (text>0) write (text,6) id, comps,points,groupa,groupb,groupa+comps*points+groupb
               return
           endif sizes
 
           ! Check variable names
           error = .not. (names== 1 .or. names == groupa+comps+groupb)
           number_of_names: if (error) then
-              if (text>0) write (text, 7) id, names, comps, groupa, groupb, groupa + comps + groupb
+              if (text>0) write (text,7) id,names,comps,groupa,groupb,groupa+comps+groupb
               return
           end if number_of_names
 
@@ -2199,7 +2199,7 @@ module twopnt_core
           ! Check tolerances
           error = .not. (zero<=xxabs .and. zero<=xxrel)
           if (error) then
-             if (text>0) write (text, 8) id, xxabs, xxrel
+             if (text>0) write (text,8) id, xxabs, xxrel
              return
           end if
 
@@ -2243,9 +2243,6 @@ module twopnt_core
                   2020 continue
                   signal = ' '
                   age = 0
-
-                  ! JACOBIAN EVALUATION SHOULD RETURN A NEW RESIDUAL TOO.
-                  if (levelm>0 .and. text>0) call twlogr(column(2),condit)
 
                   ! Turn off Jacobian request
                   update_jac = .false.
@@ -2315,69 +2312,75 @@ module twopnt_core
               ! Exponential decay of the damping parameter.
               deltad = one ! Current
               expone = 0   ! Number of exponential decay iterations
+              s1norm = huge(zero)
 
-              !///  V1 := V0 - DELTAB DELTAD S0.  EVALUATE Y1 := F(V1).  SOLVE
-              !///  J S1 = Y1.  EVALUATE ABS1 AND REL1.
+              ! Perform a simple backtracking iteration
+              decay_iterations: do while (expone<=MAX_DECAY_ITERATIONS .and. .not.s1norm<=s0norm)
 
-        2100  continue
+                  ! V1 := V0 - DELTAB DELTAD S0.
+                  v1 = v0 - (deltab*deltad)*s0
 
-              v1 = v0 - (deltab*deltad)*s0
+                  ! KEEP V1 IN BOUNDS DESPITE ROUNDING ERROR.
+                  v1 = min(max(v1,below),above)
+                  if (expone==0 .and. force) v1(entry) = value
 
-              ! KEEP V1 IN BOUNDS DESPITE ROUNDING ERROR.
-              v1 = min(max(v1,below),above)
-              if (expone==0 .and. force) v1(entry) = value
+                  ! EVALUATE Y1 := F(V1)
+                  buffer = v1
+                  signal = 'RESIDUAL'
+            !     GO TO 2140 WHEN ROUTE = 4
+                  route = 4
+                  steps = number ! Copy the protected local variable
+                  return
 
-              buffer = v1
-              signal = 'RESIDUAL'
-        !     GO TO 2140 WHEN ROUTE = 4
-              route = 4
-              steps = number ! Copy the protected local variable
-              return
+            2140  continue
+                  signal = ' '
+                  y1     = buffer
+                  y1norm = twnorm (groupa+comps*points+groupb, y1)
 
-        2140  continue
-              signal = ' '
-              y1     = buffer
-              y1norm = twnorm (groupa+comps*points+groupb, y1)
+                  ! SOLVE J*S1 = Y1
+                  buffer = y1
+                  signal = 'SOLVE'
+            !     GO TO 2150 WHEN ROUTE = 5
+                  route = 5
+                  steps = number ! Copy the protected local variable
+                  return
 
-              buffer = y1
-              signal = 'SOLVE'
-        !     GO TO 2150 WHEN ROUTE = 5
-              route = 5
-              steps = number ! Copy the protected local variable
-              return
+            2150  continue
+                  signal = ' '
+                  s1     = buffer
+                  s1norm = twnorm (groupa+comps*points+groupb, s1)
 
-        2150  continue
-              signal = ' '
-              s1     = buffer
-              s1norm = twnorm (groupa+comps*points+groupb, s1)
+                  ! Check convergence (abs1, rel1)
+                  call check_convergence(xxrel,xxabs,v1,s1,abs1,rel1,converged)
 
-              ! Check convergence
-              call check_convergence(xxrel,xxabs,v1,s1,abs1,rel1,converged)
+                  ! Check progress
+                  deltad = half * deltad
+                  expone = expone + 1
 
-              ! Check progress
-              if (.not. s1norm <= s0norm) then
+              end do decay_iterations
 
-                 deltad = half * deltad
-                 expone = expone + 1
-                 if (expone <= MAX_DECAY_ITERATIONS) go to 2100
+              is_diverging: if (expone>MAX_DECAY_ITERATIONS) then
 
-                    ! Check if we can try updating the Jacobian
-                    update_jac = age>0
-                    if (update_jac) cycle newton_iterations
+                 ! Check if we can try restarting this iteration with an updated Jacobian
+                 update_jac = age>0
+                 if (update_jac) cycle newton_iterations
 
-                    ! Failed too many times.
-                    if (levelm>0 .and. text>0) then
-                       call print_newt_summary(text,number,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
-                       write (text, 1) id
-                    end if
-                    report  = qdvrg
-                    success = .false.
-                    steps = number ! Copy the protected local variable
-                    return
-              end if
+                 ! Failed too many times.
+                 if (levelm>0 .and. text>0) then
+                    call print_newt_summary(text,number,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
+                    write (text, 1) id
+                 end if
+
+                 report  = qdvrg
+                 success = .false.
+                 steps   = number ! Copy the protected local variable
+                 return
+
+              end if is_diverging
 
               ! Print summary.
-              if (levelm>0 .and. text>0) call print_newt_summary(text,number,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
+              if (levelm>0 .and. text>0) &
+              call print_newt_summary(text,number,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
 
               ! Advance step
               age    = age + 1
@@ -2401,7 +2404,7 @@ module twopnt_core
                 write (text, 3) id
                 signal = 'SHOW'
                 buffer = v0
-    !           GO TO 2180 WHEN ROUTE = 6
+                ! GO TO 2180 WHEN ROUTE = 6
                 route = 6
                 steps = number ! Copy the protected local variable
                 return
@@ -2410,11 +2413,10 @@ module twopnt_core
              end if
           end if
 
-    2180  continue
-          signal = ' '
+          2180  continue
+          signal  = ' '
           success = .true.
-
-          steps = number ! Copy the protected local variable
+          steps   = number ! Copy the protected local variable
           return
 
           ! Informative messages.
