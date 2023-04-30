@@ -76,7 +76,6 @@ module twopnt_core
     integer, parameter :: MAX_DECAY_ITERATIONS = 5
 
     ! Supported versions
-
     character(len=8), parameter :: vnmbr(*) = [character(len=8) :: '3.18', '3.19', '3.20', '3.21', &
                                                                    '3.22', '3.23', '3.24', '3.25', &
                                                                    '3.26', '3.27', '3.28', '3.29']
@@ -1562,89 +1561,47 @@ module twopnt_core
 
       end subroutine twlaps
 
-      subroutine evolve &
-        (error, text, &
-         above, below, buffer, comps, condit, desire, groupa, groupb, &
-         leveld, levelm, name, names, points, report, s0, s1, signal, &
-         step, steps2, strid0, stride, success, tdabs, tdage, tdec, &
-         tdrel, time, tinc, tmax, tmin, v0, v1, vsave, y0, y1, ynorm)
+      ! Perform time evolution
+      subroutine evolve(error, text, above, below, buffer, comps, condit, desire, groupa, groupb, &
+                        leveld, levelm, name, names, points, report, s0, s1, signal, &
+                        step, steps2, strid0, stride, success, tdabs, tdage, tdec, &
+                        tdrel, time, tinc, tmax, tmin, v0, v1, vsave, y0, y1, ynorm)
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     T W O P N T
-!
-!     EVOLVE
-!
-!     PERFORM TIME EVOLUTION.
-!
-!///////////////////////////////////////////////////////////////////////
+      integer,          intent(in)  :: text
+      logical,          intent(out) :: error
+      integer,          intent(in)  :: names
+      character(len=*), intent(in)  :: name(names)
+      real(RK), dimension(groupa+comps*points+groupb), intent(in)    :: above,below
+      real(RK), dimension(groupa+comps*points+groupb), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1,vsave
 
-      !implicit complex (a - p, r - z), integer (q)
-      character &
-         cword*80, header*80, id*9, jword*80, name*(*), remark*80, &
-         signal*(*), yword*80
-!**** PRECISION > DOUBLE
-      real(RK)    above, below, buffer, change, condit, csave, dummy, high, low, &
-         s0, s1, strid0, stride, tdabs, tdec, tdrel, tinc, tmax, tmin, &
-         v0, v1, vsave, y0, y1, ynorm
-      integer &
-         age, agej, comps, count, desire, first, groupa, groupb, j, &
-         last, length, leveld, levelm, names, number, points,  &
-         report, route, step, steps2, tdage, text, xrepor
-      intrinsic &
-         log10, max, min
-      logical &
-         error, exist, jacob, mess, success, time, xsucce
+      real(RK) :: change, condit, csave, dummy, high, low, strid0, stride, tdabs, tdec, tdrel, &
+                  tinc, tmax, tmin, ynorm
+      integer  :: age, agej, comps, count, desire, first, groupa, groupb, j, last, length, leveld, &
+                  levelm, number, points, report, route, step, steps2, tdage, xrepor
+      intrinsic :: log10, max, min
+      logical  :: exist, jacob, success, time, xsucce
+      character(len=*)  :: signal
+      character(len=80) :: cword,jword,remark,yword
 
-      parameter (id = 'EVOLVE:  ')
+      character(len=*), parameter :: id = 'EVOLVE:  '
 
-
-      dimension &
-         above(groupa+comps*points+groupb), &
-         below(groupa+comps*points+groupb), &
-         buffer(groupa+comps*points+groupb), header(2, 3), &
-         name(names), &
-         s0(groupa+comps*points+groupb), &
-         s1(groupa+comps*points+groupb), &
-         v0(groupa+comps*points+groupb), &
-         v1(groupa+comps*points+groupb), &
-         vsave(groupa+comps*points+groupb), &
-         y0(groupa+comps*points+groupb), &
-         y1(groupa+comps*points+groupb)
-
-!///  SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
-
+      ! SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
       save
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     PROLOGUE.
-!
-!///////////////////////////////////////////////////////////////////////
-
-!///  INITIALIZE.
-
-!     SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
-      mess = .false.
-
-!     TURN OF REVERSE COMMUNICATION FLAGS.
-      time = .false.
-
-!     TURN OFF ALL COMPLETION STATUS FLAGS.
-      error = .false.
-      report = qnull
+      ! Initialization.
+      time    = .false. ! Turn off reverse communication flags.
+      error   = .false. ! Turn off all completion status flags.
+      report  = qnull
       success = .false.
 
-!///  IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
-
+      ! IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
       if (signal /= ' ') then
          go to (1010, 1020, 1060, 1080, 1090, 2020) route
          error = .true.
          go to 9001
       end if
 
-!///  CHECK THE ARGUMENTS.
-
+      ! Check the arguments
       error = .not. (((0 < comps) .eqv. (points>0)) .and. &
          0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
          0 <= groupb .and. 0 < groupa+comps*points+groupb)
@@ -1667,42 +1624,6 @@ module twopnt_core
 
       error = tinc>one .and. .not. 0 < steps2
       if (error) go to 9008
-
-!///  WRITE ALL MESSAGES.
-
-!                     123456789_123456789_123456789_123456789_1234
-!                     123456   123456   123456   123456   12345
-      header(1, 1) = '  TIME   LOG10                      NEWTON S'
-      header(1, 2) = ' POINT   ------------------------   --------'
-      header(1, 3) = 'NUMBER   NORM F   CHANGE   STRIDE   STEPS   '
-
-!                     123456789_123456789_1
-!                     123   123456   123456
-      header(2, 1) = 'EARCH                '
-      header(2, 2) = '---------------------'
-      header(2, 3) = 'J''S   COND J   REMARK'
-
-      if (mess .and. text>0) then
-         route = 0
-         ynorm = smallnum04
-         call twlogr (yword, ynorm)
-
-         write (text, 10001) id, header, step, yword
-         write (text, 20001) id, step, yword, log10 (strid0)
-         write (text, 10002) id, header, step, yword
-         write (text, 20002) id, step, yword, log10 (strid0)
-         write (text, 20003) id, step, yword, log10 (strid0)
-         write (text, 10006) id
-         write (text, 10008) id
-         write (text, 20007) id, step, yword
-         write (text, 20004) id, step, yword, log10 (strid0)
-         write (text, 10007) id
-         write (text, 20006) id, step, yword
-         write (text, 20008) id
-         write (text, 20005) id, step, yword, log10 (strid0)
-
-         go to 9001
-      end if
 
 !///////////////////////////////////////////////////////////////////////
 !
@@ -1742,22 +1663,10 @@ module twopnt_core
          go to 99999
 1020     continue
          signal = ' '
-         ynorm = twnorm (groupa+comps*points+groupb, buffer)
-         call twlogr (yword, ynorm)
+         ynorm = twnorm(groupa+comps*points+groupb, buffer)
 
-         if (1 == levelm) then
-            if (step == 0) then
-               write (text, 10001) id, header, step, yword
-            else
-               write (text, 10002) id, header, step, yword
-            end if
-         else if (1 < levelm .and. 0 == step) then
-            if (step == 0) then
-               write (text, 20001) id, step, yword, log10 (stride)
-            else
-               write (text, 20002) id, step, yword, log10 (stride)
-            end if
-         end if
+         call print_evolve_header(text,id,levelm,step,ynorm,stride)
+
 1030  continue
 
 !///  LOW := TMIN, HIGH := TMAX.
@@ -1776,11 +1685,9 @@ module twopnt_core
          exist = .false.
          low = stride * tdec
          stride = min (high, stride * tinc)
-         if (1 < levelm .and. text>0) &
-            write (text, 20003) id, step, yword, log10 (stride)
+         if (levelm>1 .and. text>0) write (text, 20003) id, step, yword, log10 (stride)
       else
-         if (1 < levelm .and. text>0 .and. 0 < step) &
-            write (text, 20002) id, step, yword, log10 (stride)
+         if (levelm>1 .and. text>0 .and. step>0) write (text, 20002) id, step, yword, log10 (stride)
       end if
 
 !///  NEWTON SEARCH.
@@ -1824,7 +1731,7 @@ module twopnt_core
 !///  UNSUCCESSFUL?
 
       if (.not. xsucce) then
-         if (1 == levelm .and. text>0) then
+         if (levelm==1 .and. text>0) then
             if (xrepor == qbnds) then
                length = 6
                remark = 'BOUNDS'
@@ -1835,8 +1742,7 @@ module twopnt_core
                length = 1
                remark = ' '
             end if
-            write (text, 10003) step + 1, log10 (stride), number, jword, &
-               remark (1 : length)
+            write (text, 10003) step + 1, log10 (stride), number, jword, remark (1:length)
          end if
 
 !///  IF ALSO LOW < STRIDE AND 1 < TDEC, THEN DECREASE STRIDE.
@@ -1847,8 +1753,7 @@ module twopnt_core
             exist = .false.
             high = stride / tinc
             stride = max (low, stride / tdec)
-            if (1 < levelm .and. text>0) write (text, 20004) &
-               id, step, yword, log10 (stride)
+            if (levelm>1 .and. text>0) write (text, 20004) id, step, yword, log10 (stride)
             go to 1050
          end if
 
@@ -1860,24 +1765,21 @@ module twopnt_core
 !///  IF NO CHANGE AND STRIDE < HIGH AND tinc>one, THEN
 !///  INCREASE STRIDE.  OTHERWISE END, FAILURE.
 
-      do 1070 j = 1, groupa+comps*points+groupb
-         buffer(j) = v0(j) - vsave(j)
-1070  continue
-      change = twnorm (groupa+comps*points+groupb, buffer)
-      call twlogr (cword, change)
+      buffer = v0-vsave
+      change = twnorm(groupa+comps*points+groupb,buffer)
+      call twlogr(cword, change)
 
       if (change == zero) then
-         if (1 == levelm .and. text>0) then
-            write (text, 10004) &
-               step + 1, '  ZERO', log10 (stride), number, jword
+         if (levelm==1 .and. text>0) then
+            write (text, 10004) step + 1, '  ZERO', log10 (stride), number, jword
          end if
 
          if (tinc>one .and. stride < high) then
             age = 0
             exist = .false.
-            low = stride * tdec
+            low = stride*tdec
             stride = min (high, stride * tinc)
-            if (1 < levelm .and. text>0) &
+            if (levelm>1 .and. text>0) &
                write (text, 20005) id, step, yword, log10 (stride)
             go to 1050
          end if
@@ -1886,13 +1788,13 @@ module twopnt_core
 
 !///  AGE := AGE + 1, M := M + 1.
 
-      age = age + 1
+      age  = age + 1
       step = step + 1
 
 !     RETAIN THE LATEST SOLUTION FOR USE BY THE FUNCTION.
 !     GO TO 1080 WHEN ROUTE = 4
-      route = 4
-      call twcopy (groupa+comps*points+groupb, v0, buffer)
+      route  = 4
+      buffer = v0
       signal = 'RETAIN'
       go to 99999
 1080  continue
@@ -1901,7 +1803,7 @@ module twopnt_core
 !///  PRINT.
 
       if (.not. (levelm>0 .and. text>0)) go to 1100
-         call twcopy (groupa+comps*points+groupb, v0, buffer)
+         buffer = v0
          signal = 'RESIDUAL'
          time = .false.
 !        GO TO 1090 WHEN ROUTE = 5
@@ -1909,11 +1811,10 @@ module twopnt_core
          go to 99999
 1090     continue
          signal = ' '
-         ynorm = twnorm (groupa+comps*points+groupb, buffer)
+         ynorm = twnorm(groupa+comps*points+groupb, buffer)
          call twlogr (yword, ynorm)
 
-         if (1 == levelm) write (text, 10005) &
-            step, yword, cword, log10 (stride), number, jword
+         if (levelm==1) write (text, 10005) step, yword, cword, log10 (stride), number, jword
 1100  continue
 
 !///  M < LAST?
@@ -1931,7 +1832,7 @@ module twopnt_core
 !///  PRINT.
 
       if (levelm>0 .and. text>0) then
-         if (1 == levelm) then
+         if (levelm==1) then
             if (step == first) then
                write (text, 10006) id
             else if (step == last) then
@@ -1939,7 +1840,7 @@ module twopnt_core
             else
                write (text, 10008) id
             end if
-         else if (1 < levelm) then
+         else if (levelm>1) then
             if (step == first) then
                write (text, 10006) id
             else if (step == last) then
@@ -1973,47 +1874,17 @@ module twopnt_core
 !
 !///////////////////////////////////////////////////////////////////////
 
-10001 format &
-        (/1X, a9, 'BEGIN TIME EVOLUTION.' &
-        /3(/10X, a44, a21) &
-        /10X, i6, 3X, a6)
-
-10002 format &
-        (/1X, a9, 'CONTINUE TIME EVOLUTION.' &
-        /3(/10X, a44, a21) &
-        /10X, i6, 3X, a6)
-
-10003 format &
-        (10X, i6, 21X, f6.2, 3X, i5, 3X, a12, 3X, a)
-
-10004 format &
-        (10X, i6, 12X, a6, 3X, f6.2, 3X, i5, 3X, a12)
-
-10005 format &
-        (10X, i6, 2(3X, a6), 3X, f6.2, 3X, i5, 3X, a12)
-
-10006 format &
-        (/1X, a9, 'FAILURE.  NO TIME EVOLUTION.')
-
-10007 format &
-        (/1X, a9, 'SUCCESS.  TIME EVOLUTION COMPLETED.')
-
-10008 format &
-        (/1X, a9, 'PARTIAL SUCCESS.  TIME EVOLUTION INCOMPLETE.')
-
-20001 format &
-        (/1X, a9, 'BEGIN TIME EVOLUTION.' &
-       //10X, i10, '  LATEST TIME POINT' &
-        /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
-        /10X, f10.2, '  LOG10 STRIDE TO NEXT TIME POINT' &
-       //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE.')
-
-20002 format &
-        (/1X, a9, 'CONTINUE TIME EVOLUTION.' &
-       //10X, i10, '  LATEST TIME POINT' &
-        /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
-        /10X, f10.2, '  LOG10 STRIDE TO NEXT TIME POINT' &
-       //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE.')
+10003 format(10X, i6, 21X, f6.2, 3X, i5, 3X, a12, 3X, a)
+10004 format(10X, i6, 12X, a6, 3X, f6.2, 3X, i5, 3X, a12)
+10005 format(10X, i6, 2(3X, a6), 3X, f6.2, 3X, i5, 3X, a12)
+10006 format(/1X, a9, 'FAILURE.  NO TIME EVOLUTION.')
+10007 format(/1X, a9, 'SUCCESS.  TIME EVOLUTION COMPLETED.')
+10008 format(/1X, a9, 'PARTIAL SUCCESS.  TIME EVOLUTION INCOMPLETE.')
+20002 format(/1X, a9, 'CONTINUE TIME EVOLUTION.' &
+         //10X, i10, '  LATEST TIME POINT' &
+          /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
+          /10X, f10.2, '  LOG10 STRIDE TO NEXT TIME POINT' &
+         //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE.')
 
 20003 format &
         (/1X, a9, 'CONTINUE TIME EVOLUTION WITH INCREASED STRIDE.' &
@@ -2056,35 +1927,35 @@ module twopnt_core
 !
 !///////////////////////////////////////////////////////////////////////
 
-      go to 99999
+      return
 
 9001  if (text>0) write (text, 99001) id, route
-      if (.not. mess) go to 99999
+      return
 
 9002  if (text>0) write (text, 99002) id, &
          comps, points, groupa, groupb, groupa+comps*points+groupb
-      if (.not. mess) go to 99999
+      return
 
 9003  if (text>0) write (text, 99003) id, desire
-      if (.not. mess) go to 99999
+      return
 
 9004  if (text>0) write (text, 99004) id, tdec, tinc
-      if (.not. mess) go to 99999
+      return
 
 9005  if (text>0) write (text, 99005) id, tmin, tmax
-      if (.not. mess) go to 99999
+      return
 
 9006  if (text>0) write (text, 99006) id, tmin, strid0, tmax
-      if (.not. mess) go to 99999
+      return
 
 9007  if (text>0) write (text, 99007) id, step
-      if (.not. mess) go to 99999
+      return
 
 9008  if (text>0) write (text, 99008) id, steps2
-      if (.not. mess) go to 99999
+      return
 
 9009  if (text>0) write (text, 99009) id
-      if (.not. mess) go to 99999
+      return
 
 99001 format &
         (/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
@@ -2117,32 +1988,21 @@ module twopnt_core
        //10X, 1p, e10.2, '  TMIN, SHORTEST STRIDE' &
         /10X, 1p, e10.2, '  TMAX, LONGEST STRIDE')
 
-99006 format &
-        (/1X, a9, 'ERROR.  THE INITIAL TIME STRIDE MUST LIE BETWEEN' &
-        /10X, 'THE LOWER AND UPPER BOUNDS.' &
-       //10X, 1p, e10.2, '  TMIN, SHORTEST STRIDE' &
-        /10X, 1p, e10.2, '  STRID0, INITIAL STRIDE' &
-        /10X, 1p, e10.2, '  TMAX, LONGEST STRIDE')
+99006 format(/1X, a9, 'ERROR.  THE INITIAL TIME STRIDE MUST LIE BETWEEN' &
+            /10X, 'THE LOWER AND UPPER BOUNDS.' &
+           //10X, 1p, e10.2, '  TMIN, SHORTEST STRIDE' &
+            /10X, 1p, e10.2, '  STRID0, INITIAL STRIDE' &
+            /10X, 1p, e10.2, '  TMAX, LONGEST STRIDE')
+99007 format(/1X, a9, 'ERROR.  THE COUNT OF TIME STEPS MUST BE ZERO OR' &
+            /10X, 'POSITIVE.' &
+           //10X, i10, '  STEP')
+99008 format(/1X, a9, 'ERROR.  THE TIME STEPS BEFORE STRIDE INCREASES' &
+            /10X, 'MUST BE POSITIVE.' &
+           //10X, i10, '  STEPS2, TIME STEPS BEFORE STRIDE INCREASES')
+99009 format(/1X, a9, 'ERROR.  SEARCH FAILS.')
 
-99007 format &
-        (/1X, a9, 'ERROR.  THE COUNT OF TIME STEPS MUST BE ZERO OR' &
-        /10X, 'POSITIVE.' &
-       //10X, i10, '  STEP')
 
-99008 format &
-        (/1X, a9, 'ERROR.  THE TIME STEPS BEFORE STRIDE INCREASES' &
-        /10X, 'MUST BE POSITIVE.' &
-       //10X, i10, '  STEPS2, TIME STEPS BEFORE STRIDE INCREASES')
-
-99009 format &
-        (/1X, a9, 'ERROR.  SEARCH FAILS.')
-
-!///  EXIT.
-
-      stop
-99999 continue
-      return
-      end
+      end subroutine evolve
 
       ! Perform the damped, modified Newton's search
       subroutine search(error, text, above, age, below, buffer, comps, condit, exist, groupa, &
@@ -2567,6 +2427,60 @@ module twopnt_core
           1 format(10X, i6, 3(3X, a6), 2(3X, a6, 2X, a6))
 
       end subroutine print_newt_summary
+
+      subroutine print_evolve_header(text,id,levelm,step,ynorm,stride)
+          integer, intent(in) :: text,levelm,step
+          real(RK), intent(in) :: ynorm,stride
+          character(*), intent(in) :: id
+
+          character(len=80) :: header(2,3),yword
+
+          !               123456789_123456789_123456789_123456789_1234
+          !               123456   123456   123456   123456   12345
+          header(1, 1) = '  TIME   LOG10                      NEWTON S'
+          header(1, 2) = ' POINT   ------------------------   --------'
+          header(1, 3) = 'NUMBER   NORM F   CHANGE   STRIDE   STEPS   '
+
+          !               123456789_123456789_1
+          !               123   123456   123456
+          header(2, 1) = 'EARCH                '
+          header(2, 2) = '---------------------'
+          header(2, 3) = 'J''S   COND J   REMARK'
+
+          call twlogr(yword, ynorm)
+
+          if (levelm==1) then
+            if (step==0) then
+               write (text, 11) id, header, step, yword
+            else
+               write (text, 12) id, header, step, yword
+            end if
+         else if (levelm>1 .and. step==0) then
+            if (step == 0) then
+               write (text, 21) id, step, yword, log10(stride)
+            else
+               write (text, 22) id, step, yword, log10(stride)
+            end if
+         end if
+
+         11 format(/1X, a9, 'BEGIN TIME EVOLUTION.' &
+               /3(/10X, a44, a21) &
+                  /10X, i6, 3X, a6)
+         12 format(/1X, a9, 'CONTINUE TIME EVOLUTION.' &
+               /3(/10X, a44, a21) &
+                  /10X, i6, 3X, a6)
+         21 format(/1X, a9, 'BEGIN TIME EVOLUTION.' &
+                 //10X, i10, '  LATEST TIME POINT' &
+                  /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
+                  /10X, f10.2, '  LOG10 STRIDE TO NEXT TIME POINT' &
+                 //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE.')
+         22 format(/1X, a9, 'CONTINUE TIME EVOLUTION.' &
+                 //10X, i10, '  LATEST TIME POINT' &
+                  /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
+                  /10X, f10.2, '  LOG10 STRIDE TO NEXT TIME POINT' &
+                 //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE.')
+
+      end subroutine print_evolve_header
 
 
       subroutine print_search_header(iunit,id)
