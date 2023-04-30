@@ -1642,7 +1642,7 @@ module twopnt_core
          signal = 'RETAIN'
 !        GO TO 1010 WHEN ROUTE = 1
          route = 1
-         go to 99999
+         return
 1010  continue
       signal = ' '
 
@@ -1660,7 +1660,7 @@ module twopnt_core
          time = .false.
 !        GO TO 1020 WHEN ROUTE = 2
          route = 2
-         go to 99999
+         return
 1020     continue
          signal = ' '
          ynorm = twnorm(groupa+comps*points+groupb, buffer)
@@ -1725,7 +1725,7 @@ module twopnt_core
          time  = .true.
 !        GO TO 1060 WHEN ROUTE = 3
          route = 3
-         go to 99999
+         return
       end if
 
 !///  UNSUCCESSFUL?
@@ -1796,7 +1796,7 @@ module twopnt_core
       route  = 4
       buffer = v0
       signal = 'RETAIN'
-      go to 99999
+      return
 1080  continue
       signal = ' '
 
@@ -1808,7 +1808,7 @@ module twopnt_core
          time = .false.
 !        GO TO 1090 WHEN ROUTE = 5
          route = 5
-         go to 99999
+         return
 1090     continue
          signal = ' '
          ynorm = twnorm(groupa+comps*points+groupb, buffer)
@@ -1856,7 +1856,7 @@ module twopnt_core
             signal = 'SHOW'
 !           GO TO 2020 WHEN ROUTE = 6
             route = 6
-            go to 99999
+            return
          end if
       end if
 
