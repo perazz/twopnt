@@ -1598,32 +1598,54 @@ module twopnt_core
       if (signal /= ' ') then
          go to (1010, 1020, 1060, 1080, 1090, 2020) route
          error = .true.
-         go to 9001
+         if (text>0) write (text, 99001) id, route
+         return
       end if
 
       ! Check the arguments
       error = .not. (((0 < comps) .eqv. (points>0)) .and. &
-         0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
-         0 <= groupb .and. 0 < groupa+comps*points+groupb)
-      if (error) go to 9002
+              0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
+              0 <= groupb .and. 0 < groupa+comps*points+groupb)
+      if (error) then
+         if (text>0) write (text, 99002) id,comps,points,groupa,groupb,groupa+comps*points+groupb
+         return
+      end if
 
       error = .not. (0 < desire)
-      if (error) go to 9003
+      if (error) then
+         if (text>0) write (text, 99003) id, desire
+         return
+      end if
 
       error = .not. (one <= tdec .and. one <= tinc)
-      if (error) go to 9004
+      if (error) then
+         if (text>0) write (text, 99004) id, tdec, tinc
+         return
+      end if
 
       error = .not. (zero < tmin .and. tmin <= tmax)
-      if (error) go to 9005
+      if (error) then
+         if (text>0) write (text, 99005) id, tmin, tmax
+         return
+      end if
 
       error = .not. (tmin <= strid0 .and. strid0 <= tmax)
-      if (error) go to 9006
+      if (error) then
+         if (text>0) write (text, 99006) id, tmin, strid0, tmax
+         return
+      end if
 
-      error = .not. (0 <= step)
-      if (error) go to 9007
+      error = .not. step>=0
+      if (error) then
+         if (text>0) write (text, 99007) id, step
+         return
+      end if
 
       error = tinc>one .and. .not. 0 < steps2
-      if (error) go to 9008
+      if (error) then
+         if (text>0) write (text, 99008) id, steps2
+         return
+      end if
 
 !///////////////////////////////////////////////////////////////////////
 !
@@ -1718,7 +1740,10 @@ module twopnt_core
       call search(error, text, above, agej, below, buffer, comps, condit, exist, groupa, &
                   groupb, leveld - 1, levelm - 1, name, names, points, xrepor, &
                   s0, s1, signal, number, xsucce, v0, v1, tdabs, tdage, tdrel, y0, dummy, y1)
-      if (error) go to 9009
+      if (error) then
+         if (text>0) write (text, 99009) id
+         return
+      end if
 
       if (signal /= ' ') then
          jacob = signal == 'PREPARE'
@@ -1861,146 +1886,84 @@ module twopnt_core
       end if
 
 2020  continue
-      signal = ' '
 
-!///  SET THE COMPLETION STATUS FLAGS.
-
+      ! SET THE COMPLETION STATUS FLAGS.
+      signal  = ' '
       success = first < step
-      if (step < last) report = xrepor
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     INFORMATIVE MESSAGES.
-!
-!///////////////////////////////////////////////////////////////////////
-
-10003 format(10X, i6, 21X, f6.2, 3X, i5, 3X, a12, 3X, a)
-10004 format(10X, i6, 12X, a6, 3X, f6.2, 3X, i5, 3X, a12)
-10005 format(10X, i6, 2(3X, a6), 3X, f6.2, 3X, i5, 3X, a12)
-10006 format(/1X, a9, 'FAILURE.  NO TIME EVOLUTION.')
-10007 format(/1X, a9, 'SUCCESS.  TIME EVOLUTION COMPLETED.')
-10008 format(/1X, a9, 'PARTIAL SUCCESS.  TIME EVOLUTION INCOMPLETE.')
-20002 format(/1X, a9, 'CONTINUE TIME EVOLUTION.' &
-         //10X, i10, '  LATEST TIME POINT' &
-          /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
-          /10X, f10.2, '  LOG10 STRIDE TO NEXT TIME POINT' &
-         //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE.')
-
-20003 format &
-        (/1X, a9, 'CONTINUE TIME EVOLUTION WITH INCREASED STRIDE.' &
-       //10X, i10, '  LATEST TIME POINT' &
-        /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
-        /10X, f10.2, '  LOG10 INCREASED STRIDE TO NEXT TIME POINT' &
-       //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE.')
-
-20004 format &
-        (/1X, a9, 'RETRY THE STEP WITH A DECREASED TIME STRIDE.' &
-       //10X, i10, '  LATEST TIME POINT' &
-        /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
-        /10X, f10.2, '  LOG10 DECREASED STRIDE TO NEXT TIME POINT' &
-       //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE, AGAIN.')
-
-20005 format &
-        (/1X, a9, 'THE SOLUTION DID NOT CHANGE.  RETRYING THE STEP' &
-        /10X, 'WITH AN INCREASED TIME STRIDE.' &
-       //10X, i10, '  LATEST TIME POINT' &
-        /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
-        /10X, f10.2, '  LOG10 INCREASED STRIDE TO NEXT TIME POINT' &
-       //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE, AGAIN.')
-
-20006 format &
-        (/1X, a9, 'SUCCESS.  TIME EVOLUTION COMPLETED.' &
-       //10X, i10, '  LAST TIME POINT' &
-        /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE')
-
-20007 format &
-        (/1X, a9, 'PARTIAL SUCCESS.  TIME EVOLUTION INCOMPLETE.' &
-       //10X, i10, '  LAST TIME POINT' &
-        /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE')
-
-20008 format &
-       (/1X, a9, 'THE LATEST SOLUTION:')
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     ERROR MESSAGES.
-!
-!///////////////////////////////////////////////////////////////////////
+      if (last>step) report = xrepor
 
       return
 
-9001  if (text>0) write (text, 99001) id, route
-      return
+      ! Informative messages
+      10003 format(10X, i6, 21X, f6.2, 3X, i5, 3X, a12, 3X, a)
+      10004 format(10X, i6, 12X, a6, 3X, f6.2, 3X, i5, 3X, a12)
+      10005 format(10X, i6, 2(3X, a6), 3X, f6.2, 3X, i5, 3X, a12)
+      10006 format(/1X, a9, 'FAILURE.  NO TIME EVOLUTION.')
+      10007 format(/1X, a9, 'SUCCESS.  TIME EVOLUTION COMPLETED.')
+      10008 format(/1X, a9, 'PARTIAL SUCCESS.  TIME EVOLUTION INCOMPLETE.')
+      20002 format(/1X, a9, 'CONTINUE TIME EVOLUTION.' &
+                 //10X, i10, '  LATEST TIME POINT' &
+                  /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
+                  /10X, f10.2, '  LOG10 STRIDE TO NEXT TIME POINT' &
+                 //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE.')
+      20003 format(/1X, a9, 'CONTINUE TIME EVOLUTION WITH INCREASED STRIDE.' &
+                 //10X, i10, '  LATEST TIME POINT' &
+                  /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
+                  /10X, f10.2, '  LOG10 INCREASED STRIDE TO NEXT TIME POINT' &
+                 //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE.')
+      20004 format(/1X, a9, 'RETRY THE STEP WITH A DECREASED TIME STRIDE.' &
+                 //10X, i10, '  LATEST TIME POINT' &
+                  /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
+                  /10X, f10.2, '  LOG10 DECREASED STRIDE TO NEXT TIME POINT' &
+                 //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE, AGAIN.')
+      20005 format(/1X, a9, 'THE SOLUTION DID NOT CHANGE.  RETRYING THE STEP' &
+                  /10X, 'WITH AN INCREASED TIME STRIDE.' &
+                 //10X, i10, '  LATEST TIME POINT' &
+                  /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
+                  /10X, f10.2, '  LOG10 INCREASED STRIDE TO NEXT TIME POINT' &
+                 //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE, AGAIN.')
+      20006 format(/1X, a9, 'SUCCESS.  TIME EVOLUTION COMPLETED.' &
+                 //10X, i10, '  LAST TIME POINT' &
+                  /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE')
+      20007 format(/1X, a9, 'PARTIAL SUCCESS.  TIME EVOLUTION INCOMPLETE.' &
+                 //10X, i10, '  LAST TIME POINT' &
+                  /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE')
+      20008 format(/1X, a9, 'THE LATEST SOLUTION:')
 
-9002  if (text>0) write (text, 99002) id, &
-         comps, points, groupa, groupb, groupa+comps*points+groupb
-      return
-
-9003  if (text>0) write (text, 99003) id, desire
-      return
-
-9004  if (text>0) write (text, 99004) id, tdec, tinc
-      return
-
-9005  if (text>0) write (text, 99005) id, tmin, tmax
-      return
-
-9006  if (text>0) write (text, 99006) id, tmin, strid0, tmax
-      return
-
-9007  if (text>0) write (text, 99007) id, step
-      return
-
-9008  if (text>0) write (text, 99008) id, steps2
-      return
-
-9009  if (text>0) write (text, 99009) id
-      return
-
-99001 format &
-        (/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-       //10X, i10, '  ROUTE')
-
-99002 format &
-        (/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
-        /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE, NUMBERS OF ALL TYPES' &
-        /10X, 'OF UNKNOWNS MUST BE AT LEAST ZERO, AND TOTAL UNKNOWNS' &
-        /10X, 'MUST BE POSITIVE.' &
-       //10X, i10, '  COMPS, COMPONENTS' &
-        /10X, i10, '  POINTS' &
-        /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-        /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-        /10X, i10, '  TOTAL UNKNOWNS')
-
-99003 format &
-        (/1X, a9, 'ERROR.  THE NUMBER OF TIME STEPS MUST BE POSITIVE.' &
-       //10X, i10, '  STEPS0 OR STEPS1, DESIRED NUMBER OF STEPS')
-
-99004 format &
-        (/1X, a9, 'ERROR.  THE FACTORS FOR CHANGING THE TIME STRIDE' &
-        /10X, 'MUST BE NO SMALLER THAN 1.' &
-       //10X, 1p, e10.2, '  TDEC, DECREASE FACTOR', &
-        /10X, 1p, e10.2, '  TINC, INCREASE FACTOR')
-
-99005 format &
-        (/1X, a9, 'ERROR.  THE BOUNDS ON THE TIME STRIDE ARE OUT OF' &
-        /10X, 'ORDER.' &
-       //10X, 1p, e10.2, '  TMIN, SHORTEST STRIDE' &
-        /10X, 1p, e10.2, '  TMAX, LONGEST STRIDE')
-
-99006 format(/1X, a9, 'ERROR.  THE INITIAL TIME STRIDE MUST LIE BETWEEN' &
-            /10X, 'THE LOWER AND UPPER BOUNDS.' &
-           //10X, 1p, e10.2, '  TMIN, SHORTEST STRIDE' &
-            /10X, 1p, e10.2, '  STRID0, INITIAL STRIDE' &
-            /10X, 1p, e10.2, '  TMAX, LONGEST STRIDE')
-99007 format(/1X, a9, 'ERROR.  THE COUNT OF TIME STEPS MUST BE ZERO OR' &
-            /10X, 'POSITIVE.' &
-           //10X, i10, '  STEP')
-99008 format(/1X, a9, 'ERROR.  THE TIME STEPS BEFORE STRIDE INCREASES' &
-            /10X, 'MUST BE POSITIVE.' &
-           //10X, i10, '  STEPS2, TIME STEPS BEFORE STRIDE INCREASES')
-99009 format(/1X, a9, 'ERROR.  SEARCH FAILS.')
-
+      ! Error messages
+      99001 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
+                 //10X, i10, '  ROUTE')
+      99002 format(/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
+                  /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE, NUMBERS OF ALL TYPES' &
+                  /10X, 'OF UNKNOWNS MUST BE AT LEAST ZERO, AND TOTAL UNKNOWNS' &
+                  /10X, 'MUST BE POSITIVE.' &
+                 //10X, i10, '  COMPS, COMPONENTS' &
+                  /10X, i10, '  POINTS' &
+                  /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                  /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                  /10X, i10, '  TOTAL UNKNOWNS')
+      99003 format(/1X, a9, 'ERROR.  THE NUMBER OF TIME STEPS MUST BE POSITIVE.' &
+                 //10X, i10, '  STEPS0 OR STEPS1, DESIRED NUMBER OF STEPS')
+      99004 format(/1X, a9, 'ERROR.  THE FACTORS FOR CHANGING THE TIME STRIDE' &
+                  /10X, 'MUST BE NO SMALLER THAN 1.' &
+                 //10X, 1p, e10.2, '  TDEC, DECREASE FACTOR', &
+                  /10X, 1p, e10.2, '  TINC, INCREASE FACTOR')
+      99005 format(/1X, a9, 'ERROR.  THE BOUNDS ON THE TIME STRIDE ARE OUT OF' &
+                  /10X, 'ORDER.' &
+                 //10X, 1p, e10.2, '  TMIN, SHORTEST STRIDE' &
+                  /10X, 1p, e10.2, '  TMAX, LONGEST STRIDE')
+      99006 format(/1X, a9, 'ERROR.  THE INITIAL TIME STRIDE MUST LIE BETWEEN' &
+                  /10X, 'THE LOWER AND UPPER BOUNDS.' &
+                 //10X, 1p, e10.2, '  TMIN, SHORTEST STRIDE' &
+                  /10X, 1p, e10.2, '  STRID0, INITIAL STRIDE' &
+                  /10X, 1p, e10.2, '  TMAX, LONGEST STRIDE')
+      99007 format(/1X, a9, 'ERROR.  THE COUNT OF TIME STEPS MUST BE ZERO OR' &
+                  /10X, 'POSITIVE.' &
+                 //10X, i10, '  STEP')
+      99008 format(/1X, a9, 'ERROR.  THE TIME STEPS BEFORE STRIDE INCREASES' &
+                  /10X, 'MUST BE POSITIVE.' &
+                 //10X, i10, '  STEPS2, TIME STEPS BEFORE STRIDE INCREASES')
+      99009 format(/1X, a9, 'ERROR.  SEARCH FAILS.')
 
       end subroutine evolve
 
