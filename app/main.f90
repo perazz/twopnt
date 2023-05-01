@@ -43,6 +43,7 @@ program TWMAIN
 
     type(twcom) :: settings
     type(twwork) :: work
+    type(twfunctions) :: problem
     real(RK) :: A(ASIZE), ABOVE(COMPS), BELOW(COMPS)
     real(RK), dimension(COMPS*PMAX) :: BUFFER
     real(RK), dimension(COMPS,PMAX) :: U,U0
@@ -50,7 +51,6 @@ program TWMAIN
     real(RK) :: CONDIT,STRIDE
     logical  :: ACTIVE(COMPS), MARK(PMAX)
     integer  :: PIVOT(COMPS*PMAX)
-
     INTEGER :: J, LENGTH, N, POINTS
     LOGICAL :: ERROR, return_call, TIME
 
@@ -173,6 +173,9 @@ program TWMAIN
     ACTIVE(4) = .FALSE.
     ACTIVE(5) = .TRUE.
 
+    ! Initialize functions
+    problem%save_sol => savesol
+
     ! CALL TWOPNT.
     VERSIO = 'DOUBLE PRECISION VERSION 3.22'
     SIGNAL = ' '
@@ -183,7 +186,7 @@ program TWMAIN
           CALL TWOPNT(SETTINGS, ERROR, TEXT, VERSIO, &
                       ABOVE, ACTIVE, BELOW, BUFFER, COMPS, CONDIT, GROUPA, GROUPB, &
                       WORK, MARK, NAME, NAMES, PMAX, POINTS, REPORT, &
-                      SIGNAL, STRIDE, TIME, U, X)
+                      SIGNAL, STRIDE, TIME, U, X, problem)
 
           IF (ERROR) GO TO 9004
 
@@ -292,6 +295,20 @@ program TWMAIN
     99009 FORMAT(/1X, A9, 'ERROR.  TWOPNT DOES NOT SOLVE THE PROBLEM.'//10X, '   REPORT:  ', A)
 
     contains
+
+      !  Save function interface
+      subroutine savesol(buffer,groupa,comps,points,groupb)
+         real(RK), intent(in) :: buffer(groupa+comps*points+groupb)
+         integer , intent(in) :: groupa,comps,points,groupb
+
+         integer :: N
+
+         N = groupa+comps*points+groupb
+
+         ! RETAIN THE SOLUTION FOR TIME INTEGRATION.
+         CALL TWCOPY (N,BUFFER,U0)
+
+      end subroutine savesol
 
       !  Residual function interface:
       subroutine residual(error,text,points,time,stride,x,buffer)

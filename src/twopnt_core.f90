@@ -149,6 +149,13 @@ module twopnt_core
 
     end type twwork
 
+    ! TWOPNT problem functions
+    type, public :: twfunctions
+
+        procedure(twopnt_save), nopass, pointer :: save_sol => null()
+
+    end type twfunctions
+
     ! TWOPNT statistics arrays
     type, public :: twstat
 
@@ -206,6 +213,15 @@ module twopnt_core
           real(RK), intent(inout) :: buffer(*) ! on input: contains the approximate solution
                                                ! on output:
        end subroutine twopnt_residual
+
+       ! Pass solution at the beginning of the timestep to the solver
+       subroutine twopnt_save(buffer,groupa,comps,points,groupb)
+          import RK
+          implicit none
+          ! Initial solution passed back to the user
+          real(RK), intent(in) :: buffer(groupa+comps*points+groupb)
+          integer , intent(in) :: groupa,comps,points,groupb
+       end subroutine twopnt_save
 
     end interface
 
@@ -1565,7 +1581,7 @@ module twopnt_core
       subroutine evolve(error, text, above, below, buffer, comps, condit, desire, groupa, groupb, &
                         leveld, levelm, name, names, points, report, s0, s1, signal, &
                         step, steps2, strid0, stride, success, tdabs, tdage, tdec, &
-                        tdrel, time, tinc, tmax, tmin, v0, v1, vsave, y0, y1, ynorm)
+                        tdrel, time, tinc, tmax, tmin, v0, v1, vsave, y0, y1, ynorm, functions)
 
       integer,          intent(in)    :: text
       integer,          intent(in)    :: groupa,comps,points,groupb
@@ -1585,6 +1601,7 @@ module twopnt_core
       character(len=*), intent(inout) :: signal
       real(RK), dimension(groupa+comps*points+groupb), intent(in)    :: above,below
       real(RK), dimension(groupa+comps*points+groupb), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1,vsave
+      type(twfunctions), intent(in)   :: functions
 
       real(RK)  :: change,condit,csave,dummy,high,low,stride
       integer   :: age,agej,count,first,last,length,number,route,xrepor
@@ -2444,7 +2461,8 @@ module twopnt_core
       ! TWOPNT driver.
       subroutine twopnt(setup, error, text, versio, &
                         above, active, below, buffer, comps, condit, groupa, groupb, &
-                        work, mark, name, names, pmax, points, report, signal, stride, time, u, x)
+                        work, mark, name, names, pmax, points, report, signal, stride, time, u, x, &
+                        functions)
 
       type(twcom) , intent(inout) :: setup
       logical     , intent(out)   :: error
@@ -2460,6 +2478,7 @@ module twopnt_core
       type(twwork), intent(inout) :: work
       real(RK)    , intent(inout) :: u(groupa + comps*pmax + groupb)
       real(RK)    , intent(inout) :: x(*)
+      type(twfunctions), intent(in) :: functions
 
       ! Local variables
       character(*), parameter :: id = 'TWOPNT:  '
@@ -2878,7 +2897,7 @@ module twopnt_core
                          setup%levelm - 1, name, names, points, xrepor, work%s0, work%s1, signal, &
                          stats%step, setup%steps2, setup%strid0, stride, found, setup%tdabs, &
                          setup%tdage, setup%tdec, setup%tdrel, time, setup%tinc, setup%tmax, &
-                         setup%tmin, u, work%v1, work%vsave, work%y0, work%y1, ynorm)
+                         setup%tmin, u, work%v1, work%vsave, work%y0, work%y1, ynorm, functions)
                   if (error) then
                       if (text>0) write (text, 19) id
                       return
