@@ -211,11 +211,6 @@ program TWMAIN
                  CALL TWSOLV(ERROR, TEXT, A, ASIZE, BUFFER, COMPS, GROUPA, GROUPB, PIVOT, POINTS)
                  IF (ERROR) GO TO 9008
 
-             case ('RETAIN')
-
-                 ! RETAIN THE SOLUTION FOR TIME INTEGRATION.
-                 CALL TWCOPY (N,BUFFER,U0)
-
              case ('UPDATE')
 
                  ! UPDATE THE GRID.

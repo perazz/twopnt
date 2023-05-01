@@ -170,7 +170,8 @@ module twopnt_core
 
         contains
 
-           procedure, non_overridable :: N => twsize_N
+           procedure, non_overridable :: N    => twsize_N
+           procedure, non_overridable :: NMAX => twsize_max
 
     end type twsize
 
@@ -178,7 +179,6 @@ module twopnt_core
     type, public :: twfunctions
 
         procedure(twopnt_save), nopass, pointer :: save_sol => null()
-
 
         contains
 
@@ -263,6 +263,12 @@ module twopnt_core
           class(twsize), intent(in) :: this
           N = this%GROUPA + this%COMPS * this%POINTS + this%GROUPB
        end function twsize_N
+
+       ! Return max allocation size
+       elemental integer function twsize_max(this) result(N)
+          class(twsize), intent(in) :: this
+          N = this%GROUPA + this%COMPS * this%PMAX + this%GROUPB
+       end function twsize_max
 
        ! Initialize the control structure
        elemental subroutine twinit (this)
