@@ -1567,20 +1567,29 @@ module twopnt_core
                         step, steps2, strid0, stride, success, tdabs, tdage, tdec, &
                         tdrel, time, tinc, tmax, tmin, v0, v1, vsave, y0, y1, ynorm)
 
-      integer,          intent(in)  :: text
-      logical,          intent(out) :: error
-      integer,          intent(in)  :: names
-      character(len=*), intent(in)  :: name(names)
+      integer,          intent(in)    :: text
+      integer,          intent(in)    :: groupa,comps,points,groupb
+      logical,          intent(out)   :: error
+      logical,          intent(out)   :: time
+      real(RK),         intent(in)    :: strid0
+      real(RK),         intent(in)    :: tinc      ! dt increment factor
+      real(RK),         intent(in)    :: tmin,tmax ! dt bounds
+      real(RK),         intent(in)    :: tdec,tdrel,tdabs
+      integer,          intent(in)    :: desire ! Desired number of timesteps
+      integer,          intent(in)    :: levelm,leveld,steps2,tdage
+      real(RK),         intent(inout) :: ynorm
+      integer,          intent(inout) :: step
+      integer,          intent(in)    :: names
+      integer,          intent(out)   :: report
+      character(len=*), intent(in)    :: name(names)
+      character(len=*), intent(inout) :: signal
       real(RK), dimension(groupa+comps*points+groupb), intent(in)    :: above,below
       real(RK), dimension(groupa+comps*points+groupb), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1,vsave
 
-      real(RK) :: change, condit, csave, dummy, high, low, strid0, stride, tdabs, tdec, tdrel, &
-                  tinc, tmax, tmin, ynorm
-      integer  :: age, agej, comps, count, desire, first, groupa, groupb, j, last, length, leveld, &
-                  levelm, number, points, report, route, step, steps2, tdage, xrepor
+      real(RK)  :: change,condit,csave,dummy,high,low,stride
+      integer   :: age,agej,count,first,last,length,number,route,xrepor
       intrinsic :: log10, max, min
-      logical  :: exist, jacob, success, time, xsucce
-      character(len=*)  :: signal
+      logical   :: exist,jacob,success,xsucce
       character(len=80) :: cword,jword,remark,yword
 
       character(len=*), parameter :: id = 'EVOLVE:  '
@@ -1598,342 +1607,307 @@ module twopnt_core
       if (signal /= ' ') then
          go to (1010, 1020, 1060, 1080, 1090, 2020) route
          error = .true.
-         if (text>0) write (text, 99001) id, route
+         if (text>0) write (text, 21) id, route
          return
       end if
 
       ! Check the arguments
-      error = .not. (((0 < comps) .eqv. (points>0)) .and. &
-              0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
-              0 <= groupb .and. 0 < groupa+comps*points+groupb)
+      error = .not. (all([comps,points,groupa,groupb]>=0) .and. groupa+comps*points+groupb>0)
       if (error) then
-         if (text>0) write (text, 99002) id,comps,points,groupa,groupb,groupa+comps*points+groupb
+         if (text>0) write (text, 22) id,comps,points,groupa,groupb,groupa+comps*points+groupb
          return
       end if
 
       error = .not. (0 < desire)
       if (error) then
-         if (text>0) write (text, 99003) id, desire
+         if (text>0) write (text, 23) id, desire
          return
       end if
 
-      error = .not. (one <= tdec .and. one <= tinc)
+      error = .not. (tdec>=one .and. tinc>=one)
       if (error) then
-         if (text>0) write (text, 99004) id, tdec, tinc
+         if (text>0) write (text, 24) id, tdec, tinc
          return
       end if
 
-      error = .not. (zero < tmin .and. tmin <= tmax)
+      ! stride bounds OK
+      error = .not. (tmin>zero .and. tmax>=tmin)
       if (error) then
-         if (text>0) write (text, 99005) id, tmin, tmax
+         if (text>0) write (text, 25) id, tmin, tmax
          return
       end if
 
-      error = .not. (tmin <= strid0 .and. strid0 <= tmax)
+      ! strid0 in bounds
+      error = .not. (strid0>=tmin .and. tmax>=strid0)
       if (error) then
-         if (text>0) write (text, 99006) id, tmin, strid0, tmax
+         if (text>0) write (text, 26) id, tmin, strid0, tmax
          return
       end if
 
       error = .not. step>=0
       if (error) then
-         if (text>0) write (text, 99007) id, step
+         if (text>0) write (text, 27) id, step
          return
       end if
 
-      error = tinc>one .and. .not. 0 < steps2
+      error = tinc>one .and. .not. steps2>0
       if (error) then
-         if (text>0) write (text, 99008) id, steps2
+         if (text>0) write (text, 28) id, steps2
          return
       end if
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     TIME EVOLUTION.
-!
-!///////////////////////////////////////////////////////////////////////
+      ! ***** Time evolution. *****
 
-!///  0 < M?
-
-      if (0 < step) go to 1010
+      save_initial_solution: if (step<=0) then
          stride = strid0
-         age = 0
+         age    = 0
 
-!        RETAIN THE LATEST SOLUTION FOR USE BY THE FUNCTION
+         ! RETAIN THE LATEST SOLUTION FOR USE BY THE FUNCTION
+         buffer = v0
          call twcopy (groupa+comps*points+groupb, v0, buffer)
          signal = 'RETAIN'
-!        GO TO 1010 WHEN ROUTE = 1
+         ! GO TO 1010 WHEN ROUTE = 1
          route = 1
          return
-1010  continue
+
+      endif save_initial_solution
+      1010 continue
       signal = ' '
 
-!///  FIRST := STEP, LAST := STEP + DESIRE.
-
+      ! Initialize timestepping
       exist = .false.
       first = step
-      last = step + desire
+      last  = step + desire
 
-!///  PRINT.
-
-      if (.not. (levelm>0 .and. text>0)) go to 1030
-         call twcopy (groupa+comps*points+groupb, v0, buffer)
+      ! Print header and initial function
+      if (levelm>0 .and. text>0) then
+         buffer = v0
          signal = 'RESIDUAL'
          time = .false.
 !        GO TO 1020 WHEN ROUTE = 2
          route = 2
          return
-1020     continue
+         1020 continue
          signal = ' '
          ynorm = twnorm(groupa+comps*points+groupb, buffer)
-
          call print_evolve_header(text,id,levelm,step,ynorm,stride)
 
-1030  continue
+      endif
 
-!///  LOW := TMIN, HIGH := TMAX.
+      time_integration: do while (step < last)
 
-1040  continue
+          low  = tmin
+          high = tmax
 
-      low = tmin
-      high = tmax
+          ! Increase dt if possible
+          if (age == steps2 .and. stride < high .and. tinc>one) then
+             age    = 0
+             exist  = .false.
+             low    = stride * tdec
+             stride = min (high, stride * tinc)
+             if (levelm>1.and.text>0)            write (text, 10) id, step, yword, log10(stride)
+          else
+             if (levelm>1.and.text>0.and.step>0) write (text, 9) id, step, yword, log10(stride)
+          end if
 
-!///  IF AGE = STEPS2 AND STRIDE < HIGH AND 1 < TINC, THEN INCREASE
-!///  STRIDE.
+          xsucce = .false.
+          change = zero
 
-      if (age == steps2 .and. stride < high .and. tinc>one) &
-         then
-         age = 0
-         exist = .false.
-         low = stride * tdec
-         stride = min (high, stride * tinc)
-         if (levelm>1 .and. text>0) write (text, 20003) id, step, yword, log10 (stride)
-      else
-         if (levelm>1 .and. text>0 .and. step>0) write (text, 20002) id, step, yword, log10 (stride)
-      end if
+          newton_search: do while (change==zero .or. .not.xsucce)
 
-!///  NEWTON SEARCH.
+              ! STORE THE LATEST SOLUTION SHOULD THE SEARCH FAIL
+              call twcopy (groupa+comps*points+groupb, v0, vsave)
 
-1050  continue
+              count = 0
+              csave = zero
+              jword = ' '
+              jacob = .false.
 
-!     STORE THE LATEST SOLUTION SHOULD THE SEARCH FAIL
-      call twcopy (groupa+comps*points+groupb, v0, vsave)
+              1060  continue
+              if (jacob) then
+                 exist = .true.
+                 count = count + 1
+                 csave = max(condit, csave)
+                 if (csave == zero) then
+                    write (jword, '(I3, 3X, A6)') count, '    NA'
+                 else
+                    write (jword, '(I3, 3X, F6.2)') count, log10 (csave)
+                 end if
+              end if
 
-      count = 0
-      csave = zero
-      jword = ' '
-      jacob = .false.
+              call search(error, text, above, agej, below, buffer, comps, condit, exist, groupa, &
+                          groupb, leveld - 1, levelm - 1, name, names, points, xrepor, &
+                          s0, s1, signal, number, xsucce, v0, v1, tdabs, tdage, tdrel, y0, dummy, y1)
+              if (error) then
+                 if (text>0) write (text, 29) id
+                 return
+              end if
 
-1060  continue
+              if (signal /= ' ') then
+                 jacob = signal == 'PREPARE'
+                 time  = .true.
+        !        GO TO 1060 WHEN ROUTE = 3
+                 route = 3
+                 return
+              end if
 
-      if (jacob) then
-         exist = .true.
-         count = count + 1
-         csave = max (condit, csave)
-         if (csave == zero) then
-            write (jword, '(I3, 3X, A6)') count, '    NA'
-         else
-            write (jword, '(I3, 3X, F6.2)') count, log10 (csave)
-         end if
-      end if
+              ! Newton search unsuccessful
+              if (.not. xsucce) then
+                 if (levelm==1 .and. text>0) then
+                    if (xrepor == qbnds) then
+                       length = 6
+                       remark = 'BOUNDS'
+                    else if (xrepor == qdvrg) then
+                       length = 7
+                       remark = 'DIVERGE'
+                    else
+                       length = 1
+                       remark = ' '
+                    end if
+                    write (text, 1) step + 1, log10 (stride), number, jword, remark (1:length)
+                 end if
 
-      call search(error, text, above, agej, below, buffer, comps, condit, exist, groupa, &
-                  groupb, leveld - 1, levelm - 1, name, names, points, xrepor, &
-                  s0, s1, signal, number, xsucce, v0, v1, tdabs, tdage, tdrel, y0, dummy, y1)
-      if (error) then
-         if (text>0) write (text, 99009) id
-         return
-      end if
+                 ! Retry with decreased strinde, if possible
+                 decrease_dt: if (low<stride .and. one<tdec) then
+                    age = 0
+                    call twcopy (groupa+comps*points+groupb, vsave, v0)
+                    exist = .false.
+                    high = stride / tinc
+                    stride = max (low, stride / tdec)
+                    if (levelm>1 .and. text>0) write (text, 11) id, step, yword, log10 (stride)
+                    cycle newton_search
+                 else
+                    ! FAILURE
+                    exit time_integration
+                 end if decrease_dt
 
-      if (signal /= ' ') then
-         jacob = signal == 'PREPARE'
-         time  = .true.
-!        GO TO 1060 WHEN ROUTE = 3
-         route = 3
-         return
-      end if
+              end if
 
-!///  UNSUCCESSFUL?
+              ! If the solution is not changing and we can still increase stride, do it. Otherwise, failure.
+              buffer = v0-vsave
+              change = twnorm(groupa+comps*points+groupb,buffer)
+              call twlogr(cword, change)
 
-      if (.not. xsucce) then
-         if (levelm==1 .and. text>0) then
-            if (xrepor == qbnds) then
-               length = 6
-               remark = 'BOUNDS'
-            else if (xrepor == qdvrg) then
-               length = 7
-               remark = 'DIVERGE'
-            else
-               length = 1
-               remark = ' '
-            end if
-            write (text, 10003) step + 1, log10 (stride), number, jword, remark (1:length)
-         end if
+              unchanged_solution: if (change == zero) then
+                 if (levelm==1 .and. text>0) write (text, 4) step+1,'  ZERO',log10(stride),number,jword
 
-!///  IF ALSO LOW < STRIDE AND 1 < TDEC, THEN DECREASE STRIDE.
+                 increase_dt: if (tinc>one .and. stride < high) then
+                    age = 0
+                    exist = .false.
+                    low = stride*tdec
+                    stride = min (high, stride * tinc)
+                    if (levelm>1 .and. text>0) write (text, 12) id, step, yword, log10 (stride)
+                    cycle newton_search
+                 else
+                    exit time_integration
+                 end if increase_dt
 
-         if (low < stride .and. one < tdec) then
-            age = 0
-            call twcopy (groupa+comps*points+groupb, vsave, v0)
-            exist = .false.
-            high = stride / tinc
-            stride = max (low, stride / tdec)
-            if (levelm>1 .and. text>0) write (text, 20004) id, step, yword, log10 (stride)
-            go to 1050
-         end if
+              end if unchanged_solution
 
-!///  OTHERWISE END, FAILURE.
+          end do newton_search
 
-         go to 2010
-      end if
+          ! New timestep
+          age  = age + 1
+          step = step + 1
 
-!///  IF NO CHANGE AND STRIDE < HIGH AND tinc>one, THEN
-!///  INCREASE STRIDE.  OTHERWISE END, FAILURE.
+          ! Save latest solution for use by the function
+          ! GO TO 1080 WHEN ROUTE = 4
+          route  = 4
+          buffer = v0
+          signal = 'RETAIN'
+          return
+    1080  continue
+          signal = ' '
 
-      buffer = v0-vsave
-      change = twnorm(groupa+comps*points+groupb,buffer)
-      call twlogr(cword, change)
+          ! Summary
+          print_summary: if (levelm>0 .and. text>0) then
+             buffer = v0
+             signal = 'RESIDUAL'
+             time = .false.
+    !        GO TO 1090 WHEN ROUTE = 5
+             route = 5
+             return
+             1090 continue
+             signal = ' '
+             ynorm  = twnorm(groupa+comps*points+groupb, buffer)
+             call twlogr (yword, ynorm)
 
-      if (change == zero) then
-         if (levelm==1 .and. text>0) then
-            write (text, 10004) step + 1, '  ZERO', log10 (stride), number, jword
-         end if
+             if (levelm==1) write (text, 5) step,yword,cword,log10(stride),number,jword
+          end if print_summary
 
-         if (tinc>one .and. stride < high) then
-            age = 0
-            exist = .false.
-            low = stride*tdec
-            stride = min (high, stride * tinc)
-            if (levelm>1 .and. text>0) &
-               write (text, 20005) id, step, yword, log10 (stride)
-            go to 1050
-         end if
-         go to 2010
-      end if
+      end do time_integration
 
-!///  AGE := AGE + 1, M := M + 1.
-
-      age  = age + 1
-      step = step + 1
-
-!     RETAIN THE LATEST SOLUTION FOR USE BY THE FUNCTION.
-!     GO TO 1080 WHEN ROUTE = 4
-      route  = 4
-      buffer = v0
-      signal = 'RETAIN'
-      return
-1080  continue
-      signal = ' '
-
-!///  PRINT.
-
-      if (.not. (levelm>0 .and. text>0)) go to 1100
-         buffer = v0
-         signal = 'RESIDUAL'
-         time = .false.
-!        GO TO 1090 WHEN ROUTE = 5
-         route = 5
-         return
-1090     continue
-         signal = ' '
-         ynorm = twnorm(groupa+comps*points+groupb, buffer)
-         call twlogr (yword, ynorm)
-
-         if (levelm==1) write (text, 10005) step, yword, cword, log10 (stride), number, jword
-1100  continue
-
-!///  M < LAST?
-
-      if (step < last) go to 1040
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     EPILOGUE.
-!
-!///////////////////////////////////////////////////////////////////////
-
-2010  continue
-
-!///  PRINT.
-
+      ! Epilogue.
       if (levelm>0 .and. text>0) then
-         if (levelm==1) then
-            if (step == first) then
-               write (text, 10006) id
-            else if (step == last) then
-               write (text, 10007) id
-            else
-               write (text, 10008) id
-            end if
-         else if (levelm>1) then
-            if (step == first) then
-               write (text, 10006) id
-            else if (step == last) then
-               write (text, 20006) id, step, yword
-            else
-               write (text, 20007) id, step, yword
-            end if
+
+         if (step == first) then
+            write (text, 6) id
+         else if (step == last) then
+            if (levelm>1) then; write (text, 13) id, step, yword
+            else;               write (text, 7) id; endif
+         else
+            if (levelm>1) then; write (text, 14) id, step, yword
+            else;               write (text, 8) id; endif
          end if
 
-         if (first < last .and. 1 == leveld) then
-            write (text, 20008) id
-            call twcopy (groupa+comps*points+groupb, v0, buffer)
+         if (first<last .and. leveld==1) then
+            write (text, 15) id
+            buffer = v0
             signal = 'SHOW'
-!           GO TO 2020 WHEN ROUTE = 6
+            ! GO TO 2020 WHEN ROUTE = 6
             route = 6
             return
          end if
       end if
-
-2020  continue
+      2020  continue
+      signal  = ' '
 
       ! SET THE COMPLETION STATUS FLAGS.
-      signal  = ' '
-      success = first < step
-      if (last>step) report = xrepor
+      success = step>first
+      if (step<last) report = xrepor
 
       return
 
       ! Informative messages
-      10003 format(10X, i6, 21X, f6.2, 3X, i5, 3X, a12, 3X, a)
-      10004 format(10X, i6, 12X, a6, 3X, f6.2, 3X, i5, 3X, a12)
-      10005 format(10X, i6, 2(3X, a6), 3X, f6.2, 3X, i5, 3X, a12)
-      10006 format(/1X, a9, 'FAILURE.  NO TIME EVOLUTION.')
-      10007 format(/1X, a9, 'SUCCESS.  TIME EVOLUTION COMPLETED.')
-      10008 format(/1X, a9, 'PARTIAL SUCCESS.  TIME EVOLUTION INCOMPLETE.')
-      20002 format(/1X, a9, 'CONTINUE TIME EVOLUTION.' &
+      1 format(10X, i6, 21X, f6.2, 3X, i5, 3X, a12, 3X, a)
+      4 format(10X, i6, 12X, a6, 3X, f6.2, 3X, i5, 3X, a12)
+      5 format(10X, i6, 2(3X, a6), 3X, f6.2, 3X, i5, 3X, a12)
+      6 format(/1X, a9, 'FAILURE.  NO TIME EVOLUTION.')
+      7 format(/1X, a9, 'SUCCESS.  TIME EVOLUTION COMPLETED.')
+      8 format(/1X, a9, 'PARTIAL SUCCESS.  TIME EVOLUTION INCOMPLETE.')
+      9 format(/1X, a9, 'CONTINUE TIME EVOLUTION.' &
                  //10X, i10, '  LATEST TIME POINT' &
                   /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
                   /10X, f10.2, '  LOG10 STRIDE TO NEXT TIME POINT' &
                  //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE.')
-      20003 format(/1X, a9, 'CONTINUE TIME EVOLUTION WITH INCREASED STRIDE.' &
+      10 format(/1X, a9, 'CONTINUE TIME EVOLUTION WITH INCREASED STRIDE.' &
                  //10X, i10, '  LATEST TIME POINT' &
                   /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
                   /10X, f10.2, '  LOG10 INCREASED STRIDE TO NEXT TIME POINT' &
                  //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE.')
-      20004 format(/1X, a9, 'RETRY THE STEP WITH A DECREASED TIME STRIDE.' &
+      11 format(/1X, a9, 'RETRY THE STEP WITH A DECREASED TIME STRIDE.' &
                  //10X, i10, '  LATEST TIME POINT' &
                   /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
                   /10X, f10.2, '  LOG10 DECREASED STRIDE TO NEXT TIME POINT' &
                  //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE, AGAIN.')
-      20005 format(/1X, a9, 'THE SOLUTION DID NOT CHANGE.  RETRYING THE STEP' &
+      12 format(/1X, a9, 'THE SOLUTION DID NOT CHANGE.  RETRYING THE STEP' &
                   /10X, 'WITH AN INCREASED TIME STRIDE.' &
                  //10X, i10, '  LATEST TIME POINT' &
                   /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE' &
                   /10X, f10.2, '  LOG10 INCREASED STRIDE TO NEXT TIME POINT' &
                  //10X, 'SEARCHING FOR THE NEXT TRANSIENT STATE, AGAIN.')
-      20006 format(/1X, a9, 'SUCCESS.  TIME EVOLUTION COMPLETED.' &
+      13 format(/1X, a9, 'SUCCESS.  TIME EVOLUTION COMPLETED.' &
                  //10X, i10, '  LAST TIME POINT' &
                   /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE')
-      20007 format(/1X, a9, 'PARTIAL SUCCESS.  TIME EVOLUTION INCOMPLETE.' &
+      14 format(/1X, a9, 'PARTIAL SUCCESS.  TIME EVOLUTION INCOMPLETE.' &
                  //10X, i10, '  LAST TIME POINT' &
                   /14X, a6, '  LOG10 STEADY STATE RESIDUAL HERE')
-      20008 format(/1X, a9, 'THE LATEST SOLUTION:')
+      15 format(/1X, a9, 'THE LATEST SOLUTION:')
 
       ! Error messages
-      99001 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
+      21 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
                  //10X, i10, '  ROUTE')
-      99002 format(/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
+      22 format(/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
                   /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE, NUMBERS OF ALL TYPES' &
                   /10X, 'OF UNKNOWNS MUST BE AT LEAST ZERO, AND TOTAL UNKNOWNS' &
                   /10X, 'MUST BE POSITIVE.' &
@@ -1942,28 +1916,28 @@ module twopnt_core
                   /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
                   /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
                   /10X, i10, '  TOTAL UNKNOWNS')
-      99003 format(/1X, a9, 'ERROR.  THE NUMBER OF TIME STEPS MUST BE POSITIVE.' &
+      23 format(/1X, a9, 'ERROR.  THE NUMBER OF TIME STEPS MUST BE POSITIVE.' &
                  //10X, i10, '  STEPS0 OR STEPS1, DESIRED NUMBER OF STEPS')
-      99004 format(/1X, a9, 'ERROR.  THE FACTORS FOR CHANGING THE TIME STRIDE' &
+      24 format(/1X, a9, 'ERROR.  THE FACTORS FOR CHANGING THE TIME STRIDE' &
                   /10X, 'MUST BE NO SMALLER THAN 1.' &
                  //10X, 1p, e10.2, '  TDEC, DECREASE FACTOR', &
                   /10X, 1p, e10.2, '  TINC, INCREASE FACTOR')
-      99005 format(/1X, a9, 'ERROR.  THE BOUNDS ON THE TIME STRIDE ARE OUT OF' &
+      25 format(/1X, a9, 'ERROR.  THE BOUNDS ON THE TIME STRIDE ARE OUT OF' &
                   /10X, 'ORDER.' &
                  //10X, 1p, e10.2, '  TMIN, SHORTEST STRIDE' &
                   /10X, 1p, e10.2, '  TMAX, LONGEST STRIDE')
-      99006 format(/1X, a9, 'ERROR.  THE INITIAL TIME STRIDE MUST LIE BETWEEN' &
+      26 format(/1X, a9, 'ERROR.  THE INITIAL TIME STRIDE MUST LIE BETWEEN' &
                   /10X, 'THE LOWER AND UPPER BOUNDS.' &
                  //10X, 1p, e10.2, '  TMIN, SHORTEST STRIDE' &
                   /10X, 1p, e10.2, '  STRID0, INITIAL STRIDE' &
                   /10X, 1p, e10.2, '  TMAX, LONGEST STRIDE')
-      99007 format(/1X, a9, 'ERROR.  THE COUNT OF TIME STEPS MUST BE ZERO OR' &
+      27 format(/1X, a9, 'ERROR.  THE COUNT OF TIME STEPS MUST BE ZERO OR' &
                   /10X, 'POSITIVE.' &
                  //10X, i10, '  STEP')
-      99008 format(/1X, a9, 'ERROR.  THE TIME STEPS BEFORE STRIDE INCREASES' &
+      28 format(/1X, a9, 'ERROR.  THE TIME STEPS BEFORE STRIDE INCREASES' &
                   /10X, 'MUST BE POSITIVE.' &
                  //10X, i10, '  STEPS2, TIME STEPS BEFORE STRIDE INCREASES')
-      99009 format(/1X, a9, 'ERROR.  SEARCH FAILS.')
+      29 format(/1X, a9, 'ERROR.  SEARCH FAILS.')
 
       end subroutine evolve
 
