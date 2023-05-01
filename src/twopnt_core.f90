@@ -74,6 +74,7 @@ module twopnt_core
     integer, parameter :: CONTRL_MAX_LEN = 40
     integer, parameter :: MAX_ERROR_LINES = 20
     integer, parameter :: MAX_DECAY_ITERATIONS = 5
+    integer, parameter :: DEFAULT_MAX_POINTS = 200
 
     ! Supported versions
     character(len=8), parameter :: vnmbr(*) = [character(len=8) :: '3.18', '3.19', '3.20', '3.21', &
@@ -149,10 +150,39 @@ module twopnt_core
 
     end type twwork
 
+    ! TWOPNT problem size
+    type, public :: twsize
+
+        ! Group A variables
+        integer :: groupa = 0
+
+        ! Unknowns on each grid point
+        integer :: comps  = 0
+
+        ! Number of grid points
+        integer :: points = 0
+
+        ! Max number of grid points
+        integer :: pmax = DEFAULT_MAX_POINTS
+
+        ! Group B variables
+        integer :: groupb = 0
+
+        contains
+
+           procedure, non_overridable :: N => twsize_N
+
+    end type twsize
+
     ! TWOPNT problem functions
     type, public :: twfunctions
 
         procedure(twopnt_save), nopass, pointer :: save_sol => null()
+
+
+        contains
+
+           procedure, nopass :: show => twshow
 
     end type twfunctions
 
@@ -227,6 +257,12 @@ module twopnt_core
 
 
     contains
+
+       ! Return total number of unknowns
+       elemental integer function twsize_N(this) result(N)
+          class(twsize), intent(in) :: this
+          N = this%GROUPA + this%COMPS * this%POINTS + this%GROUPB
+       end function twsize_N
 
        ! Initialize the control structure
        elemental subroutine twinit (this)
@@ -596,7 +632,6 @@ module twopnt_core
       ! *******************************************************************************************************
 
       subroutine twshow(error, text, buffer, comps, grid, groupa, groupb, points, x)
-
           logical, intent(out) :: error
           integer, intent(in)  :: text,comps,groupa,groupb,points
           logical, intent(in)  :: grid
@@ -733,11 +768,11 @@ module twopnt_core
       end subroutine twshow
 
       ! COPY ONE VECTOR TO ANOTHER.
-      pure subroutine twcopy (n, x, y)
+      pure subroutine twcopy (n, from, to)
           integer , intent(in)  :: n
-          real(RK), intent(in)  :: x(*)
-          real(RK), intent(out) ::  y(*)
-          y(1:n) = x(1:n)
+          real(RK), intent(in)  :: from(*)
+          real(RK), intent(out) ::  to(*)
+          if (n>0) to(1:n) = from(1:n)
           return
       end subroutine twcopy
 
@@ -1581,7 +1616,7 @@ module twopnt_core
       subroutine evolve(error, text, above, below, buffer, comps, condit, desire, groupa, groupb, &
                         leveld, levelm, name, names, points, report, s0, s1, signal, &
                         step, steps2, strid0, stride, success, tdabs, tdage, tdec, &
-                        tdrel, time, tinc, tmax, tmin, v0, v1, vsave, y0, y1, ynorm, functions)
+                        tdrel, time, tinc, tmax, tmin, v0, v1, vsave, y0, y1, ynorm, x, functions)
 
       integer,          intent(in)    :: text
       integer,          intent(in)    :: groupa,comps,points,groupb
@@ -1599,7 +1634,7 @@ module twopnt_core
       integer,          intent(out)   :: report
       character(len=*), intent(in)    :: name(names)
       character(len=*), intent(inout) :: signal
-      real(RK), dimension(groupa+comps*points+groupb), intent(in)    :: above,below
+      real(RK), dimension(groupa+comps*points+groupb), intent(in)    :: above,below,x
       real(RK), dimension(groupa+comps*points+groupb), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1,vsave
       type(twfunctions), intent(in)   :: functions
 
@@ -1622,7 +1657,7 @@ module twopnt_core
 
       ! IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
       if (signal /= ' ') then
-         go to (1010, 1020, 1060, 1080, 1090, 2020) route
+         go to (1010, 1020, 1060, 1080, 1090) route
          error = .true.
          if (text>0) write (text, 21) id, route
          return
@@ -1748,7 +1783,8 @@ module twopnt_core
 
               call search(error, text, above, agej, below, buffer, comps, condit, exist, groupa, &
                           groupb, leveld - 1, levelm - 1, name, names, points, xrepor, &
-                          s0, s1, signal, number, xsucce, v0, v1, tdabs, tdage, tdrel, y0, dummy, y1)
+                          s0, s1, signal, number, xsucce, v0, v1, tdabs, tdage, tdrel, y0, dummy, y1,&
+                          x, functions)
               if (error) then
                  if (text>0) write (text, 29) id
                  return
@@ -1860,15 +1896,9 @@ module twopnt_core
 
          if (first<last .and. leveld==1) then
             write (text, 15) id
-            buffer = v0
-            signal = 'SHOW'
-            ! GO TO 2020 WHEN ROUTE = 6
-            route = 6
-            return
+            call functions%show(error,text,v0,comps,.true.,groupa,groupb,points,x)
          end if
       end if
-      2020  continue
-      signal  = ' '
 
       ! SET THE COMPLETION STATUS FLAGS.
       success = step>first
@@ -1952,7 +1982,7 @@ module twopnt_core
       ! Perform the damped, modified Newton's search
       subroutine search(error, text, above, age, below, buffer, comps, condit, exist, groupa, &
                         groupb, leveld, levelm, name, names, points, report, s0, s1, signal, steps, &
-                        success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1)
+                        success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, x, functions)
 
           integer         , intent(in)    :: groupa, comps, points, groupb
           integer         , intent(out)   :: report
@@ -1964,8 +1994,9 @@ module twopnt_core
           integer         , intent(in)    :: names
           character(len=*), intent(in)    :: name(names)
           character(len=*), intent(inout) :: signal
-          real(RK), dimension(groupa+comps*points+groupb), intent(in)    :: above,below
+          real(RK), dimension(groupa+comps*points+groupb), intent(in)    :: above,below,x
           real(RK), dimension(groupa+comps*points+groupb), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1
+          type(twfunctions), intent(in)   :: functions
 
           real(RK) :: abs0,abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, &
                       value, y0norm, y1norm
@@ -1987,7 +2018,7 @@ module twopnt_core
 
           ! IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
           if (signal /= ' ') then
-             go to (2020, 2040, 2050, 2140, 2150, 2180) route
+             go to (2020, 2040, 2050, 2140, 2150) route
              error = .true.
              if (text>0) write (text, 5) id, route
              return
@@ -2227,18 +2258,12 @@ module twopnt_core
              if (leveld>0) then
                 ! Ask to display the final solution
                 write (text, 3) id
-                signal = 'SHOW'
-                buffer = v0
-                ! GO TO 2180 WHEN ROUTE = 6
-                route = 6
-                steps = number ! Copy the protected local variable
-                return
+                call functions%show(error,text,v0,comps,.true.,groupa,groupb,points,x)
              else
                 write (text, 4) id
              end if
           end if
 
-          2180  continue
           signal  = ' '
           success = .true.
           steps   = number ! Copy the protected local variable
@@ -2461,13 +2486,14 @@ module twopnt_core
       character(*), intent(in)    :: versio
       character(*), intent(inout) :: signal,report
       integer     , intent(in)    :: names
+
       character(*), intent(inout) :: name(names) ! Names of the variables
       real(RK)    , intent(inout), dimension(groupa+comps+groupb) :: above,below
       logical     , intent(inout) :: active(*),mark(*)
       real(RK)    , intent(inout) :: buffer(groupa+comps*pmax+groupb)
       real(RK)    , intent(inout) :: condit
       type(twwork), intent(inout) :: work
-      real(RK)    , intent(inout) :: u(groupa + comps*pmax + groupb)
+      real(RK)    , intent(inout) :: u(groupa+comps*pmax+groupb)
       real(RK)    , intent(inout) :: x(*)
       type(twfunctions), intent(in) :: functions
 
@@ -2723,7 +2749,7 @@ module twopnt_core
                              exist, groupa, groupb, setup%leveld - 1, setup%levelm - 1, name, names, &
                              points, xrepor, work%s0, work%s1, signal, nsteps, found, &
                              u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
-                             work%y1)
+                             work%y1, x, functions)
                   if (error) then
                       if (text>0) write (text, 17) id
                       return
@@ -2795,17 +2821,18 @@ module twopnt_core
 
                   ! PREPARE TO CALL REFINE.
 
-                  ! Save group B values
+                  ! Save group B values (will be shifted by the new grid size)
                   if (groupb>0) work%vsave(:groupb) = u(groupa+comps*points+1:groupa+comps*points+groupb)
                   exist = .false.
 
                   ! CALL REFINE.
                   5030  continue
+                  ! Refine only modifies comps*points
                   call refine(error, text, active, &
-                              buffer(groupa + 1), comps, setup%leveld - 1, setup%levelm - 1, mark, &
+                              buffer(groupa+1), comps, setup%leveld - 1, setup%levelm - 1, mark, &
                               found, setup%ipadd, pmax, points, ratio, work%ratio1, work%ratio2,   &
                               signal, satisf, setup%toler0, setup%toler1, setup%toler2, u(groupa + 1), &
-                              work%vary1, work%vary2, work%vary, x)
+                              work%vary1, work%vary2, work%vary, x, functions)
                   if (error) then
                       if (text>0) write (text, 18) id
                       return
@@ -2888,7 +2915,7 @@ module twopnt_core
                          setup%levelm - 1, name, names, points, xrepor, work%s0, work%s1, signal, &
                          stats%step, setup%steps2, setup%strid0, stride, found, setup%tdabs, &
                          setup%tdage, setup%tdec, setup%tdrel, time, setup%tinc, setup%tmax, &
-                         setup%tmin, u, work%v1, work%vsave, work%y0, work%y1, ynorm, functions)
+                         setup%tmin, u, work%v1, work%vsave, work%y0, work%y1, ynorm, x, functions)
                   if (error) then
                       if (text>0) write (text, 19) id
                       return
@@ -3060,12 +3087,9 @@ module twopnt_core
 
 9921  continue
 
-      call twcopy (groupa+comps*points+groupb, u, buffer)
-      signal = 'SHOW'
-!     GO TO 9922 WHEN ROUTE = 2
-      route = 2
-      return
-9922  continue
+      call twcopy (groupa+comps*points+groupb,u,buffer)
+      call functions%show(error,text,buffer,comps,.true.,groupa,groupb,points,x)
+      9922 continue
       signal = ' '
 
       go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
@@ -3180,7 +3204,7 @@ module twopnt_core
       ! Perform automatic grid selection
       subroutine refine(error, text, active, buffer, comps, leveld, levelm, mark, newx, &
                         padd, pmax, points, ratio, ratio1, ratio2, signal, success, toler0, &
-                        toler1, toler2, u, vary1, vary2, weight, x)
+                        toler1, toler2, u, vary1, vary2, weight, x, functions)
 
           integer,  intent(in)     :: text,leveld,levelm
           integer,  intent(in)     :: pmax,padd
@@ -3194,6 +3218,7 @@ module twopnt_core
           real(RK), intent(in)     :: toler0,toler1,toler2
           integer,  intent(inout), dimension(pmax) :: vary1,vary2,weight
           character(len=*), intent(inout) :: signal
+          type(twfunctions), intent(in) :: functions
 
           character(len=*), parameter :: id = 'REFINE:  '
 
@@ -3527,7 +3552,7 @@ module twopnt_core
 
              if (leveld>0 .and. more>0) then
                 write (text, 10) id
-                call twcopy (comps*points, u, buffer)
+                call twcopy(comps*points,from=u,to=buffer)
                 signal = 'SHOW'
                 ! go to 5040 when route = 2
                 route = 2

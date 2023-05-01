@@ -42,6 +42,7 @@ program TWMAIN
     character(len=80) :: VERSIO
 
     type(twcom) :: settings
+    type(twsize) :: sizes
     type(twwork) :: work
     type(twfunctions) :: problem
     real(RK) :: A(ASIZE), ABOVE(COMPS), BELOW(COMPS)
@@ -82,44 +83,19 @@ program TWMAIN
 
     ! SPECIFY THE CONTROLS.
     call settings%set(ERROR, TEXT, 'ADAPT', .TRUE.)
-    IF (ERROR) GO TO 9001
-
     call settings%set(ERROR, TEXT, 'LEVELD', 1)
-    IF (ERROR) GO TO 9002
-
     call settings%set(ERROR, TEXT, 'LEVELM', 1)
-    IF (ERROR) GO TO 9002
-
     call settings%set(ERROR, TEXT, 'STEPS1', 50)
-    IF (ERROR) GO TO 9002
-
     call settings%set(ERROR, TEXT, 'STEPS2', 50)
-    IF (ERROR) GO TO 9002
-
     call settings%set(ERROR, TEXT, 'STRID0', 1.0e-3_RK)
-    IF (ERROR) GO TO 9003
-
     call settings%set(ERROR, TEXT, 'TINC', 3.16_RK)
-    IF (ERROR) GO TO 9003
-
     call settings%set(ERROR, TEXT, 'TOLER1', 0.1_RK)
-    IF (ERROR) GO TO 9003
-
     call settings%set(ERROR, TEXT, 'TOLER2', 0.1_RK)
-    IF (ERROR) GO TO 9003
-
     if (RELAXED_TOLERANCES) then
         call settings%set(ERROR, TEXT, 'SSABS', 1.0e-9_RK)
-        IF (ERROR) GO TO 9003
-
         call settings%set(ERROR, TEXT, 'TDABS', 1.0e-9_RK)
-        IF (ERROR) GO TO 9003
-
         call settings%set(ERROR, TEXT, 'SSREL', 1.0e-4_RK)
-        IF (ERROR) GO TO 9003
-
         call settings%set(ERROR, TEXT, 'TDREL', 1.0e-4_RK)
-        IF (ERROR) GO TO 9003
     endif
 
     ! INITIALIZE ARRAYS FOR TWOPNT.
@@ -175,6 +151,9 @@ program TWMAIN
 
     ! Initialize functions
     problem%save_sol => savesol
+
+    ! Initialize unknowns
+    sizes = twsize(GROUPA,COMPS,POINTS,PMAX,GROUPB)
 
     ! CALL TWOPNT.
     VERSIO = 'DOUBLE PRECISION VERSION 3.22'
