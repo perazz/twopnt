@@ -1674,22 +1674,16 @@ module twopnt_core
       end if
 
       ! ***** Time evolution. *****
-
       save_initial_solution: if (step<=0) then
          stride = strid0
          age    = 0
 
-         ! RETAIN THE LATEST SOLUTION FOR USE BY THE FUNCTION
+         ! Send latest solution to the problem handler
          buffer = v0
-         call twcopy (groupa+comps*points+groupb, v0, buffer)
-         signal = 'RETAIN'
-         ! GO TO 1010 WHEN ROUTE = 1
-         route = 1
-         return
+         call functions%save_sol(buffer,groupa,comps,points,groupb)
 
       endif save_initial_solution
       1010 continue
-      signal = ' '
 
       ! Initialize timestepping
       exist = .false.
@@ -1829,19 +1823,16 @@ module twopnt_core
 
           ! Save latest solution for use by the function
           ! GO TO 1080 WHEN ROUTE = 4
-          route  = 4
           buffer = v0
-          signal = 'RETAIN'
-          return
-    1080  continue
-          signal = ' '
+          call functions%save_sol(buffer,groupa,comps,points,groupb)
+          1080 continue
 
           ! Summary
           print_summary: if (levelm>0 .and. text>0) then
              buffer = v0
              signal = 'RESIDUAL'
              time = .false.
-    !        GO TO 1090 WHEN ROUTE = 5
+             ! GO TO 1090 WHEN ROUTE = 5
              route = 5
              return
              1090 continue
