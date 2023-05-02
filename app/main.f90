@@ -52,7 +52,7 @@ program TWMAIN
     real(RK) :: CONDIT,STRIDE
     logical  :: ACTIVE(COMPS), MARK(PMAX)
     integer  :: PIVOT(COMPS*PMAX)
-    INTEGER :: J, LENGTH, N, POINTS
+    INTEGER :: J, LENGTH, N
     LOGICAL :: ERROR, return_call, TIME
 
     ! PROLOGUE. OPEN FILES.
@@ -78,8 +78,8 @@ program TWMAIN
     ! *** SET TWOPNT CONTROLS. ***
 
     ! CHOOSE THE INITIAL GRID SIZE.
-    POINTS = 6
-    N = GROUPA + COMPS * POINTS + GROUPB
+    sizes = twsize(GROUPA,COMPS,6,PMAX,GROUPB)
+    N = sizes%N()
 
     ! SPECIFY THE CONTROLS.
     call settings%set(ERROR, TEXT, 'ADAPT', .TRUE.)
@@ -101,10 +101,10 @@ program TWMAIN
     ! INITIALIZE ARRAYS FOR TWOPNT.
 
     ! FORM THE INITIAL GRID.
-    FORALL(J=1:POINTS) X(J) = ZMAX*(REAL(J-1,RK)/REAL(POINTS-1,RK))
+    FORALL(J=1:sizes%POINTS) X(J) = ZMAX*(REAL(J-1,RK)/REAL(sizes%POINTS-1,RK))
 
     ! CHOOSE GUESSES FOR THE UNKNOWNS.
-    init_unknowns: DO J = 1, POINTS
+    init_unknowns: DO J = 1, sizes%POINTS
 
          ! F
          U(1, J) = zero
@@ -152,9 +152,6 @@ program TWMAIN
     ! Initialize functions
     problem%save_sol => savesol
 
-    ! Initialize unknowns
-    sizes = twsize(GROUPA,COMPS,POINTS,PMAX,GROUPB)
-
     ! CALL TWOPNT.
     VERSIO = 'DOUBLE PRECISION VERSION 3.22'
     SIGNAL = ' '
@@ -162,10 +159,8 @@ program TWMAIN
     ITERATE: DO
 
           ! Call driver
-          CALL TWOPNT(SETTINGS, ERROR, TEXT, VERSIO, &
-                      ABOVE, ACTIVE, BELOW, BUFFER, COMPS, CONDIT, GROUPA, GROUPB, &
-                      WORK, MARK, NAME, NAMES, PMAX, POINTS, REPORT, &
-                      SIGNAL, STRIDE, TIME, U, X, problem)
+          CALL TWOPNT(SETTINGS, ERROR, TEXT, VERSIO, sizes, ABOVE, ACTIVE, BELOW, BUFFER, CONDIT, &
+                      WORK, MARK, NAME, NAMES, REPORT, SIGNAL, STRIDE, TIME, U, X, problem)
 
           IF (ERROR) GO TO 9004
 
@@ -175,7 +170,7 @@ program TWMAIN
              case ('RESIDUAL')
 
                 ! Evaluate residual
-                call residual(error,text,points,time,stride,x,buffer)
+                call residual(error,text,sizes%points,time,stride,x,buffer)
                 IF (ERROR) GO TO 9005
 
              case ('PREPARE')
@@ -185,12 +180,12 @@ program TWMAIN
 
                 evaluate_jacobian: do
 
-                    CALL TWPREP(ERROR, TEXT, A, ASIZE, BUFFER, COMPS, CONDIT, &
-                                GROUPA, GROUPB, PIVOT, POINTS, return_call)
+                    CALL TWPREP(ERROR, TEXT, A, ASIZE, BUFFER, sizes%comps, CONDIT, &
+                                sizes%GROUPA, sizes%GROUPB, PIVOT, sizes%POINTS, return_call)
                     IF (ERROR) GO TO 9006
 
                     IF (return_call) THEN
-                        call residual(error,text,points,time,stride,x,buffer)
+                        call residual(error,text,sizes%points,time,stride,x,buffer)
                         IF (ERROR) GO TO 9005
 
                     else
@@ -202,19 +197,19 @@ program TWMAIN
              case ('SHOW')
 
                  ! SHOW THE SOLUTION.
-                 CALL TWSHOW(ERROR, TEXT, BUFFER, COMPS, .TRUE., GROUPA, GROUPB, POINTS, X)
+                 CALL TWSHOW(ERROR, TEXT, BUFFER, sizes, .TRUE., X)
                  IF (ERROR) GO TO 9007
 
              case ('SOLVE')
 
                  ! SOLVE THE LINEAR EQUATIONS.
-                 CALL TWSOLV(ERROR, TEXT, A, ASIZE, BUFFER, COMPS, GROUPA, GROUPB, PIVOT, POINTS)
+                 CALL TWSOLV(ERROR, TEXT, A, ASIZE, BUFFER, sizes, PIVOT)
                  IF (ERROR) GO TO 9008
 
              case ('UPDATE')
 
                  ! UPDATE THE GRID.
-                 N = GROUPA + COMPS * POINTS + GROUPB
+                 N = sizes%N()
 
              case (' ')
 
@@ -236,9 +231,6 @@ program TWMAIN
     return
 
     ! ERROR HANDLING.
-    9001  IF (TEXT>0) WRITE (TEXT, 99001) ID; return
-    9002  IF (TEXT>0) WRITE (TEXT, 99002) ID; return
-    9003  IF (TEXT>0) WRITE (TEXT, 99003) ID; return
     9004  IF (TEXT>0) WRITE (TEXT, 99004) ID; return
     9005  IF (TEXT>0) WRITE (TEXT, 99005) ID; return
     9006  IF (TEXT>0) WRITE (TEXT, 99006) ID; return
@@ -258,9 +250,6 @@ program TWMAIN
                  /10X, F10.5, '  WMAX')
 
     ! ERROR MESSAGES.
-    99001 FORMAT(/1X, A9, 'ERROR.  TWSETL FAILS.')
-    99002 FORMAT(/1X, A9, 'ERROR.  TWSETI FAILS.')
-    99003 FORMAT(/1X, A9, 'ERROR.  TWSETR FAILS.')
     99004 FORMAT(/1X, A9, 'ERROR.  TWOPNT FAILS.')
     99005 FORMAT(/1X, A9, 'ERROR.  RESID FAILS.')
     99006 FORMAT(/1X, A9, 'ERROR.  TWPREP FAILS.')
@@ -271,13 +260,14 @@ program TWMAIN
     contains
 
       !  Save function interface
-      subroutine savesol(buffer,groupa,comps,points,groupb)
-         real(RK), intent(in) :: buffer(groupa+comps*points+groupb)
-         integer , intent(in) :: groupa,comps,points,groupb
+      subroutine savesol(vars,buffer)
+         type(twsize), intent(in) :: vars
+         real(RK),     intent(in) :: buffer(vars%N())
+
 
          integer :: N
 
-         N = groupa+comps*points+groupb
+         N = vars%N()
 
          ! RETAIN THE SOLUTION FOR TIME INTEGRATION.
          CALL TWCOPY (N,BUFFER,U0)
