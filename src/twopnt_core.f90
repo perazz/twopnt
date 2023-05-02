@@ -1234,14 +1234,15 @@ module twopnt_core
       ! Evaluate a block tridiagonal Jacobian matrix by one-sided finite differences and reverse
       ! communication, pack the matrix into the LINPACK banded form, scale the rows, and factor the
       ! matrix using LINPACK's SGBCO
-      subroutine twprep(error, text, a, asize, buffer, comps, condit, groupa, groupb, pivot, points, return_call)
+      subroutine twprep(error, text, a, asize, buffer, vars, condit, pivot, return_call)
 
-          integer,  intent(in)    :: text ! output unit
-          integer,  intent(in)    :: asize,groupa,groupb,comps,points
-          integer,  intent(inout) :: pivot (groupa+comps*points+groupb)
-          real(RK), intent(inout) :: buffer(groupa+comps*points+groupb)
-          real(RK), intent(inout) :: a(asize), condit
-          logical , intent(inout) :: return_call
+          integer,      intent(in)    :: text ! output unit
+          integer,      intent(in)    :: asize
+          type(twsize), intent(in)    :: vars
+          integer,      intent(inout) :: pivot (vars%N())
+          real(RK),     intent(inout) :: buffer(vars%N())
+          real(RK),     intent(inout) :: a(asize), condit
+          logical ,     intent(inout) :: return_call
 
           real(RK) :: delta, temp
           integer :: block, blocks, cfirst, clast, col, count, diag, j, lda, length, n, offset, &
@@ -1252,9 +1253,6 @@ module twopnt_core
 
           ! Parameters
           character(len=*), parameter :: id = 'TWPREP:  '
-
-          ! SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
-          logical, parameter :: mess = .false.
 
           save
 
@@ -1271,21 +1269,13 @@ module twopnt_core
           endif
 
           ! CHECK THE ARGUMENTS.
-          n = groupa+comps*points+groupb
-          error = .not. (((0 < comps) .eqv. (points>0)) .and. &
-                  0 <= comps .and. 0 <= points .and. 0 <= groupa .and. &
-                  0 <= groupb .and. 0 < n)
-          if (error) go to 9002
+          n = vars%N()
+          call vars%check(error,id,text)
+          if (error) return
 
-          width = comps + max (comps, groupa, groupb) - 1
+          width = vars%comps + max(vars%comps,vars%groupa,vars%groupb) - 1
           error = .not. ((3 * width + 2) * n <= asize)
           if (error) go to 9003
-
-          ! WRITE ALL MESSAGES.
-          if (mess .and. text>0) then
-             route = 0
-             go to 9001
-          end if
 
           ! Initialize counters and pointers
 
@@ -1299,19 +1289,19 @@ module twopnt_core
           ! BLOCKS AND BLOCK SIZES
           ! Temporarily store block sizes and pointers in array "pivot"
           blocks = 0
-          if (0 < groupa) then
+          if (0 < vars%groupa) then
              blocks = blocks + 1
-             pivot(blocks) = groupa
+             pivot(blocks) = vars%groupa
           end if
 
-          do j = 1, points
+          do j = 1, vars%points
              blocks = blocks + 1
-             pivot(blocks) = comps
+             pivot(blocks) = vars%comps
           end do
 
-          if (0 < groupb) then
+          if (0 < vars%groupb) then
              blocks = blocks + 1
-             pivot(blocks) = groupb
+             pivot(blocks) = vars%groupb
           end if
 
           ! ***** (2) INITIALIZE THE COLUMNS OF THE MATRIX *****
@@ -1327,7 +1317,7 @@ module twopnt_core
     !     GO TO 2030 WHEN ROUTE = 1
           route = 1
           return_call = .true.
-          go to 99999
+          return
     2030  continue
 
           ! Place function values into the matrix.
@@ -1380,12 +1370,12 @@ module twopnt_core
                    end if
 
                    do j = 1, count
-                      if (block == 1 .and. 0 < groupa) then
-                         cfirst = cfirst + groupa
-                      else if (block == blocks .and. 0 < groupb) then
-                         cfirst = cfirst + groupb
+                      if (block == 1 .and. 0 < vars%groupa) then
+                         cfirst = cfirst + vars%groupa
+                      else if (block == blocks .and. 0 < vars%groupb) then
+                         cfirst = cfirst + vars%groupb
                       else
-                         cfirst = cfirst + comps
+                         cfirst = cfirst + vars%comps
                       end if
                       block = block + 1
                    end do
@@ -1412,29 +1402,29 @@ module twopnt_core
                     temp   = one / delta
                     offset = n + diag - col + lda * (col - 1)
 
-                    if (block == 1 .and. 0 < groupa) then
-                       clast = cfirst + groupa - 1
-                    else if (block == blocks .and. 0 < groupb) then
-                       clast = cfirst + groupb - 1
+                    if (block == 1 .and. 0 < vars%groupa) then
+                       clast = cfirst + vars%groupa - 1
+                    else if (block == blocks .and. 0 < vars%groupb) then
+                       clast = cfirst + vars%groupb - 1
                     else
-                       clast = cfirst + comps - 1
+                       clast = cfirst + vars%comps - 1
                     end if
 
                     if (1 < block) then
-                       if (block == 2 .and. 0 < groupa) then
-                          rfirst = cfirst - groupa
+                       if (block == 2 .and. 0 < vars%groupa) then
+                          rfirst = cfirst - vars%groupa
                        else
-                          rfirst = cfirst - comps
+                          rfirst = cfirst - vars%comps
                        end if
                     else
                        rfirst = cfirst
                     end if
 
                     if (block < blocks) then
-                       if (block == blocks - 1 .and. 0 < groupb) then
-                          rlast = clast + groupb
+                       if (block == blocks - 1 .and. 0 < vars%groupb) then
+                          rlast = clast + vars%groupb
                        else
-                          rlast = clast + comps
+                          rlast = clast + vars%comps
                        end if
                     else
                        rlast = clast
@@ -1448,12 +1438,12 @@ module twopnt_core
                  end if
 
                  do j = 1, count
-                    if (block == 1 .and. 0 < groupa) then
-                       cfirst = cfirst + groupa
-                    else if (block == blocks .and. 0 < groupb) then
-                       cfirst = cfirst + groupb
+                    if (block == 1 .and. 0 < vars%groupa) then
+                       cfirst = cfirst + vars%groupa
+                    else if (block == blocks .and. 0 < vars%groupb) then
+                       cfirst = cfirst + vars%groupb
                     else
-                       cfirst = cfirst + comps
+                       cfirst = cfirst + vars%comps
                     end if
                     block = block + 1
                  end do
@@ -1475,7 +1465,10 @@ module twopnt_core
           ! ***** (6) FACTOR THE MATRIX.
           call twgbco(a(n+1), lda, n, width, width, pivot, condit, buffer)
           error = condit == zero
-          if (error) go to 9006
+          if (error) then
+              if (text>0) write (text, 99006) id
+              return
+          end if
           condit = one/condit
 
     !///////////////////////////////////////////////////////////////////////
@@ -1496,34 +1489,29 @@ module twopnt_core
           go to 99999
 
     9001  if (text>0) write (text, 99001) id, route
-          if (.not. mess) go to 99999
-
-    9002  if (text>0) write (text, 99002) id, &
-             comps, points, groupa, groupb, n
-          if (.not. mess) go to 99999
+          return
 
     9003  if (text>0) write (text, 99003) id, &
-             comps, points, groupa, groupb, n, width, &
-             (3 * width + 2) * n, asize
-          if (.not. mess) go to 99999
+             vars%comps, vars%points, vars%groupa, vars%groupb, n, width, (3 * width + 2) * n, asize
+          return
 
     9004  if (text>0) then
-             write (text, 99004) id, comps, points, groupa, groupb, &
-                groupa+comps*points+groupb, count
+             write (text, 99004) id, vars%comps, vars%points, vars%groupa, vars%groupb, vars%N(), count
+
              count = 0
-             do 8010 j = 1, groupa+comps*points+groupb
-                if (a(j) == zero .or. mess) then
+             do 8010 j = 1, vars%N()
+                if (a(j) == zero) then
                    count = count + 1
                    if (count <= MAX_ERROR_LINES) then
-                      if (j <= groupa) then
+                      if (j <= vars%groupa) then
                          write (string, '(A, I10)') 'GROUP A ', j
-                      else if (j <= groupa + comps * points) then
+                      else if (j <= vars%groupa + vars%comps * vars%points) then
                          write (string, '(A, I10, A, I10)') &
-                            ' COMPONENT ', mod (j - groupa - 1, comps) + 1, &
-                            ' AT POINT ', int ((j - groupa - 1) / comps) + 1
+                            ' COMPONENT ', mod (j - vars%groupa - 1, vars%comps) + 1, &
+                            ' AT POINT ', int ((j - vars%groupa - 1) / vars%comps) + 1
                       else
                          write (string, '(A, I10)') &
-                            'GROUP B ', j - groupa - comps * points
+                            'GROUP B ', j - vars%groupa - vars%comps * vars%points
                       end if
                       call twsqez (length, string)
                       write (text, 80001) string (1 : length)
@@ -1532,25 +1520,24 @@ module twopnt_core
     8010     continue
              if (MAX_ERROR_LINES < count) write (text, 80002)
           end if
-          if (.not. mess) go to 99999
+          return
 
     9005  if (text>0) then
-             write (text, 99005) id, comps, points, groupa, groupb, &
-                groupa+comps*points+groupb, count
+             write (text, 99005) id, vars%comps, vars%points, vars%groupa, vars%groupb, vars%N(), count
              count = 0
-             do 8020 j = 1, groupa+comps*points+groupb
-                if (a(j) == zero .or. mess) then
+             do 8020 j = 1, vars%N()
+                if (a(j) == zero) then
                    count = count + 1
                    if (count <= MAX_ERROR_LINES) then
-                      if (j <= groupa) then
+                      if (j <= vars%groupa) then
                          write (string, '(A, I10)') 'GROUP A ', j
-                      else if (j <= groupa + comps * points) then
+                      else if (j <= vars%groupa + vars%comps * vars%points) then
                          write (string, '(A, I10, A, I10)') &
-                            ' COMPONENT ', mod (j - groupa - 1, comps) + 1, &
-                            ' AT POINT ', int ((j - groupa - 1) / comps) + 1
+                            ' COMPONENT ', mod (j - vars%groupa - 1, vars%comps) + 1, &
+                            ' AT POINT ', int ((j - vars%groupa - 1) / vars%comps) + 1
                       else
                          write (string, '(A, I10)') &
-                            'GROUP B ', j - groupa - comps * points
+                            'GROUP B ', j - vars%groupa - vars%comps * vars%points
                       end if
                       call twsqez (length, string)
                       write (text, 80001) string (1 : length)
@@ -1559,24 +1546,11 @@ module twopnt_core
     8020     continue
              if (MAX_ERROR_LINES < count) write (text, 80002)
           end if
-          if (.not. mess) go to 99999
-
-        9006  if (text>0) write (text, 99006) id
-              if (.not. mess) go to 99999
+          return
 
         ! Formats section
         99001 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
                    //10X, i10, '  ROUTE')
-
-        99002 format(/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
-                    /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE, NUMBERS OF ALL TYPES' &
-                    /10X, 'OF UNKNOWNS MUST BE AT LEAST ZERO, AND TOTAL UNKNOWNS' &
-                    /10X, 'MUST BE POSITIVE.' &
-                   //10X, i10, '  COMPS, COMPONENTS' &
-                    /10X, i10, '  POINTS' &
-                    /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-                    /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-                    /10X, i10, '  TOTAL UNKNOWNS')
 
         99003 format(/1X, a9, 'ERROR.  THE MATRIX SPACE IS TOO SMALL.' &
                    //10X, i10, '  COMPS, COMPONENTS' &

@@ -180,8 +180,7 @@ program TWMAIN
 
                 evaluate_jacobian: do
 
-                    CALL TWPREP(ERROR, TEXT, A, ASIZE, BUFFER, sizes%comps, CONDIT, &
-                                sizes%GROUPA, sizes%GROUPB, PIVOT, sizes%POINTS, return_call)
+                    CALL TWPREP(ERROR, TEXT, A, ASIZE, BUFFER, sizes, CONDIT, PIVOT, return_call)
                     IF (ERROR) GO TO 9006
 
                     IF (return_call) THEN
