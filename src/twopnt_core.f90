@@ -1249,7 +1249,7 @@ module twopnt_core
                      rfirst, rlast, route, row, skip, width
           intrinsic :: abs, int, max, min, mod, sqrt
           logical :: error, found
-          character(len=80) :: string
+
 
           ! Parameters
           character(len=*), parameter :: id = 'TWPREP:  '
@@ -1265,7 +1265,8 @@ module twopnt_core
              return_call = .false.
              go to (2030, 3050) route
              error = .true.
-             go to 9001
+             if (text>0) write (text, 1) id, route
+             return
           endif
 
           ! CHECK THE ARGUMENTS.
@@ -1275,7 +1276,10 @@ module twopnt_core
 
           width = vars%comps + max(vars%comps,vars%groupa,vars%groupb) - 1
           error = .not. ((3 * width + 2) * n <= asize)
-          if (error) go to 9003
+          if (error) then
+             if (text>0) write (text, 2) id, vars%comps,vars%points,vars%groupa,vars%groupb,n,width,(3*width+2) * n, asize
+             return
+          end if
 
           ! Initialize counters and pointers
 
@@ -1387,7 +1391,7 @@ module twopnt_core
               ! GO TO 3050 WHEN ROUTE = 2
               route = 2
               return_call = .true.
-              go to 99999
+              RETURN
               3050  continue
 
               ! DIFFERENCE TO FORM THE COLUMNS OF THE JACOBIAN MATRIX.
@@ -1455,136 +1459,44 @@ module twopnt_core
           ! ***** (4) CHECK FOR ZERO COLUMNS. *****
           call count_zero_columns(a,n,diag,lda,width,count)
           error = .not. (count == 0)
-          if (error) go to 9004
+          if (error) then
+              call print_invalid_rowscols(id,text,vars,a,count,.false.)
+              return
+          endif
 
           ! ***** (5) SCALE THE ROWS. *****
           call scale_rows(a,n,diag,lda,width,count)
           error = .not. (count == 0)
-          if (error) go to 9005
+          if (error) then
+             call print_invalid_rowscols(id,text,vars,a,count,.true.)
+             return
+          end if
 
           ! ***** (6) FACTOR THE MATRIX.
           call twgbco(a(n+1), lda, n, width, width, pivot, condit, buffer)
           error = condit == zero
           if (error) then
-              if (text>0) write (text, 99006) id
+              if (text>0) write (text, 3) id
               return
           end if
           condit = one/condit
 
-    !///////////////////////////////////////////////////////////////////////
-    !
-    !     INFORMATIVE MESSAGES.
-    !
-    !///////////////////////////////////////////////////////////////////////
-
-    80001 format(10X, a)
-    80002 format(10X, '... MORE')
-
-    !///////////////////////////////////////////////////////////////////////
-    !
-    !     ERROR MESSAGES.
-    !
-    !///////////////////////////////////////////////////////////////////////
-
-          go to 99999
-
-    9001  if (text>0) write (text, 99001) id, route
           return
 
-    9003  if (text>0) write (text, 99003) id, &
-             vars%comps, vars%points, vars%groupa, vars%groupb, n, width, (3 * width + 2) * n, asize
-          return
+          ! Formats section
+          1 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
+                 //10X, i10, '  ROUTE')
+          2 format(/1X, a9, 'ERROR.  THE MATRIX SPACE IS TOO SMALL.' &
+                 //10X, i10, '  COMPS, COMPONENTS' &
+                  /10X, i10, '  POINTS' &
+                  /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                  /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                  /10X, i10, '  MATRIX ORDER' &
+                  /10X, i10, '  STRICT HALF BANDWIDTH' &
+                 //10X, i10, '  SPACE REQUIRED' &
+                  /10X, i10, '  ASIZE, PROVIDED')
+          3 format(/1X, a9, 'ERROR.  THE JACOBIAN MATRIX IS SINGULAR.')
 
-    9004  if (text>0) then
-             write (text, 99004) id, vars%comps, vars%points, vars%groupa, vars%groupb, vars%N(), count
-
-             count = 0
-             do 8010 j = 1, vars%N()
-                if (a(j) == zero) then
-                   count = count + 1
-                   if (count <= MAX_ERROR_LINES) then
-                      if (j <= vars%groupa) then
-                         write (string, '(A, I10)') 'GROUP A ', j
-                      else if (j <= vars%groupa + vars%comps * vars%points) then
-                         write (string, '(A, I10, A, I10)') &
-                            ' COMPONENT ', mod (j - vars%groupa - 1, vars%comps) + 1, &
-                            ' AT POINT ', int ((j - vars%groupa - 1) / vars%comps) + 1
-                      else
-                         write (string, '(A, I10)') &
-                            'GROUP B ', j - vars%groupa - vars%comps * vars%points
-                      end if
-                      call twsqez (length, string)
-                      write (text, 80001) string (1 : length)
-                   end if
-                end if
-    8010     continue
-             if (MAX_ERROR_LINES < count) write (text, 80002)
-          end if
-          return
-
-    9005  if (text>0) then
-             write (text, 99005) id, vars%comps, vars%points, vars%groupa, vars%groupb, vars%N(), count
-             count = 0
-             do 8020 j = 1, vars%N()
-                if (a(j) == zero) then
-                   count = count + 1
-                   if (count <= MAX_ERROR_LINES) then
-                      if (j <= vars%groupa) then
-                         write (string, '(A, I10)') 'GROUP A ', j
-                      else if (j <= vars%groupa + vars%comps * vars%points) then
-                         write (string, '(A, I10, A, I10)') &
-                            ' COMPONENT ', mod (j - vars%groupa - 1, vars%comps) + 1, &
-                            ' AT POINT ', int ((j - vars%groupa - 1) / vars%comps) + 1
-                      else
-                         write (string, '(A, I10)') &
-                            'GROUP B ', j - vars%groupa - vars%comps * vars%points
-                      end if
-                      call twsqez (length, string)
-                      write (text, 80001) string (1 : length)
-                   end if
-                end if
-    8020     continue
-             if (MAX_ERROR_LINES < count) write (text, 80002)
-          end if
-          return
-
-        ! Formats section
-        99001 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-                   //10X, i10, '  ROUTE')
-
-        99003 format(/1X, a9, 'ERROR.  THE MATRIX SPACE IS TOO SMALL.' &
-                   //10X, i10, '  COMPS, COMPONENTS' &
-                    /10X, i10, '  POINTS' &
-                    /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-                    /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-                    /10X, i10, '  MATRIX ORDER' &
-                    /10X, i10, '  STRICT HALF BANDWIDTH' &
-                   //10X, i10, '  SPACE REQUIRED' &
-                    /10X, i10, '  ASIZE, PROVIDED')
-
-        99004 format(/1X, a9, 'ERROR.  SOME COLUMNS ARE ZERO.' &
-                   //10X, i10, '  COMPS, COMPONENTS' &
-                    /10X, i10, '  POINTS' &
-                    /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-                    /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-                    /10X, i10, '  TOTAL COLUMNS' &
-                    /10X, i10, '  ZERO COLUMNS' &
-                   //10X, 'UNKNOWNS WITH ZERO COLUMNS:'/)
-
-        99005 format(/1X, a9, 'ERROR.  SOME ROWS ARE ZERO.' &
-                   //10X, i10, '  COMPS, COMPONENTS' &
-                    /10X, i10, '  POINTS' &
-                    /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-                    /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-                    /10X, i10, '  TOTAL ROWS' &
-                    /10X, i10, '  ZERO ROWS' &
-                   //10X, 'ZERO ROWS:'/)
-
-        99006 format(/1X, a9, 'ERROR.  THE JACOBIAN MATRIX IS SINGULAR.')
-
-        stop
-        99999 continue
-        return
       end subroutine twprep
 
       !> Sum columns, put result in a(1:n), return count of zero columns
@@ -1642,6 +1554,71 @@ module twopnt_core
           end do rows
 
       end subroutine scale_rows
+
+      subroutine print_invalid_rowscols(id,text,vars,a,invalid,rows)
+         character(*), intent(in) :: id
+         integer, intent(in) :: text
+         type(twsize), intent(in) :: vars
+         real(RK), intent(in) :: a(*)
+         integer,  intent(in) :: invalid
+         logical, intent(in) :: rows
+
+         integer :: count,j,length
+         character(len=80) :: string
+
+         if (text==0) return
+
+         if (rows) then
+            write (text, 4) id, vars%comps, vars%points, vars%groupa, vars%groupb, vars%N(), invalid
+         else
+            write (text, 3) id, vars%comps, vars%points, vars%groupa, vars%groupb, vars%N(), invalid
+         endif
+
+         count = 0
+         loop_matrix: do j = 1, vars%N()
+            if (a(j) == zero) then
+               count = count + 1
+               if (count <= MAX_ERROR_LINES) then
+                  if (j <= vars%groupa) then
+                     write (string, '(A, I10)') 'GROUP A ', j
+
+                  else if (j <= vars%groupa + vars%comps * vars%points) then
+                     write (string, '(A, I10, A, I10)') &
+                        ' COMPONENT ', mod (j - vars%groupa - 1, vars%comps) + 1, &
+                        ' AT POINT ', int ((j - vars%groupa - 1) / vars%comps) + 1
+
+                  else
+                     write (string, '(A, I10)') &
+                        'GROUP B ', j - vars%groupa - vars%comps * vars%points
+                  end if
+                  call twsqez (length, string)
+                  write (text, 1) string (1 : length)
+               end if
+            end if
+         end do loop_matrix
+         if (MAX_ERROR_LINES < count) write (text, 2)
+
+         1 format(10X, a)
+         2 format(10X, '... MORE')
+         3 format(/1X, a9, 'ERROR.  SOME COLUMNS ARE ZERO.' &
+                //10X, i10, '  COMPS, COMPONENTS' &
+                 /10X, i10, '  POINTS' &
+                 /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                 /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                 /10X, i10, '  TOTAL COLUMNS' &
+                 /10X, i10, '  ZERO COLUMNS' &
+                //10X, 'UNKNOWNS WITH ZERO COLUMNS:'/)
+
+         4 format(/1X, a9, 'ERROR.  SOME ROWS ARE ZERO.' &
+                //10X, i10, '  COMPS, COMPONENTS' &
+                 /10X, i10, '  POINTS' &
+                 /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                 /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                 /10X, i10, '  TOTAL ROWS' &
+                 /10X, i10, '  ZERO ROWS' &
+                //10X, 'ZERO ROWS:'/)
+
+      end subroutine print_invalid_rowscols
 
       ! *******************************************************************************************************
       ! UTILITIES
