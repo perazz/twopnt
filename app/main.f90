@@ -53,7 +53,7 @@ program TWMAIN
     logical  :: ACTIVE(COMPS), MARK(PMAX)
     integer  :: PIVOT(COMPS*PMAX)
     INTEGER :: J, LENGTH, N
-    LOGICAL :: ERROR, return_call, TIME
+    LOGICAL :: ERROR, TIME
 
     ! PROLOGUE. OPEN FILES.
 !   OPEN (FILE = 'twopnt.out', STATUS='UNKNOWN',FORM = 'FORMATTED', UNIT = TEXT)
@@ -151,6 +151,7 @@ program TWMAIN
 
     ! Initialize functions
     problem%save_sol => savesol
+    problem%fun      => residual
 
     ! CALL TWOPNT.
     VERSIO = 'DOUBLE PRECISION VERSION 3.22'
@@ -176,22 +177,8 @@ program TWMAIN
              case ('PREPARE')
 
                 ! EVALUATE AND FACTOR THE JACOBIAN
-                return_call = .false.
-
-                evaluate_jacobian: do
-
-                    CALL TWPREP(ERROR, TEXT, A, ASIZE, BUFFER, sizes, CONDIT, PIVOT, return_call)
-                    IF (ERROR) GO TO 9006
-
-                    IF (return_call) THEN
-                        call residual(error,text,sizes%points,time,stride,x,buffer)
-                        IF (ERROR) GO TO 9005
-
-                    else
-                        exit evaluate_jacobian
-                    endif
-
-                end do evaluate_jacobian
+                CALL TWPREP(ERROR, TEXT, A, ASIZE, BUFFER, sizes, CONDIT, PIVOT, time, stride, x, problem)
+                IF (ERROR) GO TO 9006
 
              case ('SHOW')
 

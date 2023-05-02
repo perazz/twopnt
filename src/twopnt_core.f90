@@ -195,6 +195,8 @@ module twopnt_core
 
         procedure(twopnt_save), nopass, pointer :: save_sol => null()
 
+        procedure(twopnt_residual), nopass, pointer :: fun => null()
+
         contains
 
            !
@@ -1234,40 +1236,35 @@ module twopnt_core
       ! Evaluate a block tridiagonal Jacobian matrix by one-sided finite differences and reverse
       ! communication, pack the matrix into the LINPACK banded form, scale the rows, and factor the
       ! matrix using LINPACK's SGBCO
-      subroutine twprep(error, text, a, asize, buffer, vars, condit, pivot, return_call)
+      subroutine twprep(error, text, a, asize, buffer, vars, condit, pivot, time, stride, x, functions)
 
+          logical,      intent(out)   :: error
           integer,      intent(in)    :: text ! output unit
           integer,      intent(in)    :: asize
           type(twsize), intent(in)    :: vars
           integer,      intent(inout) :: pivot (vars%N())
           real(RK),     intent(inout) :: buffer(vars%N())
           real(RK),     intent(inout) :: a(asize), condit
-          logical ,     intent(inout) :: return_call
+          logical ,     intent(in)    :: time
+          real(RK),     intent(in)    :: stride
+          real(RK),     intent(in)    :: x(:) ! mesh
+          type(twfunctions), intent(in) :: functions
 
           real(RK) :: delta, temp
           integer :: block, blocks, cfirst, clast, col, count, diag, j, lda, length, n, offset, &
-                     rfirst, rlast, route, row, skip, width
+                     rfirst, rlast, row, skip, width
           intrinsic :: abs, int, max, min, mod, sqrt
-          logical :: error, found
-
+          logical :: found
 
           ! Parameters
           character(len=*), parameter :: id = 'TWPREP:  '
 
-          save
-
-          ! ***** (1) PROLOGUE *****
-
-          ! Every-time initialization
-
-          ! IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
-          if (return_call) then
-             return_call = .false.
-             go to (2030, 3050) route
+          ! Check that the residual function is present.
+          if (.not.associated(functions%fun)) then
              error = .true.
-             if (text>0) write (text, 1) id, route
+             if (text>0) write (text, 1) id
              return
-          endif
+          end if
 
           ! CHECK THE ARGUMENTS.
           n = vars%N()
@@ -1317,12 +1314,8 @@ module twopnt_core
           a(n+1:n+lda*n) = zero
 
           ! EVALUATE THE FUNCTION AT THE UNPERTURBED X.
-
-    !     GO TO 2030 WHEN ROUTE = 1
-          route = 1
-          return_call = .true.
-          return
-    2030  continue
+          call functions%fun(error,text,vars%points,time,stride,x,buffer)
+          if (error) return
 
           ! Place function values into the matrix.
           clast = 0
@@ -1388,11 +1381,8 @@ module twopnt_core
               if (.not. found) exit column_groups
 
               ! EVALUATE THE FUNCTION AT THE PERTURBED VALUES.
-              ! GO TO 3050 WHEN ROUTE = 2
-              route = 2
-              return_call = .true.
-              RETURN
-              3050  continue
+              call functions%fun(error,text,vars%points,time,stride,x,buffer)
+              if (error) return
 
               ! DIFFERENCE TO FORM THE COLUMNS OF THE JACOBIAN MATRIX.
               block  = 1
@@ -1484,8 +1474,7 @@ module twopnt_core
           return
 
           ! Formats section
-          1 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-                 //10X, i10, '  ROUTE')
+          1 format(/1X, a9, 'ERROR.  THE PROBLEM FUNCTION IS UNDEFINED.')
           2 format(/1X, a9, 'ERROR.  THE MATRIX SPACE IS TOO SMALL.' &
                  //10X, i10, '  COMPS, COMPONENTS' &
                   /10X, i10, '  POINTS' &
