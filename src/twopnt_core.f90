@@ -181,6 +181,7 @@ module twopnt_core
 
            ! Check variable sizes
            procedure, non_overridable :: check => twsize_checks
+           procedure, non_overridable :: check_onAdd => twsize_check_onAdd
 
            ! Indices of relevant sizes
            procedure, non_overridable :: idx_B    => twsize_idx_B ! groupb indices
@@ -369,6 +370,45 @@ module twopnt_core
                   /10X, i10, '  PMAX, LIMIT ON POINTS')
 
        end subroutine twsize_checks
+
+       subroutine twsize_check_onAdd(this,error,id,text,padd)
+          class(twsize), intent(in)  :: this
+          logical      , intent(out) :: error
+          character(*) , intent(in)  :: id
+          integer      , intent(in)  :: text
+          integer      , intent(in)  :: padd
+
+          ! Check the arguments.
+          error = .not. (this%comps>=1 .and. this%points>=2)
+          if (error) then
+               if (text>0) write (text, 1) id, this%comps, this%points
+               return
+          end if
+
+          error = .not. (padd>=0)
+          if (error) then
+               if (text>0) write (text, 2) id, padd
+               return
+          endif
+
+          error = .not. (this%points<=this%pmax)
+          if (error) then
+               if (text>0) write (text, 3) id, this%points, this%pmax
+               return
+          end if
+
+          1 format(/1X, a9, 'ERROR.  THERE MUST BE AT LEAST ONE COMPONENT AND AT' &
+                  /10X, 'LEAST TWO POINTS.' &
+                 //10X, i10, '  COMPS, COMPONENTS' &
+                  /10X, i10, '  POINTS')
+          2 format(/1X, a9, 'ERROR.  THE LIMIT ON POINTS ADDED TO A GRID MUST BE' &
+                  /10X, 'ZERO OR POSITIVE.'&
+                 //10X, i10, '  PADD, LIMIT ON ADDED POINTS')
+          3 format(/1X, a9, 'ERROR.  POINTS IS OUT OF RANGE.' &
+                 //10X, i10, '  POINTS'&
+                  /10X, i10, '  PMAX, LIMIT ON POINTS')
+
+       end subroutine twsize_check_onAdd
 
        ! Return total number of variables
        elemental integer function twsize_NVARS(this) result(N)
@@ -2806,8 +2846,8 @@ module twopnt_core
                   5030  continue
                   ! Refine only modifies comps*points
                   call refine(error, text, active, &
-                              buffer(vars%groupa+1), vars%comps, setup%leveld - 1, setup%levelm - 1, mark, &
-                              found, setup%ipadd, vars%pmax, vars%points, ratio, work%ratio1, work%ratio2,   &
+                              buffer(vars%groupa+1), vars, setup%leveld - 1, setup%levelm - 1, mark, &
+                              found, setup%ipadd, ratio, work%ratio1, work%ratio2,   &
                               signal, satisf, setup%toler0, setup%toler1, setup%toler2, u(vars%groupa + 1), &
                               work%vary1, work%vary2, work%vary, x, functions)
                   if (error) then
@@ -3160,21 +3200,20 @@ module twopnt_core
       end subroutine twopnt
 
       ! Perform automatic grid selection
-      subroutine refine(error, text, active, buffer, comps, leveld, levelm, mark, newx, &
-                        padd, pmax, points, ratio, ratio1, ratio2, signal, success, toler0, &
+      subroutine refine(error, text, active, buffer, vars, leveld, levelm, mark, newx, &
+                        padd,   ratio, ratio1, ratio2, signal, success, toler0, &
                         toler1, toler2, u, vary1, vary2, weight, x, functions)
 
-          integer,  intent(in)     :: text,leveld,levelm
-          integer,  intent(in)     :: pmax,padd
-          integer,  intent(in)     :: comps
-          integer,  intent(inout)  :: points
-          logical,  intent(inout)  :: error, newx, success
-          logical,  intent(inout)  :: active(comps)
-          logical,  intent(inout)  :: mark(pmax)
-          real(RK), intent(inout)  :: ratio1(pmax),ratio2(pmax),ratio(2),x(pmax)
-          real(RK), intent(inout)  :: buffer(comps*pmax),u(comps,pmax)
-          real(RK), intent(in)     :: toler0,toler1,toler2
-          integer,  intent(inout), dimension(pmax) :: vary1,vary2,weight
+          integer,      intent(in)     :: text,leveld,levelm
+          integer,      intent(in)     :: padd
+          type(twsize), intent(inout)  :: vars
+          logical,      intent(inout)  :: error, newx, success
+          logical,      intent(inout)  :: active(vars%comps)
+          logical,      intent(inout)  :: mark(vars%pmax)
+          real(RK),     intent(inout)  :: ratio1(vars%pmax),ratio2(vars%pmax),ratio(2),x(vars%pmax)
+          real(RK),     intent(inout)  :: buffer(vars%comps*vars%pmax),u(vars%comps,vars%pmax)
+          real(RK),     intent(in)     :: toler0,toler1,toler2
+          integer,      intent(inout), dimension(vars%pmax) :: vary1,vary2,weight
           character(len=*), intent(inout) :: signal
           type(twfunctions), intent(in) :: functions
 
@@ -3208,23 +3247,8 @@ module twopnt_core
           if (0<levelm .and. text>0) write (text, 1) id
 
           ! Check the arguments.
-          error = .not. (1<=comps .and. 2<=points)
-          if (error) then
-               if (text>0) write (text, 102) id, comps, points
-               return
-          end if
-
-          error = .not. (0<=padd)
-          if (error) then
-               if (text>0) write (text, 103) id, padd
-               return
-          endif
-
-          error = .not. (points<=pmax)
-          if (error) then
-               if (text>0) write (text, 104) id, points, pmax
-               return
-          end if
+          call vars%check_onAdd(error,id,text,padd)
+          if (error) return
 
           ! Check there is at least one variable that affects grid adaption
           counted = count(active)
@@ -3249,8 +3273,8 @@ module twopnt_core
           end if
 
           ! Check monotonic
-          counted = count(x(1:points-1)<x(2:points))
-          error = .not. (counted==0 .or. counted==points-1)
+          counted = count(x(1:vars%points-1)<x(2:vars%points))
+          error = .not. (counted==0 .or. counted==vars%points-1)
           if (error) then
               if (text>0) write (text, 108) id
               return
@@ -3259,14 +3283,14 @@ module twopnt_core
           ! at each interval, count the active, significant components that vary too greatly.
           act    = 0  ! number of active components
           signif = 0  ! number of significant components: max(u)-min(u)>=tol*max(|u|)
-          mark(:points) = .false.
-          ratio1(:points) = zero
-          ratio2(:points) = zero
-          vary1 (:points) = 0
-          vary2 (:points) = 0
+          mark  (:vars%points) = .false.
+          ratio1(:vars%points) = zero
+          ratio2(:vars%points) = zero
+          vary1 (:vars%points) = 0
+          vary2 (:vars%points) = 0
 
           ! top of the loop over the components.
-          active_components: do j = 1, comps
+          active_components: do j = 1, vars%comps
 
              if (.not.active(j)) cycle active_components
 
@@ -3275,7 +3299,7 @@ module twopnt_core
              ! find range and maximum magnitude of this component.
              lower = u(j, 1)
              upper = u(j, 1)
-             do k = 2, points
+             do k = 2, vars%points
                 lower = min (lower, u(j,k))
                 upper = max (upper, u(j,k))
              end do
@@ -3290,7 +3314,7 @@ module twopnt_core
 
              ! at each interval, see whether the component'S CHANGE EXCEEDS SOME
              ! fraction of the component'S GLOBAL CHANGE.
-             max_du: do k = 1, points - 1
+             max_du: do k = 1, vars%points - 1
                   differ = abs (u(j,k+1)-u(j,k))
                   if (zero<range) ratio1(k) = max (ratio1(k), differ / range)
                   if (toler1 * range<differ) vary1(k) = vary1(k) + 1
@@ -3300,7 +3324,7 @@ module twopnt_core
              temp  = grad(u,x,comp=j,point=1)
              lower = temp
              upper = temp
-             max_grad: do k = 2, points - 1
+             max_grad: do k = 2, vars%points - 1
                  temp  = grad(u,x,comp=j,point=k)
                  lower = min(lower, temp)
                  upper = max(upper, temp)
@@ -3310,7 +3334,7 @@ module twopnt_core
              ! at each interior point, see whether the derivative'S CHANGE
              ! exceeds some fraction of the derivative'S GLOBAL CHANGE.
              right =  grad(u,x,comp=j,point=1)
-             do k = 2, points - 1
+             do k = 2, vars%points - 1
                  left = right
                  right = grad(u,x,comp=j,point=k)
                  differ = abs (left - right)
@@ -3321,23 +3345,23 @@ module twopnt_core
           end do active_components
 
           ! save the maximum ratios.
-          ratio(1) = max(zero,maxval(ratio1(1:points-1),1))
-          ratio(2) = max(zero,maxval(ratio2(2:points-1),1))
+          ratio(1) = max(zero,maxval(ratio1(1:vars%points-1),1))
+          ratio(2) = max(zero,maxval(ratio2(2:vars%points-1),1))
 
           ! ***** select the intervals to halve. *****
 
           ! weight the intervals in which variations that are too large occur.
           most = 0
-          amr_intervals: do k = 1, points - 1
+          amr_intervals: do k = 1, vars%points - 1
              weight(k) = vary1(k)
              if (1<k) weight(k) = weight(k) + vary2(k)
-             if (k<points - 1) weight(k) = weight(k) + vary2(k + 1)
+             if (k<vars%points - 1) weight(k) = weight(k) + vary2(k + 1)
              if (0<weight(k)) most = most + 1
           end do amr_intervals
 
           ! sort the weights using interchange sort.
-          do k = 1, points - 1
-             do j = k + 1, points - 1
+          do k = 1, vars%points - 1
+             do j = k + 1, vars%points - 1
                 if (weight(j)>weight(k)) then
                    itemp = weight(j)
                    weight(j) = weight(k)
@@ -3348,7 +3372,7 @@ module twopnt_core
           end do
 
           ! find the least weight of intervals to halve.
-          more = max (0, min (most, padd, pmax - points))
+          more = max (0, min (most, padd, vars%pmax - vars%points))
           if (more>0) then
              least = weight(more)
           else
@@ -3356,15 +3380,15 @@ module twopnt_core
           end if
 
           ! reconstruct the weights.
-          do k = 1, points - 1
+          do k = 1, vars%points - 1
              weight(k) = vary1(k)
              if (k>1)        weight(k) = weight(k) + vary2(k)
-             if (k<points-1) weight(k) = weight(k) + vary2(k + 1)
+             if (k<vars%points-1) weight(k) = weight(k) + vary2(k + 1)
           end do
 
           ! mark the intervals to halve.
           counted = 0
-          to_be_halved: do k = 1, points - 1
+          to_be_halved: do k = 1, vars%points - 1
              if (counted<more .and. least <= weight(k)) then
                 counted = counted + 1
                 mark(k) = .true.
@@ -3385,13 +3409,13 @@ module twopnt_core
           ! ***** halve the intervals, if any. *****
 
           ! total number of points in the new grid.
-          total = points + more
+          total = vars%points + more
 
           add_points: if (more>0) then
 
               counted = 0
-              length  = abs(x(points) - x(1))
-              check_degenerate: do k = 1, points - 1
+              length  = abs(x(vars%points) - x(1))
+              check_degenerate: do k = 1, vars%points - 1
                  if (mark(k)) then
                     mean = half*(x(k)+x(k+1))
                     ! Check this interval is not degenerate
@@ -3407,7 +3431,7 @@ module twopnt_core
 
               ! add the new points, interpolate x and the bounds.
               new = total
-              new_points: do old = points, 2, - 1
+              new_points: do old = vars%points, 2, - 1
 
                  ! Copy right boundary
                  x(new)   = x(old)
@@ -3425,7 +3449,7 @@ module twopnt_core
 
               ! mark the new points.
               new = total
-              mark_new_points: do old = points, 2, - 1
+              mark_new_points: do old = vars%points, 2, - 1
                  mark(new) = .false.
                  new = new - 1
                  if (mark(old-1)) then
@@ -3436,11 +3460,11 @@ module twopnt_core
               mark(new) = .false.
 
               ! update the number of points.
-              former = points
-              points = total
+              former = vars%points
+              vars%points = total
 
               ! allow the user to update the solution.
-              call twcopy (comps*points, u, buffer)
+              call twcopy (vars%comps*vars%points, u, buffer)
 
               ! Request to update the grid
               signal = 'UPDATE'
@@ -3452,7 +3476,7 @@ module twopnt_core
               ! DO NOT MOVE THIS out of (more>0) block
               4060  continue
               signal = ' '
-              call twcopy (comps*points,buffer,u)
+              call twcopy (vars%comps*vars%points,buffer,u)
 
           end if add_points
 
@@ -3477,7 +3501,7 @@ module twopnt_core
                     write (text, 6)
 
                     old = 0
-                    do k = 1, points
+                    do k = 1, vars%points
                        if (.not. mark(k)) then
                           old = old + 1
                           if (1<k) then
@@ -3493,7 +3517,7 @@ module twopnt_core
                              end if
                           end if
 
-                          if (k>1 .and. k<points) then
+                          if (k>1 .and. k<vars%points) then
                              if (vary2(old)/=0) then
                                  write (word, '(F4.2, I4)') ratio2(old), vary2(old)
                              else
@@ -3510,11 +3534,9 @@ module twopnt_core
 
              if (leveld>0 .and. more>0) then
                 write (text, 10) id
-                call twcopy(comps*points,from=u,to=buffer)
-                signal = 'SHOW'
-                ! go to 5040 when route = 2
-                route = 2
-                return
+                call twcopy(vars%comps*vars%points,from=u,to=buffer)
+                call functions%show(error,text,buffer,vars,.true.,x)
+                if (error) return
              end if
           end if
 
@@ -3554,16 +3576,6 @@ module twopnt_core
             ! Error messages.
             101 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
                      //10X, i10, '  ROUTE')
-            102 format(/1X, a9, 'ERROR.  THERE MUST BE AT LEAST ONE COMPONENT AND AT' &
-                      /10X, 'LEAST TWO POINTS.' &
-                     //10X, i10, '  COMPS, COMPONENTS' &
-                      /10X, i10, '  POINTS')
-            103 format(/1X, a9, 'ERROR.  THE LIMIT ON POINTS ADDED TO A GRID MUST BE' &
-                      /10X, 'ZERO OR POSITIVE.'&
-                     //10X, i10, '  PADD, LIMIT ON ADDED POINTS')
-            104 format(/1X, a9, 'ERROR.  POINTS IS OUT OF RANGE.' &
-                     //10X, i10, '  POINTS'&
-                      /10X, i10, '  PMAX, LIMIT ON POINTS')
             105 format(/1X, a9, 'ERROR.  THERE ARE NO ACTIVE COMPONENTS.')
             106 format(/1X, a9, 'ERROR.  THE BOUNDS ON MAGNITUDE AND RELATIVE CHANGE' &
                       /10X, 'OF MAGNITUDE FOR INSIGNIFICANT COMPONENTS MUST BE'&
