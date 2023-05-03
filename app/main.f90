@@ -177,7 +177,7 @@ program TWMAIN
              case ('PREPARE')
 
                 ! EVALUATE AND FACTOR THE JACOBIAN
-                CALL TWPREP(ERROR, TEXT, A, ASIZE, BUFFER, sizes, CONDIT, PIVOT, time, stride, x, problem)
+                CALL problem%prep(ERROR, TEXT, A, ASIZE, BUFFER, sizes, CONDIT, PIVOT, time, stride, x)
                 IF (ERROR) GO TO 9006
 
              case ('SHOW')
