@@ -2485,7 +2485,7 @@ module twopnt_core
       real(RK)    , intent(inout) :: condit
       type(twwork), intent(inout) :: work
       real(RK)    , intent(inout) :: u(vars%NMAX())
-      real(RK)    , intent(inout) :: x(*)
+      real(RK)    , intent(inout) :: x(:)
       type(twfunctions), intent(in) :: functions
 
       ! Local variables
@@ -2500,9 +2500,6 @@ module twopnt_core
 
       character(len=80) :: column(3),header(6),string
 
-      ! SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
-      logical,      parameter :: mess = .false.
-
       ! SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
       save
 
@@ -2512,7 +2509,7 @@ module twopnt_core
 
       ! If this is a return call, continue where the program had paused.
       if (signal /= ' ') then
-         go to (9912, 9922, 9932, 9942) route
+         go to (9912, 9922, 9932) route
          error = .true.
 
          if (text>0) write (text, 01) id, route
@@ -2533,8 +2530,7 @@ module twopnt_core
 
       ! Print entry banner
       string = vnmbr(vnmbrs)
-      if ((setup%levelm>0 .or. mess) .and. text>0) &
-         write (text, 10001) id, precision_flag(), trim(string)
+      if (setup%levelm>0 .and. text>0) write (text, 10001) id, precision_flag(), trim(string)
 
       ! CHECK THE ARGUMENTS.
       error = .not. (setup%leveld <= setup%levelm)
@@ -2969,17 +2965,9 @@ module twopnt_core
 
          ! EVALUATE THE STEADY STATE FUNCTION.
          call stats%tick(qfunct)
-
-         call twcopy (vars%N(), u, buffer)
-         signal = 'RESIDUAL'
+         call twcopy (vars%N(), from=u, to=buffer)
          time = .false.
-
-         ! GO TO 9942 WHEN ROUTE = 4
-         route = 4
-         return
-
-         9942  continue
-         signal = ' '
+         call functions%fun(error,text,vars%points,time,stride,x,buffer)
          call stats%tock(qfunct,event=.true.)
 
          go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
