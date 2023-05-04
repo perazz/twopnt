@@ -249,6 +249,7 @@ module twopnt_core
 
         real(RK), allocatable :: A(:)
         integer :: ASIZE = 0
+        integer, allocatable :: PIVOT(:)
 
         contains
 
@@ -308,6 +309,7 @@ module twopnt_core
 
           this%ASIZE = 0
           if (allocated(this%A)) deallocate(this%A)
+          if (allocated(this%PIVOT)) deallocate(this%PIVOT)
 
        end subroutine jac_destroy
 
@@ -320,7 +322,7 @@ module twopnt_core
 
           ! Allocate banded space
           this%ASIZE = (6*vars%comps-1)*vars%comps*vars%pmax
-          allocate(this%A(this%ASIZE))
+          allocate(this%A(this%ASIZE),this%PIVOT(vars%comps*vars%pmax))
 
        end subroutine jac_init
 
@@ -961,11 +963,10 @@ module twopnt_core
       end function twnorm
 
       ! SOLVE A SYSTEM OF LINEAR EQUATIONS USING THE MATRIX PREPARED BY TWPREP.
-      subroutine twsolv(error, text, jac, buffer, vars, pivot)
+      subroutine twsolv(error, text, jac, buffer, vars)
 
           integer     , intent(in) :: text
           type(twsize), intent(in) :: vars
-          integer     , intent(in) :: pivot(vars%N())
           type(twjac) , intent(in) :: jac
           real(RK)    , intent(inout) :: buffer(vars%N())
           logical     , intent(out) :: error
@@ -1002,7 +1003,7 @@ module twopnt_core
 
           !***** (2) SCALE AND SOLVE THE EQUATIONS. *****
           buffer(1:n) = buffer(1:n) * jac%a(1:n)
-          call twgbsl(jac%a(n + 1), 3 * width + 1, n, width, width, pivot, buffer)
+          call twgbsl(jac%a(n + 1), 3 * width + 1, n, width, width, jac%PIVOT, buffer)
 
           return
 
@@ -1323,13 +1324,12 @@ module twopnt_core
       ! Evaluate a block tridiagonal Jacobian matrix by one-sided finite differences and reverse
       ! communication, pack the matrix into the LINPACK banded form, scale the rows, and factor the
       ! matrix using LINPACK's SGBCO
-      subroutine twprep(this, error, text, jac, buffer, vars, condit, pivot, time, stride, x)
+      subroutine twprep(this, error, text, jac, buffer, vars, condit, time, stride, x)
           class(twfunctions), intent(inout) :: this
           logical,      intent(out)   :: error
           integer,      intent(in)    :: text ! output unit
           type(twjac),  intent(inout) :: jac
           type(twsize), intent(in)    :: vars
-          integer,      intent(inout) :: pivot (vars%N())
           real(RK),     intent(inout) :: buffer(vars%N())
           real(RK),     intent(inout) :: condit
           logical ,     intent(in)    :: time
@@ -1379,17 +1379,17 @@ module twopnt_core
           blocks = 0
           if (0 < vars%groupa) then
              blocks = blocks + 1
-             pivot(blocks) = vars%groupa
+             jac%pivot(blocks) = vars%groupa
           end if
 
           do j = 1, vars%points
              blocks = blocks + 1
-             pivot(blocks) = vars%comps
+             jac%pivot(blocks) = vars%comps
           end do
 
           if (0 < vars%groupb) then
              blocks = blocks + 1
-             pivot(blocks) = vars%groupb
+             jac%pivot(blocks) = vars%groupb
           end if
 
           ! ***** (2) INITIALIZE THE COLUMNS OF THE MATRIX *****
@@ -1408,16 +1408,16 @@ module twopnt_core
           clast = 0
           do block = 1, blocks
              cfirst = clast + 1
-             clast  = clast + pivot(block)
+             clast  = clast + jac%pivot(block)
 
              if (block > 1) then
-                rfirst = cfirst - pivot(block - 1)
+                rfirst = cfirst - jac%pivot(block - 1)
              else
                 rfirst = cfirst
              end if
 
              if (block < blocks) then
-                rlast = clast + pivot(block + 1)
+                rlast = clast + jac%pivot(block + 1)
              else
                 rlast = clast
              end if
@@ -1443,9 +1443,9 @@ module twopnt_core
               block = 1
               cfirst = 1
               perturb_vector: do while (block<=blocks)
-                   if (0 < pivot(block)) then
+                   if (0 < jac%pivot(block)) then
                        found = .true.
-                       col = cfirst - 1 + pivot(block)
+                       col = cfirst - 1 + jac%pivot(block)
                        delta = relat * jac%a(col) + sign(absol,jac%a(col))
                        buffer(col) = buffer(col) + delta
                        count = 3
@@ -1475,9 +1475,9 @@ module twopnt_core
               block  = 1
               cfirst = 1
               form_columns: do while (block<=blocks)
-                 if (0 < pivot(block)) then
-                    col = cfirst - 1 + pivot(block)
-                    pivot(block) = pivot(block) - 1
+                 if (0 < jac%pivot(block)) then
+                    col = cfirst - 1 + jac%pivot(block)
+                    jac%pivot(block) = jac%pivot(block) - 1
 
                     delta  = relat * jac%a(col) + sign(absol,jac%a(col))
                     temp   = one / delta
@@ -1550,7 +1550,7 @@ module twopnt_core
           end if
 
           ! ***** (6) FACTOR THE MATRIX.
-          call twgbco(jac%a(n+1), lda, n, width, width, pivot, condit, buffer)
+          call twgbco(jac%a(n+1), lda, n, width, width, jac%pivot, condit, buffer)
           error = condit == zero
           if (error) then
               if (text>0) write (text, 3) id

@@ -51,7 +51,6 @@ program TWMAIN
     real(RK), dimension(PMAX) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0,X
     real(RK) :: CONDIT,STRIDE
     logical  :: ACTIVE(COMPS), MARK(PMAX)
-    integer  :: PIVOT(COMPS*PMAX)
     INTEGER :: J, LENGTH, N
     LOGICAL :: ERROR, TIME
 
@@ -173,13 +172,13 @@ program TWMAIN
              case ('PREPARE')
 
                 ! EVALUATE AND FACTOR THE JACOBIAN
-                CALL problem%prep(ERROR, TEXT, JAC, BUFFER, sizes, CONDIT, PIVOT, time, stride, x)
+                CALL problem%prep(ERROR, TEXT, JAC, BUFFER, sizes, CONDIT, time, stride, x)
                 IF (ERROR) GO TO 9006
 
              case ('SOLVE')
 
                  ! SOLVE THE LINEAR EQUATIONS.
-                 CALL TWSOLV(ERROR, TEXT, JAC, BUFFER, sizes, PIVOT)
+                 CALL TWSOLV(ERROR, TEXT, JAC, BUFFER, sizes)
                  IF (ERROR) GO TO 9008
 
              case (' ')
