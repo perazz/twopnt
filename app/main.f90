@@ -34,7 +34,6 @@ program TWMAIN
     integer, parameter :: GROUPA = 0
     integer, parameter :: GROUPB = 0
     integer, parameter :: PMAX   = 200
-    integer, parameter :: ASIZE = (6 * COMPS - 1) * COMPS * PMAX
     integer, parameter :: NAMES = COMPS + GROUPA + GROUPB
     logical, parameter :: RELAXED_TOLERANCES = .false.
 
@@ -45,7 +44,8 @@ program TWMAIN
     type(twsize) :: sizes
     type(twwork) :: work
     type(twfunctions) :: problem
-    real(RK) :: A(ASIZE), ABOVE(COMPS), BELOW(COMPS)
+    type(twjac) :: jac
+    real(RK) :: ABOVE(COMPS), BELOW(COMPS)
     real(RK), dimension(COMPS*PMAX) :: BUFFER
     real(RK), dimension(COMPS,PMAX) :: U,U0
     real(RK), dimension(PMAX) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0,X
@@ -80,6 +80,7 @@ program TWMAIN
     ! CHOOSE THE INITIAL GRID SIZE.
     sizes = twsize(GROUPA,COMPS,6,PMAX,GROUPB)
     N = sizes%N()
+    call jac%init(sizes)
 
     ! SPECIFY THE CONTROLS.
     call settings%set(ERROR, TEXT, 'ADAPT', .TRUE.)
@@ -172,19 +173,13 @@ program TWMAIN
              case ('PREPARE')
 
                 ! EVALUATE AND FACTOR THE JACOBIAN
-                CALL problem%prep(ERROR, TEXT, A, ASIZE, BUFFER, sizes, CONDIT, PIVOT, time, stride, x)
+                CALL problem%prep(ERROR, TEXT, JAC, BUFFER, sizes, CONDIT, PIVOT, time, stride, x)
                 IF (ERROR) GO TO 9006
-
-             case ('SHOW')
-
-                 ! SHOW THE SOLUTION.
-                 CALL TWSHOW(ERROR, TEXT, BUFFER, sizes, .TRUE., X)
-                 IF (ERROR) GO TO 9007
 
              case ('SOLVE')
 
                  ! SOLVE THE LINEAR EQUATIONS.
-                 CALL TWSOLV(ERROR, TEXT, A, ASIZE, BUFFER, sizes, PIVOT)
+                 CALL TWSOLV(ERROR, TEXT, JAC, BUFFER, sizes, PIVOT)
                  IF (ERROR) GO TO 9008
 
              case (' ')

@@ -244,6 +244,19 @@ module twopnt_core
 
     end type twstate
 
+    ! Jacobian matrix storage
+    type, public :: twjac
+
+        real(RK), allocatable :: A(:)
+        integer :: ASIZE = 0
+
+        contains
+
+           procedure :: init    => jac_init
+           procedure :: destroy => jac_destroy
+
+    end type twjac
+
     interface realloc
         module procedure realloc_int
         module procedure realloc_real
@@ -288,6 +301,28 @@ module twopnt_core
 
 
     contains
+
+       ! Clean Jacobian storage
+       elemental subroutine jac_destroy(this)
+          class(twjac), intent(inout) :: this
+
+          this%ASIZE = 0
+          if (allocated(this%A)) deallocate(this%A)
+
+       end subroutine jac_destroy
+
+       ! Init Jacobian storage
+       pure subroutine jac_init(this,vars)
+          class(twjac), intent(inout) :: this
+          type(twsize), intent(in) :: vars
+
+          call this%destroy()
+
+          ! Allocate banded space
+          this%ASIZE = (6*vars%comps-1)*vars%comps*vars%pmax
+          allocate(this%A(this%ASIZE))
+
+       end subroutine jac_init
 
        ! Indices of groupb variables
        pure function twsize_idx_B(this) result(igroupb)
@@ -926,12 +961,12 @@ module twopnt_core
       end function twnorm
 
       ! SOLVE A SYSTEM OF LINEAR EQUATIONS USING THE MATRIX PREPARED BY TWPREP.
-      subroutine twsolv(error, text, a, asize, buffer, vars, pivot)
+      subroutine twsolv(error, text, jac, buffer, vars, pivot)
 
-          integer     , intent(in) :: asize,text
+          integer     , intent(in) :: text
           type(twsize), intent(in) :: vars
           integer     , intent(in) :: pivot(vars%N())
-          real(RK)    , intent(in) :: a(asize)
+          type(twjac) , intent(in) :: jac
           real(RK)    , intent(inout) :: buffer(vars%N())
           logical     , intent(out) :: error
 
@@ -948,7 +983,7 @@ module twopnt_core
           ! WRITE MESSAGES only.
           if (mess .and. text>0) then
               write (text, 1) id,vars%comps,vars%points,vars%groupa,vars%groupb,n
-              write (text, 2) id,vars%comps,vars%points,vars%groupa,vars%groupb,n,width,(3*width+2)*n,asize
+              write (text, 2) id,vars%comps,vars%points,vars%groupa,vars%groupb,n,width,(3*width+2)*n,jac%ASIZE
               stop
           end if
 
@@ -958,16 +993,16 @@ module twopnt_core
           if (error) return
 
           width = vars%comps+max(vars%comps,vars%groupa,vars%groupb) - 1
-          error = .not. ((3 * width + 2) * n <= asize)
+          error = .not. ((3 * width + 2) * n <= jac%ASIZE)
           if (error) then
               if (text>0) write (text,2) id, vars%comps,vars%points,vars%groupa,vars%groupb, n, width, &
-                                         (3*width+2)*n, asize
+                                         (3*width+2)*n, jac%ASIZE
               return
           end if
 
           !***** (2) SCALE AND SOLVE THE EQUATIONS. *****
-          buffer(1:n) = buffer(1:n) * a(1:n)
-          call twgbsl(a(n + 1), 3 * width + 1, n, width, width, pivot, buffer)
+          buffer(1:n) = buffer(1:n) * jac%a(1:n)
+          call twgbsl(jac%a(n + 1), 3 * width + 1, n, width, width, pivot, buffer)
 
           return
 
@@ -1288,15 +1323,15 @@ module twopnt_core
       ! Evaluate a block tridiagonal Jacobian matrix by one-sided finite differences and reverse
       ! communication, pack the matrix into the LINPACK banded form, scale the rows, and factor the
       ! matrix using LINPACK's SGBCO
-      subroutine twprep(this, error, text, a, asize, buffer, vars, condit, pivot, time, stride, x)
+      subroutine twprep(this, error, text, jac, buffer, vars, condit, pivot, time, stride, x)
           class(twfunctions), intent(inout) :: this
           logical,      intent(out)   :: error
           integer,      intent(in)    :: text ! output unit
-          integer,      intent(in)    :: asize
+          type(twjac),  intent(inout) :: jac
           type(twsize), intent(in)    :: vars
           integer,      intent(inout) :: pivot (vars%N())
           real(RK),     intent(inout) :: buffer(vars%N())
-          real(RK),     intent(inout) :: a(asize), condit
+          real(RK),     intent(inout) :: condit
           logical ,     intent(in)    :: time
           real(RK),     intent(in)    :: stride
           real(RK),     intent(in)    :: x(:) ! mesh
@@ -1324,9 +1359,9 @@ module twopnt_core
           if (error) return
 
           width = vars%comps + max(vars%comps,vars%groupa,vars%groupb) - 1
-          error = .not. ((3 * width + 2) * n <= asize)
+          error = .not. ((3 * width + 2) * n <= jac%asize)
           if (error) then
-             if (text>0) write (text, 2) id, vars%comps,vars%points,vars%groupa,vars%groupb,n,width,(3*width+2) * n, asize
+             if (text>0) write (text, 2) id, vars%comps,vars%points,vars%groupa,vars%groupb,n,width,(3*width+2)*n,jac%asize
              return
           end if
 
@@ -1360,10 +1395,10 @@ module twopnt_core
           ! ***** (2) INITIALIZE THE COLUMNS OF THE MATRIX *****
 
           ! Store evaluation vector
-          a(:n) = buffer(:n)
+          jac%a(:n) = buffer(:n)
 
           ! Clear matrix
-          a(n+1:n+lda*n) = zero
+          jac%a(n+1:n+lda*n) = zero
 
           ! EVALUATE THE FUNCTION AT THE UNPERTURBED X.
           call this%fun(error,text,vars%points,time,stride,x,buffer)
@@ -1390,7 +1425,7 @@ module twopnt_core
              do col = cfirst, clast
                 offset = n + diag - col + lda * (col - 1)
                 do row = rfirst, rlast
-                   a(offset + row) = buffer(row)
+                   jac%a(offset + row) = buffer(row)
                 end do
              end do
           end do
@@ -1402,7 +1437,7 @@ module twopnt_core
               found = .false.
 
               ! Restore the evaluation vector
-              buffer(:n) = a(:n)
+              buffer(:n) = jac%a(:n)
 
               ! Perturb vector at independent positions.
               block = 1
@@ -1411,7 +1446,7 @@ module twopnt_core
                    if (0 < pivot(block)) then
                        found = .true.
                        col = cfirst - 1 + pivot(block)
-                       delta = relat * a(col) + sign(absol,a(col))
+                       delta = relat * jac%a(col) + sign(absol,jac%a(col))
                        buffer(col) = buffer(col) + delta
                        count = 3
                    else
@@ -1444,7 +1479,7 @@ module twopnt_core
                     col = cfirst - 1 + pivot(block)
                     pivot(block) = pivot(block) - 1
 
-                    delta  = relat * a(col) + sign(absol,a(col))
+                    delta  = relat * jac%a(col) + sign(absol,jac%a(col))
                     temp   = one / delta
                     offset = n + diag - col + lda * (col - 1)
 
@@ -1476,7 +1511,7 @@ module twopnt_core
                        rlast = clast
                     end if
 
-                    forall(row=rfirst:rlast) a(offset+row) = (buffer(row) - a(offset+row))*temp
+                    forall(row=rfirst:rlast) jac%a(offset+row) = (buffer(row) - jac%a(offset+row))*temp
 
                     count = 3
                  else
@@ -1499,23 +1534,23 @@ module twopnt_core
           end do column_groups
 
           ! ***** (4) CHECK FOR ZERO COLUMNS. *****
-          call count_zero_columns(a,n,diag,lda,width,count)
+          call count_zero_columns(jac%a,n,diag,lda,width,count)
           error = .not. (count == 0)
           if (error) then
-              call print_invalid_rowscols(id,text,vars,a,count,.false.)
+              call print_invalid_rowscols(id,text,vars,jac%a,count,.false.)
               return
           endif
 
           ! ***** (5) SCALE THE ROWS. *****
-          call scale_rows(a,n,diag,lda,width,count)
+          call scale_rows(jac%a,n,diag,lda,width,count)
           error = .not. (count == 0)
           if (error) then
-             call print_invalid_rowscols(id,text,vars,a,count,.true.)
+             call print_invalid_rowscols(id,text,vars,jac%a,count,.true.)
              return
           end if
 
           ! ***** (6) FACTOR THE MATRIX.
-          call twgbco(a(n+1), lda, n, width, width, pivot, condit, buffer)
+          call twgbco(jac%a(n+1), lda, n, width, width, pivot, condit, buffer)
           error = condit == zero
           if (error) then
               if (text>0) write (text, 3) id
@@ -2143,6 +2178,9 @@ module twopnt_core
 
                   call twcopy(vars%N(),v0,buffer)
                   signal = 'PREPARE'
+
+                  !call functions%prep(error,text,jac,buffer,vars,condit,pivot,time,stride,x)
+
 
                   ! GO TO 2020 WHEN ROUTE = 1
                   route = 1
