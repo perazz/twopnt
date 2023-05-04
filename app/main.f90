@@ -168,12 +168,6 @@ program TWMAIN
           ! SERVICE REQUESTS FROM TWOPNT.
           select case (SIGNAL)
 
-             case ('RESIDUAL')
-
-                ! Evaluate residual
-                call residual(error,text,sizes%points,time,stride,x,buffer)
-                IF (ERROR) GO TO 9005
-
              case ('PREPARE')
 
                 ! EVALUATE AND FACTOR THE JACOBIAN
@@ -201,6 +195,11 @@ program TWMAIN
 
                  ! Iteration finished
                  exit ITERATE
+
+             case default
+                 print *, SIGNAL
+
+                 GO TO 9004
 
           end select
 

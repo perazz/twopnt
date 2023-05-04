@@ -1797,10 +1797,12 @@ module twopnt_core
                  end if
               end if
 
+              ! All functions within here are done with time = .true.
+              time  = .true.
               call search(error, text, above, agej, below, buffer, vars, condit, exist, &
                           leveld - 1, levelm - 1, name, names, xrepor, &
                           s0, s1, signal, number, xsucce, v0, v1, tdabs, tdage, tdrel, y0, dummy, y1,&
-                          x, functions)
+                          x, functions, time, stride)
               if (error) then
                  if (text>0) write (text, 29) id
                  return
@@ -1808,7 +1810,7 @@ module twopnt_core
 
               if (signal /= ' ') then
                  jacob = signal == 'PREPARE'
-                 time  = .true.
+                 time = .true.
         !        GO TO 1060 WHEN ROUTE = 3
                  route = 3
                  return
@@ -1984,7 +1986,7 @@ module twopnt_core
       ! Perform the damped, modified Newton's search
       subroutine search(error, text, above, age, below, buffer, vars, condit, exist, &
                         leveld, levelm, name, names, report, s0, s1, signal, steps, &
-                        success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, x, functions)
+                        success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, x, functions, time, stride)
 
           type(twsize)    , intent(in)    :: vars
           integer         , intent(out)   :: report
@@ -1999,6 +2001,8 @@ module twopnt_core
           real(RK), dimension(vars%N()), intent(in)    :: above,below,x
           real(RK), dimension(vars%N()), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1
           type(twfunctions), intent(in)   :: functions
+          logical          , intent(in)   :: time
+          real(RK)         , intent(in)   :: stride
 
           real(RK) :: abs0,abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, &
                       value, y0norm, y1norm
@@ -2108,17 +2112,12 @@ module twopnt_core
               update_F: if (age==0 .or. number==0) then
 
                   buffer = v0
-                  signal = 'RESIDUAL'
-            !     GO TO 2040 WHEN ROUTE = 2
-                  route = 2
+                  call functions%fun(error,text,vars%points,time,stride,x,buffer)
                   steps = number ! Copy the protected local variable
-                  return
-
                   2040 continue
                   signal = ' '
                   y0     = buffer
                   y0norm = twnorm(vars%N(),y0)
-
                   buffer = y0
                   signal = 'SOLVE'
             !     GO TO 2050 WHEN ROUTE = 3
@@ -2181,14 +2180,9 @@ module twopnt_core
 
                   ! EVALUATE Y1 := F(V1)
                   buffer = v1
-                  signal = 'RESIDUAL'
-            !     GO TO 2140 WHEN ROUTE = 4
-                  route = 4
+                  call functions%fun(error,text,vars%points,time,stride,x,buffer)
                   steps = number ! Copy the protected local variable
-                  return
-
             2140  continue
-                  signal = ' '
                   y1     = buffer
                   y1norm = twnorm (vars%N(), y1)
 
@@ -2575,15 +2569,10 @@ module twopnt_core
       if (setup%adapt .and. vars%points>0) call twcopy(vars%points, x, work%xsave)
       call twcopy (vars%N(), u, work%usave)
 
-!     GO TO 1090 WHEN RETURN = 1
-      return = 1
+      return = 1 !     GO TO 1090 WHEN RETURN = 1
       ! Save the last solution
-      call twcopy (vars%N(), u, buffer)
-      signal = 'SAVE'
-      ! GO TO 9912 WHEN ROUTE = 1
-      route = 1
-      return
-
+      call twcopy (vars%N(), from=u, to=buffer)
+      call functions%save_sol(vars,buffer)
 
 1090  continue
 
@@ -2714,7 +2703,7 @@ module twopnt_core
                              exist, setup%leveld - 1, setup%levelm - 1, name, names, &
                              xrepor, work%s0, work%s1, signal, nsteps, found, &
                              u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
-                             work%y1, x, functions)
+                             work%y1, x, functions, time, stride)
                   if (error) then
                       if (text>0) write (text, 17) id
                       return
@@ -2734,15 +2723,9 @@ module twopnt_core
                      if (setup%adapt .and. vars%points>0) call twcopy (vars%points, x, work%xsave)
                      call twcopy(vars%N(), u, work%usave)
 
-                     ! GO TO 4030 WHEN RETURN = 5
-                     return = 5
                      ! Save the last solution
-                     call twcopy (vars%N(), u, buffer)
-                     signal = 'SAVE'
-                     ! GO TO 9912 WHEN ROUTE = 1
-                     route = 1
-                     return
-
+                     call twcopy(vars%N(), from=u, to=buffer)
+                     call functions%save_sol(vars,buffer)
                      4030  continue
 
                   else save_or_restore
@@ -2827,13 +2810,8 @@ module twopnt_core
                      call work%load_bounds(above,below,vars)
 
                      ! SAVE THE LATEST SOLUTION
-                     ! GO TO 5100 WHEN RETURN = 7
-                     return = 7
                      call twcopy (vars%N(),u,buffer)
-                     signal = 'SAVE'
-                     ! GO TO 9912 WHEN ROUTE = 1
-                     route = 1
-                     return
+                     call functions%save_sol(vars,buffer)
                      5100 continue
 
                   endif refine_found
@@ -2895,19 +2873,11 @@ module twopnt_core
 
                   ! REACT TO THE COMPLETION OF EVOLVE.
                   if (found) then
-                     ! SAVE THE LATEST SOLUTION
-                     ! GO TO 6030 WHEN RETURN = 9
-                     return = 9
-
                      ! Save the last solution
-                     call twcopy (vars%N(), u, buffer)
-                     signal = 'SAVE'
-                     ! GO TO 9912 WHEN ROUTE = 1
-                     route = 1
-                     return
-
+                     call twcopy (vars%N(), from=u, to=buffer)
+                     call functions%save_sol(vars,buffer)
                   end if
-                  6030  continue
+                  6030 continue
 
                   ! ALLOW FURTHER TIME EVOLUTION.
                   allow = xrepor == qnull
@@ -3034,7 +3004,6 @@ module twopnt_core
 
 9912  continue
       signal = ' '
-
       go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
       error = .true.
       if (text>0) write (text, 21) id, return
