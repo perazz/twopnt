@@ -276,11 +276,12 @@ module twopnt_core
        end subroutine twopnt_save
 
        ! Pass control to the problem handler on a grid update
-       subroutine twopnt_grid_update(vars,x)
+       subroutine twopnt_grid_update(vars,x,u)
           import RK, twsize
           implicit none
           type(twsize), intent(in) :: vars
           real(RK), intent(in)     :: x(vars%N())
+          real(RK), intent(inout)  :: u(:)
        end subroutine twopnt_grid_update
 
     end interface
@@ -3426,15 +3427,8 @@ module twopnt_core
               call twcopy (sizes%comps*sizes%points, u, buffer)
 
               ! Request to update the grid
-              signal = 'UPDATE'
-              ! go to 4060 when route = 1
-              route = 1
-              return
-
-              ! Restart after grid update.
-              ! DO NOT MOVE THIS out of (more>0) block
+              call functions%update_grid(sizes,x,buffer)
               4060  continue
-              signal = ' '
               call twcopy (sizes%comps*sizes%points,buffer,u)
 
           end if add_points
@@ -3494,10 +3488,9 @@ module twopnt_core
              if (leveld>0 .and. more>0) then
                 write (text, 10) id
                 call twcopy(sizes%comps*sizes%points,from=u,to=buffer)
-                signal = 'SHOW'
-                ! go to 5040 when route = 2
-                route = 2
-                return
+
+                ! CAREFUL! buffer here does not have the group-A variables
+                call functions%show(error,text,buffer,sizes,.true.,x)
              end if
           end if
 
@@ -3512,43 +3505,43 @@ module twopnt_core
           return
 
           ! Formats section.
-             ! Informative messages.
-             1 format(/1X, a9, 'SELECT A GRID.')
-             2 format(/1X, a9, 'SUCCESS.  THE GRID IS ADEQUATE BECAUSE ALL ACTIVE' &
-                      /10X, 'COMPONENTS ARE INSIGNIFICANT.')
-             !               123456789-   1234567   1234567
-             3 format(/15X, '             RATIO 1   RATIO 2' &
-                      /15X, '             -------   -------' &
-                      /15X, '    ACTUAL', 2F10.3 &
-                      /15X, '   DESIRED', 2F10.3)
-             4 format(/1X, a9, 'SUCCESS.  THE GRID IS ADEQUATE.')
-             5 format(/1X, a9, 'FAILURE.  MORE POINTS ARE NEEDED BUT NONE CAN BE ADDED.')
-             !               123456   123456789-123456   12345678   12345678
-             6 format(/10X, 'THE NEW GRID (* MARKS NEW POINTS):' &
-                     //10X, '                             LARGEST RATIOS AND'&
-                      /10X, ' INDEX         GRID POINT      NUMBER TOO LARGE'&
-                      /10X, '------   ----------------   -------------------'&
-                      /10X, '                             RATIO 1    RATIO 2')
-             7 format(10X, i6, '*  ', 1p, e16.9, 0p, 3X, a8)
-             8 format(38X, a8)
-             9 format(10X, i6, '   ', 1p, e16.9, 0p, 14X, a8)
-            10 format(/1X, a9, 'THE SOLUTION GUESS FOR THE NEW GRID:')
+          ! Informative messages.
+          1 format(/1X, a9, 'SELECT A GRID.')
+          2 format(/1X, a9, 'SUCCESS.  THE GRID IS ADEQUATE BECAUSE ALL ACTIVE' &
+                   /10X, 'COMPONENTS ARE INSIGNIFICANT.')
+          !               123456789-   1234567   1234567
+          3 format(/15X, '             RATIO 1   RATIO 2' &
+                   /15X, '             -------   -------' &
+                   /15X, '    ACTUAL', 2F10.3 &
+                   /15X, '   DESIRED', 2F10.3)
+          4 format(/1X, a9, 'SUCCESS.  THE GRID IS ADEQUATE.')
+          5 format(/1X, a9, 'FAILURE.  MORE POINTS ARE NEEDED BUT NONE CAN BE ADDED.')
+          !               123456   123456789-123456   12345678   12345678
+          6 format(/10X, 'THE NEW GRID (* MARKS NEW POINTS):' &
+                  //10X, '                             LARGEST RATIOS AND'&
+                   /10X, ' INDEX         GRID POINT      NUMBER TOO LARGE'&
+                   /10X, '------   ----------------   -------------------'&
+                   /10X, '                             RATIO 1    RATIO 2')
+          7 format(10X, i6, '*  ', 1p, e16.9, 0p, 3X, a8)
+          8 format(38X, a8)
+          9 format(10X, i6, '   ', 1p, e16.9, 0p, 14X, a8)
+         10 format(/1X, a9, 'THE SOLUTION GUESS FOR THE NEW GRID:')
 
-            ! Error messages.
-            101 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-                     //10X, i10, '  ROUTE')
-            105 format(/1X, a9, 'ERROR.  THERE ARE NO ACTIVE COMPONENTS.')
-            106 format(/1X, a9, 'ERROR.  THE BOUNDS ON MAGNITUDE AND RELATIVE CHANGE' &
-                      /10X, 'OF MAGNITUDE FOR INSIGNIFICANT COMPONENTS MUST BE'&
-                      /10X, 'POSITIVE.'&
-                     //10X, 1p, e10.2, '  TOLER0, SIGNIFICANCE LEVEL')
-            107 format(/1X, a9, 'ERROR.  THE BOUNDS ON RELATIVE CHANGES IN MAGNITUDE'&
-                      /10X, 'AND ANGLE MUST LIE BETWEEN 0 AND 1.'&
-                     //10X, 1p, e10.2, '  TOLER1'&
-                      /10X, 1p, e10.2, '  TOLER2')
-            108 format(/1X, a9, 'ERROR.  THE GRID IS NOT ORDERED.')
-            109 format(/1X, a9, 'ERROR.  SOME INTERVALS IN THE GRID ARE TOO SHORT.'&
-                      /10X, 'THE NEW GRID WOULD NOT BE ORDERED.')
+         ! Error messages.
+         101 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
+                  //10X, i10, '  ROUTE')
+         105 format(/1X, a9, 'ERROR.  THERE ARE NO ACTIVE COMPONENTS.')
+         106 format(/1X, a9, 'ERROR.  THE BOUNDS ON MAGNITUDE AND RELATIVE CHANGE' &
+                   /10X, 'OF MAGNITUDE FOR INSIGNIFICANT COMPONENTS MUST BE'&
+                   /10X, 'POSITIVE.'&
+                  //10X, 1p, e10.2, '  TOLER0, SIGNIFICANCE LEVEL')
+         107 format(/1X, a9, 'ERROR.  THE BOUNDS ON RELATIVE CHANGES IN MAGNITUDE'&
+                   /10X, 'AND ANGLE MUST LIE BETWEEN 0 AND 1.'&
+                  //10X, 1p, e10.2, '  TOLER1'&
+                   /10X, 1p, e10.2, '  TOLER2')
+         108 format(/1X, a9, 'ERROR.  THE GRID IS NOT ORDERED.')
+         109 format(/1X, a9, 'ERROR.  SOME INTERVALS IN THE GRID ARE TOO SHORT.'&
+                   /10X, 'THE NEW GRID WOULD NOT BE ORDERED.')
 
       return
       end subroutine refine

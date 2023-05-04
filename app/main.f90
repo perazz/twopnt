@@ -150,8 +150,9 @@ program TWMAIN
     ACTIVE(5) = .TRUE.
 
     ! Initialize functions
-    problem%save_sol => savesol
-    problem%fun      => residual
+    problem%save_sol    => savesol
+    problem%fun         => residual
+    problem%update_grid => grid_update
 
     ! CALL TWOPNT.
     VERSIO = 'DOUBLE PRECISION VERSION 3.22'
@@ -186,11 +187,6 @@ program TWMAIN
                  CALL TWSOLV(ERROR, TEXT, A, ASIZE, BUFFER, sizes, PIVOT)
                  IF (ERROR) GO TO 9008
 
-             case ('UPDATE')
-
-                 ! UPDATE THE GRID.
-                 N = sizes%N()
-
              case (' ')
 
                  ! Iteration finished
@@ -217,7 +213,6 @@ program TWMAIN
 
     ! ERROR HANDLING.
     9004  IF (TEXT>0) WRITE (TEXT, 99004) ID; return
-    9005  IF (TEXT>0) WRITE (TEXT, 99005) ID; return
     9006  IF (TEXT>0) WRITE (TEXT, 99006) ID; return
     9007  IF (TEXT>0) WRITE (TEXT, 99007) ID; return
     9008  IF (TEXT>0) WRITE (TEXT, 99008) ID; return
@@ -236,7 +231,6 @@ program TWMAIN
 
     ! ERROR MESSAGES.
     99004 FORMAT(/1X, A9, 'ERROR.  TWOPNT FAILS.')
-    99005 FORMAT(/1X, A9, 'ERROR.  RESID FAILS.')
     99006 FORMAT(/1X, A9, 'ERROR.  TWPREP FAILS.')
     99007 FORMAT(/1X, A9, 'ERROR.  TWSHOW FAILS.')
     99008 FORMAT(/1X, A9, 'ERROR.  TWSOLV FAILS.')
@@ -274,6 +268,16 @@ program TWMAIN
                      STRIDE, T, T0, TIME, TMAX, TZERO, U0, WMAX, X)
 
       end subroutine residual
+
+      ! Grid update function interface
+      subroutine grid_update(vars,x,u)
+         type(twsize), intent(in) :: vars
+         real(RK), intent(in)     :: x(vars%N())
+         real(RK), intent(inout)  :: u(:)
+
+         N = vars%N()
+
+      end subroutine grid_update
 
       ! Compute density, viscosity and thermal conductivity of Argon at given T
       elemental subroutine AR_TRANSPORT(T,RHO,MU,K)
