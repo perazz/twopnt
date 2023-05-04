@@ -163,7 +163,7 @@ program TWMAIN
 
           ! Call driver
           CALL TWOPNT(SETTINGS, ERROR, TEXT, VERSIO, sizes, ABOVE, ACTIVE, BELOW, BUFFER, CONDIT, &
-                      WORK, MARK, NAME, NAMES, REPORT, SIGNAL, STRIDE, TIME, U, X, problem)
+                      WORK, MARK, NAME, NAMES, REPORT, SIGNAL, STRIDE, TIME, U, X, problem, jac)
 
           IF (ERROR) GO TO 9004
 

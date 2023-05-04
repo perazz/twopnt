@@ -1725,7 +1725,7 @@ module twopnt_core
       subroutine evolve(error, text, above, below, buffer, vars, condit, desire, &
                         leveld, levelm, name, names, report, s0, s1, signal, &
                         step, steps2, strid0, stride, success, tdabs, tdage, tdec, &
-                        tdrel, time, tinc, tmax, tmin, v0, v1, vsave, y0, y1, ynorm, x, functions)
+                        tdrel, time, tinc, tmax, tmin, v0, v1, vsave, y0, y1, ynorm, x, functions, jac)
 
       integer,          intent(in)    :: text
       type(twsize),     intent(in)    :: vars
@@ -1746,6 +1746,7 @@ module twopnt_core
       real(RK), dimension(vars%N()), intent(in)    :: above,below,x
       real(RK), dimension(vars%N()), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1,vsave
       type(twfunctions), intent(in)   :: functions
+      type(twjac)      , intent(inout) :: jac
 
       real(RK)  :: change,condit,csave,dummy,high,low,stride
       integer   :: age,agej,count,first,last,length,number,route,xrepor
@@ -1887,7 +1888,7 @@ module twopnt_core
               call search(error, text, above, agej, below, buffer, vars, condit, exist, &
                           leveld - 1, levelm - 1, name, names, xrepor, &
                           s0, s1, signal, number, xsucce, v0, v1, tdabs, tdage, tdrel, y0, dummy, y1,&
-                          x, functions, time, stride)
+                          x, functions, time, stride, jac)
               if (error) then
                  if (text>0) write (text, 29) id
                  return
@@ -2071,7 +2072,7 @@ module twopnt_core
       ! Perform the damped, modified Newton's search
       subroutine search(error, text, above, age, below, buffer, vars, condit, exist, &
                         leveld, levelm, name, names, report, s0, s1, signal, steps, &
-                        success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, x, functions, time, stride)
+                        success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, x, functions, time, stride, jac)
 
           type(twsize)    , intent(in)    :: vars
           integer         , intent(out)   :: report
@@ -2088,6 +2089,7 @@ module twopnt_core
           type(twfunctions), intent(in)   :: functions
           logical          , intent(in)   :: time
           real(RK)         , intent(in)   :: stride
+          type(twjac)      , intent(inout) :: jac
 
           real(RK) :: abs0,abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, &
                       value, y0norm, y1norm
@@ -2550,7 +2552,7 @@ module twopnt_core
       subroutine twopnt(setup, error, text, versio, vars, &
                         above, active, below, buffer, condit,  &
                         work, mark, name, names, report, signal, stride, time, u, x, &
-                        functions)
+                        functions, jac)
 
       type(twcom) , intent(inout) :: setup
       logical     , intent(out)   :: error
@@ -2569,6 +2571,7 @@ module twopnt_core
       real(RK)    , intent(inout) :: u(vars%NMAX())
       real(RK)    , intent(inout) :: x(:)
       type(twfunctions), intent(in) :: functions
+      type(twjac) , intent(inout) :: jac
 
       ! Local variables
       character(*), parameter :: id = 'TWOPNT:  '
@@ -2791,7 +2794,7 @@ module twopnt_core
                              exist, setup%leveld - 1, setup%levelm - 1, name, names, &
                              xrepor, work%s0, work%s1, signal, nsteps, found, &
                              u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
-                             work%y1, x, functions, time, stride)
+                             work%y1, x, functions, time, stride, jac)
                   if (error) then
                       if (text>0) write (text, 17) id
                       return
@@ -2946,7 +2949,7 @@ module twopnt_core
                          setup%levelm - 1, name, names, xrepor, work%s0, work%s1, signal, &
                          stats%step, setup%steps2, setup%strid0, stride, found, setup%tdabs, &
                          setup%tdage, setup%tdec, setup%tdrel, time, setup%tinc, setup%tmax, &
-                         setup%tmin, u, work%v1, work%vsave, work%y0, work%y1, ynorm, x, functions)
+                         setup%tmin, u, work%v1, work%vsave, work%y0, work%y1, ynorm, x, functions, jac)
                   if (error) then
                       if (text>0) write (text, 19) id
                       return
