@@ -88,12 +88,15 @@ module twopnt_core
     ! TWOPNT settings
     type, public :: twcom
 
-        ! Adaptive grid size
+        !> Adaptive grid size
         logical  :: adapt  = .false.
         integer  :: leveld = 1
         integer  :: levelm = 1
+
+        !> Limit the maximum number of added points
         logical  :: padd   = .false.
         integer  :: ipadd  = 0
+
         real(RK) :: ssabs  = 1.0e-9_RK
         integer  :: ssage  = 10
         real(RK) :: ssrel  = 1.0e-6_RK
@@ -1875,17 +1878,10 @@ module twopnt_core
               time  = .true.
               call search(error, text, above, agej, below, buffer, vars, condit, exist, &
                           leveld - 1, levelm - 1, name, names, xrepor, &
-                          s0, s1, signal, number, xsucce, v0, v1, tdabs, tdage, tdrel, y0, dummy, y1,&
+                          s0, s1, number, xsucce, v0, v1, tdabs, tdage, tdrel, y0, dummy, y1,&
                           x, functions, time, stride, jac, count, csave, jword)
               if (error) then
                  if (text>0) write (text, 29) id
-                 return
-              end if
-
-              if (signal /= ' ') then
-                 time = .true.
-        !        GO TO 1060 WHEN ROUTE = 3
-                 route = 3
                  return
               end if
 
@@ -2058,7 +2054,7 @@ module twopnt_core
 
       ! Perform the damped, modified Newton's search
       subroutine search(error, text, above, age, below, buffer, vars, condit, exist, &
-                        leveld, levelm, name, names, report, s0, s1, signal, steps, &
+                        leveld, levelm, name, names, report, s0, s1, steps, &
                         success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, x, functions, time, stride, jac, &
                         jcount, csave, jword)
 
@@ -2071,27 +2067,22 @@ module twopnt_core
           integer         , intent(in)    :: xxage
           integer         , intent(in)    :: names
           character(len=*), intent(in)    :: name(names)
-          character(len=*), intent(inout) :: signal
           real(RK), dimension(vars%N()), intent(in)    :: above,below,x
           real(RK), dimension(vars%N()), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1
           type(twfunctions), intent(inout) :: functions
           logical          , intent(in)    :: time
           real(RK)         , intent(in)    :: stride
           type(twjac)      , intent(inout) :: jac
-          integer          , intent(out)   :: jcount
+          integer          , intent(out)   :: jcount,steps
           real(RK)         , intent(out)   :: csave
           character(len=80), intent(out)   :: jword
 
           real(RK) :: abs0,abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, &
                       value, y0norm, y1norm
-          integer  :: age, entry, expone, leveld, levelm, number, route, steps
+          integer  :: age, entry, expone, leveld, levelm, route
           intrinsic :: abs, int, log10, max, min, mod
           logical   :: force,success,converged,update_jac
-
           character(len=*), parameter :: id = 'SEARCH:  '
-
-          ! SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
-          save
 
           ! *** Initialization. ***
 
@@ -2104,14 +2095,6 @@ module twopnt_core
           jcount = 0
           csave  = zero
           jword  = ' '
-
-          ! IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
-          if (signal /= ' ') then
-             go to (2020, 2040, 2050, 2140, 2150) route
-             error = .true.
-             if (text>0) write (text, 5) id, route
-             return
-          end if
 
           ! Check number of variables
           call vars%check(error,id,text)
@@ -2127,7 +2110,7 @@ module twopnt_core
           ! Check variable bounds
           error = any(.not.below<above)
           if (error) then
-             !call print_invalid_bounds(id,text,name,groupa,groupb,comps,points,below,above)
+             call print_invalid_bounds(id,text,name,vars,below,above)
              return
           end if
 
@@ -2162,7 +2145,7 @@ module twopnt_core
           !///////////////////////////////////////////////////////////////////////
 
           ! Number of steps
-          number     = 0
+          steps      = 0
           update_jac = .false.
           converged  = .false.
 
@@ -2172,7 +2155,7 @@ module twopnt_core
               ! Solve J*s0 = v0; Evaluate relative and absolute errors
               update_jacobian: if (age>=xxage &                      ! Jacobian is too old
                              .or. (age>0 .and. update_jac) &         ! Jacobian not new, probably inaccurate
-                             .or. (number==0 .and. .not.exist)) then ! First initialization
+                             .or. (steps==0 .and. .not.exist)) then ! First initialization
 
                   call twcopy(vars%N(),v0,buffer)
 
@@ -2188,10 +2171,6 @@ module twopnt_core
                      write (jword, '(I3, 3X, F6.2)') jcount, log10 (csave)
                   end if
 
-                  ! GO TO 2020 WHEN ROUTE = 1
-                  steps = number ! Copy the protected local variable
-                  2020 continue
-
                   ! Reset Jacobian age
                   age        = 0
                   exist      = .true.
@@ -2199,21 +2178,26 @@ module twopnt_core
 
               endif update_jacobian
 
-              ! EVALUATE Y0 := F(V0).  SOLVE J S0 = Y0.  EVAUATE ABS0 AND REL0.
-              update_F: if (age==0 .or. number==0) then
+              update_F: if (age==0 .or. steps==0) then
 
+                  ! EVALUATE Y0 := F(V0).
                   buffer = v0
                   call functions%fun(error,text,vars%points,time,stride,x,buffer)
-                  steps = number ! Copy the protected local variable
-                  2040 continue
-                  signal = ' '
+                  if (error) then
+                      if (levelm>0 .and. text>0) write (text, 5) id, 'RESIDUAL'
+                      return
+                  end if
                   y0     = buffer
                   y0norm = twnorm(vars%N(),y0)
+
+                  ! SOLVE J S0 = Y0.
                   buffer = y0
                   call functions%solve(error,text,jac,buffer,vars)
+                  if (error) then
+                      if (levelm>0 .and. text>0) write (text, 5) id, 'SOLVE'
+                      return
+                  end if
                   route = 3
-                  steps = number ! Copy the protected local variable
-                  2050  continue
                   s0     = buffer
                   s0norm = twnorm(vars%N(),s0)
 
@@ -2241,13 +2225,12 @@ module twopnt_core
                  if (update_jac) cycle newton_iterations
 
                  if (levelm>0 .and. text>0) then
-                    call print_newt_summary(text,number,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
+                    call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
                     call print_invalid_ranges(id,text,name,vars,below,above,v0,s0)
                  end if
 
                  report  = qbnds
                  success = .false.
-                 steps = number ! Copy the protected local variable
                  return
               end if
 
@@ -2269,19 +2252,22 @@ module twopnt_core
                   ! EVALUATE Y1 := F(V1)
                   buffer = v1
                   call functions%fun(error,text,vars%points,time,stride,x,buffer)
-                  steps = number ! Copy the protected local variable
-            2140  continue
+                  if (error) then
+                      if (levelm>0 .and. text>0) write (text, 5) id, 'RESIDUAL'
+                      return
+                  end if
                   y1     = buffer
-                  y1norm = twnorm (vars%N(), y1)
+                  y1norm = twnorm(vars%N(), y1)
 
                   ! SOLVE J*S1 = Y1
                   buffer = y1
                   call functions%solve(error,text,jac,buffer,vars)
-                  steps = number ! Copy the protected local variable
-                  2150  continue
-                  signal = ' '
+                  if (error) then
+                      if (levelm>0 .and. text>0) write (text, 5) id, 'SOLVE'
+                      return
+                  end if
                   s1     = buffer
-                  s1norm = twnorm (vars%N(), s1)
+                  s1norm = twnorm(vars%N(), s1)
 
                   ! Check convergence (abs1, rel1)
                   call check_convergence(xxrel,xxabs,v1,s1,abs1,rel1,converged)
@@ -2300,24 +2286,22 @@ module twopnt_core
 
                  ! Failed too many times.
                  if (levelm>0 .and. text>0) then
-                    call print_newt_summary(text,number,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
+                    call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
                     write (text, 1) id
                  end if
 
                  report  = qdvrg
                  success = .false.
-                 steps   = number ! Copy the protected local variable
                  return
 
               end if is_diverging
 
               ! Print summary.
               if (levelm>0 .and. text>0) &
-              call print_newt_summary(text,number,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
+              call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
 
               ! Advance step
               age    = age + 1
-              number = number + 1
               s0     = s1; s0norm = s1norm
               v0     = v1; y0norm = y1norm
               y0     = y1
@@ -2330,20 +2314,22 @@ module twopnt_core
 
           ! Print summary.
           if (levelm>0 .and. text>0) then
-             call print_newt_summary(text,number,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
+             call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
 
              if (leveld>0) then
                 ! Ask to display the final solution
                 write (text, 3) id
                 call functions%show(error,text,v0,vars,.true.,x)
+                if (error) then
+                    if (text>0) write (text, 5) id, 'SHOW'
+                    return
+                end if
              else
                 write (text, 4) id
              end if
           end if
 
-          signal  = ' '
           success = .true.
-          steps   = number ! Copy the protected local variable
           return
 
           ! Informative messages.
@@ -2352,8 +2338,7 @@ module twopnt_core
           4 format(/1X, a9, 'SUCCESS.')
 
           ! Error messages.
-          5 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-                 //10X, i10, '  ROUTE')
+          5 format(/1X, a9, 'ERROR.  CALL TO ', a,' FAILED.')
           7 format(/1X, a9, 'ERROR.  THE NUMBER OF NAMES IS WRONG.' &
                  //10X, i10, '  NAMES' &
                  //10X, i10, '  COMPS, COMPONENTS' &
@@ -2786,7 +2771,7 @@ module twopnt_core
                   call search(error, text, &
                              work%above, age, work%below, buffer, vars, condit, &
                              exist, setup%leveld - 1, setup%levelm - 1, name, names, &
-                             xrepor, work%s0, work%s1, signal, nsteps, found, &
+                             xrepor, work%s0, work%s1, nsteps, found, &
                              u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
                              work%y1, x, functions, time, stride, jac, jcount, csave, jword)
                   if (error) then
