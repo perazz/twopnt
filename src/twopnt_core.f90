@@ -206,6 +206,7 @@ module twopnt_core
 
            ! Provide dense algebra implementation of Jacobian handling
            procedure, pass(this) :: prep => twprep
+           procedure, nopass     :: solve => twsolv
 
     end type twfunctions
 
@@ -1746,7 +1747,7 @@ module twopnt_core
       character(len=*), intent(inout) :: signal
       real(RK), dimension(vars%N()), intent(in)    :: above,below,x
       real(RK), dimension(vars%N()), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1,vsave
-      type(twfunctions), intent(in)   :: functions
+      type(twfunctions), intent(inout) :: functions
       type(twjac)      , intent(inout) :: jac
 
       real(RK)  :: change,condit,csave,dummy,high,low,stride
@@ -1867,36 +1868,21 @@ module twopnt_core
               ! STORE THE LATEST SOLUTION SHOULD THE SEARCH FAIL
               call twcopy (vars%N(), v0, vsave)
 
-              count = 0
-              csave = zero
-              jword = ' '
               jacob = .false.
-
               1060  continue
-              if (jacob) then
-                 exist = .true.
-                 count = count + 1
-                 csave = max(condit, csave)
-                 if (csave == zero) then
-                    write (jword, '(I3, 3X, A6)') count, '    NA'
-                 else
-                    write (jword, '(I3, 3X, F6.2)') count, log10 (csave)
-                 end if
-              end if
 
               ! All functions within here are done with time = .true.
               time  = .true.
               call search(error, text, above, agej, below, buffer, vars, condit, exist, &
                           leveld - 1, levelm - 1, name, names, xrepor, &
                           s0, s1, signal, number, xsucce, v0, v1, tdabs, tdage, tdrel, y0, dummy, y1,&
-                          x, functions, time, stride, jac)
+                          x, functions, time, stride, jac, count, csave, jword)
               if (error) then
                  if (text>0) write (text, 29) id
                  return
               end if
 
               if (signal /= ' ') then
-                 jacob = signal == 'PREPARE'
                  time = .true.
         !        GO TO 1060 WHEN ROUTE = 3
                  route = 3
@@ -2073,12 +2059,13 @@ module twopnt_core
       ! Perform the damped, modified Newton's search
       subroutine search(error, text, above, age, below, buffer, vars, condit, exist, &
                         leveld, levelm, name, names, report, s0, s1, signal, steps, &
-                        success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, x, functions, time, stride, jac)
+                        success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, x, functions, time, stride, jac, &
+                        jcount, csave, jword)
 
           type(twsize)    , intent(in)    :: vars
           integer         , intent(out)   :: report
           logical         , intent(out)   :: error
-          logical         , intent(in)    :: exist ! Do we have a Jacobian already
+          logical         , intent(inout) :: exist ! Do we have a valid Jacobian
           integer         , intent(in)    :: text
           real(RK)        , intent(in)    :: xxabs,xxrel ! settings
           integer         , intent(in)    :: xxage
@@ -2087,10 +2074,13 @@ module twopnt_core
           character(len=*), intent(inout) :: signal
           real(RK), dimension(vars%N()), intent(in)    :: above,below,x
           real(RK), dimension(vars%N()), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1
-          type(twfunctions), intent(in)   :: functions
-          logical          , intent(in)   :: time
-          real(RK)         , intent(in)   :: stride
+          type(twfunctions), intent(inout) :: functions
+          logical          , intent(in)    :: time
+          real(RK)         , intent(in)    :: stride
           type(twjac)      , intent(inout) :: jac
+          integer          , intent(out)   :: jcount
+          real(RK)         , intent(out)   :: csave
+          character(len=80), intent(out)   :: jword
 
           real(RK) :: abs0,abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, &
                       value, y0norm, y1norm
@@ -2109,6 +2099,11 @@ module twopnt_core
           error   = .false.
           report  = qnull
           success = .false.
+
+          ! Initialize Jacobian counters
+          jcount = 0
+          csave  = zero
+          jword  = ' '
 
           ! IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
           if (signal /= ' ') then
@@ -2180,21 +2175,26 @@ module twopnt_core
                              .or. (number==0 .and. .not.exist)) then ! First initialization
 
                   call twcopy(vars%N(),v0,buffer)
-                  signal = 'PREPARE'
 
-                  !call functions%prep(error,text,jac,buffer,vars,condit,pivot,time,stride,x)
+                  ! Prepare Jacobian
+                  call functions%prep(error,text,jac,buffer,vars,condit,time,stride,x)
 
+                  ! Update condition number
+                  jcount = jcount + 1
+                  csave = max(condit, csave)
+                  if (csave == zero) then
+                     write (jword, '(I3, 3X, A6)') jcount, '    NA'
+                  else
+                     write (jword, '(I3, 3X, F6.2)') jcount, log10 (csave)
+                  end if
 
                   ! GO TO 2020 WHEN ROUTE = 1
-                  route = 1
                   steps = number ! Copy the protected local variable
-                  return
-
                   2020 continue
-                  signal = ' '
-                  age = 0
 
-                  ! Turn off Jacobian request
+                  ! Reset Jacobian age
+                  age        = 0
+                  exist      = .true.
                   update_jac = .false.
 
               endif update_jacobian
@@ -2210,13 +2210,10 @@ module twopnt_core
                   y0     = buffer
                   y0norm = twnorm(vars%N(),y0)
                   buffer = y0
-                  signal = 'SOLVE'
-            !     GO TO 2050 WHEN ROUTE = 3
+                  call functions%solve(error,text,jac,buffer,vars)
                   route = 3
                   steps = number ! Copy the protected local variable
-                  return
-            2050  continue
-                  signal = ' '
+                  2050  continue
                   s0     = buffer
                   s0norm = twnorm(vars%N(),s0)
 
@@ -2279,13 +2276,9 @@ module twopnt_core
 
                   ! SOLVE J*S1 = Y1
                   buffer = y1
-                  signal = 'SOLVE'
-            !     GO TO 2150 WHEN ROUTE = 5
-                  route = 5
+                  call functions%solve(error,text,jac,buffer,vars)
                   steps = number ! Copy the protected local variable
-                  return
-
-            2150  continue
+                  2150  continue
                   signal = ' '
                   s1     = buffer
                   s1norm = twnorm (vars%N(), s1)
@@ -2571,20 +2564,20 @@ module twopnt_core
       type(twwork), intent(inout) :: work
       real(RK)    , intent(inout) :: u(vars%NMAX())
       real(RK)    , intent(inout) :: x(:)
-      type(twfunctions), intent(in) :: functions
+      type(twfunctions), intent(inout) :: functions
       type(twjac) , intent(inout) :: jac
 
       ! Local variables
       character(*), parameter :: id = 'TWOPNT:  '
 
-      real(RK) ::  maxcon, ratio(2), stride, temp, ynorm
+      real(RK) ::  maxcon, ratio(2), stride, temp, ynorm, csave
       type(twstat) :: stats
       integer :: age, comps, desire, j, jacobs, label, length, nsteps, psave, qtask, qtype, return, &
-                 route, steps, xrepor
+                 route, steps, xrepor, jcount
       intrinsic :: max
       logical :: allow, exist, found, satisf, time
 
-      character(len=80) :: column(3),header(6),string
+      character(len=80) :: column(3),header(6),string,jword
 
       ! SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
       save
@@ -2795,7 +2788,7 @@ module twopnt_core
                              exist, setup%leveld - 1, setup%levelm - 1, name, names, &
                              xrepor, work%s0, work%s1, signal, nsteps, found, &
                              u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
-                             work%y1, x, functions, time, stride, jac)
+                             work%y1, x, functions, time, stride, jac, jcount, csave, jword)
                   if (error) then
                       if (text>0) write (text, 17) id
                       return

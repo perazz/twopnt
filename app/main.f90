@@ -158,42 +158,10 @@ program TWMAIN
     VERSIO = 'DOUBLE PRECISION VERSION 3.22'
     SIGNAL = ' '
 
-    ITERATE: DO
-
-          ! Call driver
-          CALL TWOPNT(SETTINGS, ERROR, TEXT, VERSIO, sizes, ABOVE, ACTIVE, BELOW, BUFFER, CONDIT, &
-                      WORK, MARK, NAME, NAMES, REPORT, SIGNAL, STRIDE, TIME, U, X, problem, jac)
-
-          IF (ERROR) GO TO 9004
-
-          ! SERVICE REQUESTS FROM TWOPNT.
-          select case (SIGNAL)
-
-             case ('PREPARE')
-
-                ! EVALUATE AND FACTOR THE JACOBIAN
-                CALL problem%prep(ERROR, TEXT, JAC, BUFFER, sizes, CONDIT, time, stride, x)
-                IF (ERROR) GO TO 9006
-
-             case ('SOLVE')
-
-                 ! SOLVE THE LINEAR EQUATIONS.
-                 CALL TWSOLV(ERROR, TEXT, JAC, BUFFER, sizes)
-                 IF (ERROR) GO TO 9008
-
-             case (' ')
-
-                 ! Iteration finished
-                 exit ITERATE
-
-             case default
-                 print *, SIGNAL
-
-                 GO TO 9004
-
-          end select
-
-    END DO ITERATE
+    ! Call driver
+    CALL TWOPNT(SETTINGS, ERROR, TEXT, VERSIO, sizes, ABOVE, ACTIVE, BELOW, BUFFER, CONDIT, &
+                WORK, MARK, NAME, NAMES, REPORT, SIGNAL, STRIDE, TIME, U, X, problem, jac)
+    IF (ERROR) GO TO 9004
 
     ! CHECK FOR SUCCESS.
     ERROR = REPORT == 'NONE FOUND'
