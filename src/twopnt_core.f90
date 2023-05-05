@@ -133,11 +133,17 @@ module twopnt_core
 
         contains
 
+           !> Initialize setup
            procedure :: init => twinit
+
+           !> Set variable
            procedure, private :: twsetr
            procedure, private :: twseti
            procedure, private :: twsetl
            generic :: set => twsetr,twseti,twsetl
+
+           !> Check timestepping constraints
+           procedure :: check_stepping
 
     end type twcom
 
@@ -950,6 +956,76 @@ module twopnt_core
                  //10X, '     CONTROL:  ', a)
 
       end subroutine twsetl
+
+      !> Check validity of the timestepping constraints
+      subroutine check_stepping(this,error,id,text,desire,step)
+         class(twcom), intent(in) :: this
+         logical, intent(out) :: error
+         character(*), intent(in) :: id
+         integer, intent(in) :: text
+         integer, intent(in) :: desire,step
+
+         error = .not. (0 < desire)
+         if (error) then
+             if (text>0) write (text, 1) id, desire
+             return
+         end if
+
+         error = .not. (this%tdec>=one .and. this%tinc>=one)
+         if (error) then
+             if (text>0) write (text, 2) id, this%tdec, this%tinc
+             return
+         end if
+
+         ! stride bounds OK
+         error = .not. (this%tmin>zero .and. this%tmax>=this%tmin)
+         if (error) then
+             if (text>0) write (text, 3) id, this%tmin, this%tmax
+             return
+         end if
+
+         ! strid0 in bounds
+         error = .not. (this%strid0>=this%tmin .and. this%tmax>=this%strid0)
+         if (error) then
+             if (text>0) write (text, 4) id, this%tmin, this%strid0, this%tmax
+             return
+         end if
+
+         error = .not. step>=0
+         if (error) then
+             if (text>0) write (text, 5) id, step
+             return
+         end if
+
+         error = this%tinc>one .and. .not. this%steps2>0
+         if (error) then
+             if (text>0) write (text, 6) id, this%steps2
+             return
+         end if
+
+         1 format(/1X, a9, 'ERROR.  THE NUMBER OF TIME STEPS MUST BE POSITIVE.' &
+                //10X, i10, '  STEPS0 OR STEPS1, DESIRED NUMBER OF STEPS')
+         2 format(/1X, a9, 'ERROR.  THE FACTORS FOR CHANGING THE TIME STRIDE' &
+                 /10X, 'MUST BE NO SMALLER THAN 1.' &
+                //10X, 1p, e10.2, '  TDEC, DECREASE FACTOR', &
+                 /10X, 1p, e10.2, '  TINC, INCREASE FACTOR')
+         3 format(/1X, a9, 'ERROR.  THE BOUNDS ON THE TIME STRIDE ARE OUT OF' &
+                 /10X, 'ORDER.' &
+                //10X, 1p, e10.2, '  TMIN, SHORTEST STRIDE' &
+                 /10X, 1p, e10.2, '  TMAX, LONGEST STRIDE')
+         4 format(/1X, a9, 'ERROR.  THE INITIAL TIME STRIDE MUST LIE BETWEEN' &
+                 /10X, 'THE LOWER AND UPPER BOUNDS.' &
+                //10X, 1p, e10.2, '  TMIN, SHORTEST STRIDE' &
+                 /10X, 1p, e10.2, '  STRID0, INITIAL STRIDE' &
+                 /10X, 1p, e10.2, '  TMAX, LONGEST STRIDE')
+         5 format(/1X, a9, 'ERROR.  THE COUNT OF TIME STEPS MUST BE ZERO OR' &
+                 /10X, 'POSITIVE.' &
+                //10X, i10, '  STEP')
+         6 format(/1X, a9, 'ERROR.  THE TIME STEPS BEFORE STRIDE INCREASES' &
+                 /10X, 'MUST BE POSITIVE.' &
+                //10X, i10, '  STEPS2, TIME STEPS BEFORE STRIDE INCREASES')
+
+      end subroutine check_stepping
 
       ! *******************************************************************************************************
       ! STRINGS
@@ -1924,9 +2000,9 @@ module twopnt_core
       end subroutine twlaps
 
       ! Perform time evolution
-      subroutine evolve(setup, error, text, above, below, buffer, vars, condit, desire, report, s0, s1, &
-                        step, stride, age, success, time, v0, v1, vsave, y0, y1, ynorm, x, functions, jac)
-
+      subroutine evolve(this, setup, error, text, above, below, buffer, vars, condit, desire, report, s0, s1, &
+                        stride, success, time, v0, v1, vsave, y0, y1, ynorm, x, jac)
+      type(twfunctions), intent(inout) :: this
       type(twcom),      intent(in)    :: setup
       integer,          intent(in)    :: text
       type(twsize),     intent(in)    :: vars
@@ -1934,24 +2010,22 @@ module twopnt_core
       logical,          intent(out)   :: time
       integer,          intent(in)    :: desire ! Desired number of timesteps
       real(RK),         intent(inout) :: ynorm,stride
-      integer,          intent(inout) :: step,age
       integer,          intent(out)   :: report
       real(RK), dimension(vars%N()), intent(in)    :: above,below,x
       real(RK), dimension(vars%N()), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1,vsave
-      type(twfunctions), intent(inout) :: functions
+
       type(twjac)      , intent(inout) :: jac
 
       real(RK)  :: change,condit,csave,dummy,high,low
-      integer   :: count,first,last,number,xrepor,leveld,levelm
+      integer   :: count,first,last,number,xrepor
       intrinsic :: log10, max, min
       logical   :: exist,success,xsucce,new_dt
       character(len=80) :: cword,jword,remark,yword
 
       character(len=*), parameter :: id = 'EVOLVE:  '
 
-      ! Evolve is a level-1 branch subroutine
-      leveld = setup%leveld-1
-      levelm = setup%levelm-1
+      associate(age=>this%stats%age,step=>this%stats%step,&
+                leveld=>setup%leveld-1,levelm=>setup%levelm-1)
 
       ! Initialization.
       time    = .false. ! Turn off reverse communication flags.
@@ -1964,44 +2038,8 @@ module twopnt_core
       ! Check the arguments
       call vars%check(error,id,text)
       if (error) return
-
-      error = .not. (0 < desire)
-      if (error) then
-         if (text>0) write (text, 23) id, desire
-         return
-      end if
-
-      error = .not. (setup%tdec>=one .and. setup%tinc>=one)
-      if (error) then
-         if (text>0) write (text, 24) id, setup%tdec, setup%tinc
-         return
-      end if
-
-      ! stride bounds OK
-      error = .not. (setup%tmin>zero .and. setup%tmax>=setup%tmin)
-      if (error) then
-         if (text>0) write (text, 25) id, setup%tmin, setup%tmax
-         return
-      end if
-
-      ! strid0 in bounds
-      error = .not. (setup%strid0>=setup%tmin .and. setup%tmax>=setup%strid0)
-      if (error) then
-         if (text>0) write (text, 26) id, setup%tmin, setup%strid0, setup%tmax
-         return
-      end if
-
-      error = .not. step>=0
-      if (error) then
-         if (text>0) write (text, 27) id, step
-         return
-      end if
-
-      error = setup%tinc>one .and. .not. setup%steps2>0
-      if (error) then
-         if (text>0) write (text, 28) id, setup%steps2
-         return
-      end if
+      call setup%check_stepping(error,id,text,desire,step)
+      if (error) return
 
       ! ***** Time evolution. *****
       save_initial_solution: if (step<=0) then
@@ -2011,7 +2049,7 @@ module twopnt_core
 
          ! Send latest solution to the problem handler
          buffer = v0
-         call functions%save(error,vars,buffer)
+         call this%save(error,vars,buffer)
 
       endif save_initial_solution
 
@@ -2024,7 +2062,7 @@ module twopnt_core
       if (levelm>0 .and. text>0) then
          buffer = v0
          time   = .false.
-         call functions%f(error,text,vars%points,time,stride,x,buffer)
+         call this%f(error,text,vars%points,time,stride,x,buffer)
          if (error) then
             if (levelm>1.and.text>0) write (text, 21) id, 'RESIDUAL'
             return
@@ -2058,9 +2096,9 @@ module twopnt_core
 
               ! All functions within here are done with time = .true.
               time  = .true.
-              call search(error, text, above, functions%stats%agej, below, buffer, vars, condit, exist, &
+              call search(this, error, text, above, below, buffer, vars, condit, exist, &
                           leveld - 1, levelm - 1, xrepor, s0, s1, number, xsucce, v0, v1, setup%tdabs, setup%tdage, &
-                          setup%tdrel, y0, dummy, y1, x, functions, time, stride, jac, count, csave, jword)
+                          setup%tdrel, y0, dummy, y1, x, time, stride, jac, count, csave, jword)
               if (error) then
                  if (text>0) write (text, 29) id
                  return
@@ -2116,11 +2154,11 @@ module twopnt_core
 
           ! Save latest solution for use by the function
           buffer = v0
-          call functions%save(error,vars,buffer)
+          call this%save(error,vars,buffer)
 
           buffer = v0
           time = .false.
-          call functions%f(error,text,vars%points,time,stride,x,buffer)
+          call this%f(error,text,vars%points,time,stride,x,buffer)
           if (error) then
              if (levelm>1.and.text>0) write (text, 21) id, 'RESIDUAL'
              return
@@ -2150,7 +2188,7 @@ module twopnt_core
 
          if (first<last .and. leveld==1) then
             write (text, 15) id
-            call functions%show(error,text,v0,vars,.true.,x)
+            call this%show(error,text,v0,vars,.true.,x)
             if (error) then
                if (levelm>1.and.text>0) write (text, 21) id, 'SHOW'
                return
@@ -2163,6 +2201,7 @@ module twopnt_core
       if (step<last) report = xrepor
 
       return
+      endassociate
 
       ! Informative messages
       1 format(10X, i6, 21X, f6.2, 3X, i5, 3X, a12, 3X, a)
@@ -2202,27 +2241,6 @@ module twopnt_core
 
       ! Error messages
       21 format(/1X, a9, 'ERROR.  FAILURE EVALUATING ',a,'. ')
-      23 format(/1X, a9, 'ERROR.  THE NUMBER OF TIME STEPS MUST BE POSITIVE.' &
-                 //10X, i10, '  STEPS0 OR STEPS1, DESIRED NUMBER OF STEPS')
-      24 format(/1X, a9, 'ERROR.  THE FACTORS FOR CHANGING THE TIME STRIDE' &
-                  /10X, 'MUST BE NO SMALLER THAN 1.' &
-                 //10X, 1p, e10.2, '  TDEC, DECREASE FACTOR', &
-                  /10X, 1p, e10.2, '  TINC, INCREASE FACTOR')
-      25 format(/1X, a9, 'ERROR.  THE BOUNDS ON THE TIME STRIDE ARE OUT OF' &
-                  /10X, 'ORDER.' &
-                 //10X, 1p, e10.2, '  TMIN, SHORTEST STRIDE' &
-                  /10X, 1p, e10.2, '  TMAX, LONGEST STRIDE')
-      26 format(/1X, a9, 'ERROR.  THE INITIAL TIME STRIDE MUST LIE BETWEEN' &
-                  /10X, 'THE LOWER AND UPPER BOUNDS.' &
-                 //10X, 1p, e10.2, '  TMIN, SHORTEST STRIDE' &
-                  /10X, 1p, e10.2, '  STRID0, INITIAL STRIDE' &
-                  /10X, 1p, e10.2, '  TMAX, LONGEST STRIDE')
-      27 format(/1X, a9, 'ERROR.  THE COUNT OF TIME STEPS MUST BE ZERO OR' &
-                  /10X, 'POSITIVE.' &
-                 //10X, i10, '  STEP')
-      28 format(/1X, a9, 'ERROR.  THE TIME STEPS BEFORE STRIDE INCREASES' &
-                  /10X, 'MUST BE POSITIVE.' &
-                 //10X, i10, '  STEPS2, TIME STEPS BEFORE STRIDE INCREASES')
       29 format(/1X, a9, 'ERROR.  SEARCH FAILS.')
 
       end subroutine evolve
@@ -2278,11 +2296,11 @@ module twopnt_core
       end function decrease_timestep
 
       ! Perform the damped, modified Newton's search
-      subroutine search(error, text, above, age, below, buffer, vars, condit, exist, &
+      subroutine search(this, error, text, above, below, buffer, vars, condit, exist, &
                         leveld, levelm, report, s0, s1, steps, &
-                        success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, x, functions, time, stride, jac, &
+                        success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, x, time, stride, jac, &
                         jcount, csave, jword)
-
+          class(twfunctions), intent(inout) :: this
           type(twsize)    , intent(in)    :: vars
           integer         , intent(out)   :: report
           logical         , intent(out)   :: error
@@ -2290,10 +2308,9 @@ module twopnt_core
           integer         , intent(in)    :: text
           real(RK)        , intent(in)    :: xxabs,xxrel ! settings
           integer         , intent(in)    :: xxage
-          integer         , intent(inout) :: age ! Jacobian age
           real(RK), dimension(vars%N()), intent(in)    :: above,below,x
           real(RK), dimension(vars%N()), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1
-          type(twfunctions), intent(inout) :: functions
+
           logical          , intent(in)    :: time
           real(RK)         , intent(in)    :: stride
           type(twjac)      , intent(inout) :: jac
@@ -2309,6 +2326,7 @@ module twopnt_core
           character(len=*), parameter :: id = 'SEARCH:  '
 
           ! *** Initialization. ***
+          associate(age=>this%stats%agej)
 
           ! Turn off all completion flags
           error   = .false.
@@ -2378,7 +2396,7 @@ module twopnt_core
                   call twcopy(vars%N(),v0,buffer)
 
                   ! Prepare Jacobian
-                  call functions%jac_prep(error,text,jac,buffer,vars,condit,time,stride,x)
+                  call this%jac_prep(error,text,jac,buffer,vars,condit,time,stride,x)
 
                   ! Update condition number
                   jcount = jcount + 1
@@ -2400,7 +2418,7 @@ module twopnt_core
 
                   ! EVALUATE Y0 := F(V0).
                   buffer = v0
-                  call functions%f(error,text,vars%points,time,stride,x,buffer)
+                  call this%f(error,text,vars%points,time,stride,x,buffer)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'RESIDUAL'
                       return
@@ -2411,7 +2429,7 @@ module twopnt_core
 
                   ! SOLVE J S0 = Y0.
                   buffer = y0
-                  call functions%jac_solve(error,text,jac,buffer,vars)
+                  call this%jac_solve(error,text,jac,buffer,vars)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'SOLVE'
                       return
@@ -2469,7 +2487,7 @@ module twopnt_core
 
                   ! EVALUATE Y1 := F(V1)
                   buffer = v1
-                  call functions%f(error,text,vars%points,time,stride,x,buffer)
+                  call this%f(error,text,vars%points,time,stride,x,buffer)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'RESIDUAL'
                       return
@@ -2479,7 +2497,7 @@ module twopnt_core
 
                   ! SOLVE J*S1 = Y1
                   buffer = y1
-                  call functions%jac_solve(error,text,jac,buffer,vars)
+                  call this%jac_solve(error,text,jac,buffer,vars)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'SOLVE'
                       return
@@ -2538,7 +2556,7 @@ module twopnt_core
              if (leveld>0) then
                 ! Ask to display the final solution
                 write (text, 3) id
-                call functions%show(error,text,v0,vars,.true.,x)
+                call this%show(error,text,v0,vars,.true.,x)
                 if (error) then
                     if (text>0) write (text, 5) id, 'SHOW'
                     return
@@ -2550,6 +2568,7 @@ module twopnt_core
 
           success = .true.
           return
+          endassociate
 
           ! Informative messages.
           1 format(/1X, a9, 'FAILURE.  THE SEARCH DIVERGES.')
@@ -2898,11 +2917,11 @@ module twopnt_core
                   exist = .false.
 
                   ! CALL SEARCH.
-                  call search(error, text, work%above, functions%stats%agej, work%below, buffer, vars, condit, &
+                  call search(functions, error, text, work%above, work%below, buffer, vars, condit, &
                              exist, setup%leveld - 1, setup%levelm - 1, &
                              xrepor, work%s0, work%s1, nsteps, found, &
                              u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
-                             work%y1, x, functions, time, stride, jac, jcount, csave, jword)
+                             work%y1, x, time, stride, jac, jcount, csave, jword)
                   if (error) then
                       if (text>0) write (text, 17) id
                       return
@@ -2947,11 +2966,9 @@ module twopnt_core
                   exist = .false.
 
                   ! CALL REFINE.
-                  call refine(error, text, active, &
-                              buffer(vars%groupa+1), vars, setup%leveld - 1, setup%levelm - 1, mark, &
-                              found, setup%ipadd, ratio, work%ratio1, work%ratio2,   &
-                              satisf, setup%toler0, setup%toler1, setup%toler2, u(vars%groupa + 1), &
-                              work%vary1, work%vary2, work%vary, x, functions)
+                  call refine(functions, error, setup, text, active, buffer(vars%groupa+1), vars, mark, &
+                              found, ratio, work%ratio1, work%ratio2, satisf, u(vars%groupa + 1), &
+                              work%vary1, work%vary2, work%vary, x)
                   if (error) then
                       if (text>0) write (text, 18) id
                       return
@@ -3000,15 +3017,13 @@ module twopnt_core
                   if (setup%levelm>1 .and. text>0) write (text, 10020) id
 
                   ! CALL EVOLVE.
-                  call evolve(setup, error, text, work%above, work%below, buffer, vars, condit, desire, xrepor, &
-                              work%s0, work%s1, functions%stats%step, stride, functions%stats%age, found, time, u, work%v1, &
-                              work%vsave, work%y0, work%y1, ynorm, x, functions, jac)
+                  call evolve(functions, setup, error, text, work%above, work%below, buffer, vars, condit, &
+                              desire, xrepor, work%s0, work%s1, stride, found, time, u, work%v1, &
+                              work%vsave, work%y0, work%y1, ynorm, x, jac)
                   if (error) then
                       if (text>0) write (text, 19) id
                       return
                   end if
-
-
 
                   ! REACT TO THE COMPLETION OF EVOLVE.
                   if (found) then
@@ -3270,21 +3285,18 @@ module twopnt_core
       end function evolve_task_summary
 
       ! Perform automatic grid selection
-      subroutine refine(error, text, active, buffer, vars, leveld, levelm, mark, newx, &
-                        padd,   ratio, ratio1, ratio2, success, toler0, &
-                        toler1, toler2, u, vary1, vary2, weight, x, functions)
-
-          integer,      intent(in)     :: text,leveld,levelm
-          integer,      intent(in)     :: padd
+      subroutine refine(this, error, setup, text, active, buffer, vars, mark, newx, &
+                        ratio, ratio1, ratio2, success, u, vary1, vary2, weight, x)
+          class(twfunctions), intent(in) :: this
+          type(twcom),  intent(in)     :: setup
+          integer,      intent(in)     :: text
           type(twsize), intent(inout)  :: vars
           logical,      intent(inout)  :: error, newx, success
           logical,      intent(inout)  :: active(vars%comps)
           logical,      intent(inout)  :: mark(vars%pmax)
           real(RK),     intent(inout)  :: ratio1(vars%pmax),ratio2(vars%pmax),ratio(2),x(vars%pmax)
           real(RK),     intent(inout)  :: buffer(vars%comps*vars%pmax),u(vars%comps,vars%pmax)
-          real(RK),     intent(in)     :: toler0,toler1,toler2
           integer,      intent(inout), dimension(vars%pmax) :: vary1,vary2,weight
-          type(twfunctions), intent(in) :: functions
 
           character(len=*), parameter :: id = 'REFINE:  '
 
@@ -3292,6 +3304,9 @@ module twopnt_core
           real(RK) :: differ,left,length,lower,maxmag,mean,range,right,temp,temp1,temp2,upper
           integer  :: act,counted,former,itemp,j,k,least,more,most,new,old,signif,total
           intrinsic :: abs, max, min, count, minval, maxval
+
+          associate(leveld=>setup%leveld-1,levelm=>setup%levelm-1,padd=>setup%ipadd, &
+                    toler0=>setup%toler0,toler1=>setup%toler1,toler2=>setup%toler2)
 
           ! Initialization: turn off all completion status flags.
           error   = .false.
@@ -3520,7 +3535,7 @@ module twopnt_core
 
               ! Allow the user to update the solution.
               call twcopy(vars%comps*vars%points,from=u,to=buffer)
-              call functions%update_grid(error,vars,x,buffer)
+              call this%update_grid(error,vars,x,buffer)
               call twcopy(vars%comps*vars%points,from=buffer,to=u)
               if (error) then
                  if (levelm>0 .and. text>0) write(text, 101)
@@ -3585,7 +3600,7 @@ module twopnt_core
                 write (text, 10) id
                 call twcopy(vars%comps*vars%points,from=u,to=buffer)
                 ! CAREFUL! buffer here does not have the group-A variables
-                call functions%show(error,text,buffer,vars,.true.,x)
+                call this%show(error,text,buffer,vars,.true.,x)
                 if (error) return
              end if
           end if
@@ -3595,6 +3610,7 @@ module twopnt_core
           success = most == 0
 
           return
+          endassociate
 
           ! Formats section.
           ! Informative messages.
