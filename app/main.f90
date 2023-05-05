@@ -153,26 +153,13 @@ program TWMAIN
     VERSIO = 'DOUBLE PRECISION VERSION 3.22'
 
     ! Call driver
-    CALL TWOPNT(SETTINGS, ERROR, TEXT, VERSIO, sizes, ABOVE, ACTIVE, BELOW, BUFFER, CONDIT, &
-                WORK, MARK, REPORT, STRIDE, TIME, U, X, problem, jac)
-    IF (ERROR) GO TO 9004
-
-    ! CHECK FOR SUCCESS.
-    ERROR = REPORT == 'NONE FOUND'
-    IF (ERROR) GO TO 9009
+    call problem%run(SETTINGS, ERROR, TEXT, VERSIO, sizes, ABOVE, ACTIVE, BELOW, BUFFER, CONDIT, &
+                     WORK, MARK, REPORT, STRIDE, TIME, U, X, jac)
 
     ! WRITE A SUMMARY.
     WRITE (TEXT, 10001) ID, U(4, 1), OMEGA, TZERO, TMAX, WMAX
 
     ! SUCCESSFUL RETURN.
-    return
-
-    ! ERROR HANDLING.
-    9004  IF (TEXT>0) WRITE (TEXT, 99004) ID; return
-    9009  IF (TEXT>0) THEN
-             CALL twlast(LENGTH, REPORT)
-             WRITE (TEXT, 99009) ID, REPORT(1:LENGTH)
-          END IF
     return
 
     ! INFORMATIVE MESSAGES.
@@ -181,10 +168,6 @@ program TWMAIN
                  /10X, F10.5, '  TZERO' &
                  /10X, F10.5, '  TMAX'  &
                  /10X, F10.5, '  WMAX')
-
-    ! ERROR MESSAGES.
-    99004 FORMAT(/1X, A9, 'ERROR.  TWOPNT FAILS.')
-    99009 FORMAT(/1X, A9, 'ERROR.  TWOPNT DOES NOT SOLVE THE PROBLEM.'//10X, '   REPORT:  ', A)
 
     contains
 
