@@ -1728,7 +1728,7 @@ module twopnt_core
 
       ! Perform time evolution
       subroutine evolve(error, text, above, below, buffer, vars, condit, desire, &
-                        leveld, levelm, name, names, report, s0, s1, signal, &
+                        leveld, levelm, name, names, report, s0, s1, &
                         step, steps2, strid0, stride, success, tdabs, tdage, tdec, &
                         tdrel, time, tinc, tmax, tmin, v0, v1, vsave, y0, y1, ynorm, x, functions, jac)
 
@@ -1747,7 +1747,6 @@ module twopnt_core
       integer,          intent(in)    :: names
       integer,          intent(out)   :: report
       character(len=*), intent(in)    :: name(names)
-      character(len=*), intent(inout) :: signal
       real(RK), dimension(vars%N()), intent(in)    :: above,below,x
       real(RK), dimension(vars%N()), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1,vsave
       type(twfunctions), intent(inout) :: functions
@@ -1756,27 +1755,16 @@ module twopnt_core
       real(RK)  :: change,condit,csave,dummy,high,low,stride
       integer   :: age,agej,count,first,last,length,number,route,xrepor
       intrinsic :: log10, max, min
-      logical   :: exist,jacob,success,xsucce
+      logical   :: exist,success,xsucce
       character(len=80) :: cword,jword,remark,yword
 
       character(len=*), parameter :: id = 'EVOLVE:  '
-
-      ! SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
-      save
 
       ! Initialization.
       time    = .false. ! Turn off reverse communication flags.
       error   = .false. ! Turn off all completion status flags.
       report  = qnull
       success = .false.
-
-      ! IF THIS IS A RETURN CALL, THEN CONTINUE WHERE THE PROGRAM PAUSED.
-      if (signal /= ' ') then
-         go to (1010, 1020, 1060, 1080, 1090) route
-         error = .true.
-         if (text>0) write (text, 21) id, route
-         return
-      end if
 
       ! Check the arguments
       call vars%check(error,id,text)
@@ -1830,7 +1818,6 @@ module twopnt_core
          call functions%save_sol(vars,buffer)
 
       endif save_initial_solution
-      1010 continue
 
       ! Initialize timestepping
       exist = .false.
@@ -1842,7 +1829,10 @@ module twopnt_core
          buffer = v0
          time = .false.
          call functions%fun(error,text,vars%points,time,stride,x,buffer)
-         1020 continue
+         if (error) then
+            if (levelm>1.and.text>0) write (text, 21) id, 'RESIDUAL'
+            return
+         endif
          ynorm = twnorm(vars%N(), buffer)
          call print_evolve_header(text,id,levelm,step,ynorm,stride)
       endif
@@ -1870,9 +1860,6 @@ module twopnt_core
 
               ! STORE THE LATEST SOLUTION SHOULD THE SEARCH FAIL
               call twcopy (vars%N(), v0, vsave)
-
-              jacob = .false.
-              1060  continue
 
               ! All functions within here are done with time = .true.
               time  = .true.
@@ -1945,17 +1932,18 @@ module twopnt_core
           step = step + 1
 
           ! Save latest solution for use by the function
-          ! GO TO 1080 WHEN ROUTE = 4
           buffer = v0
           call functions%save_sol(vars,buffer)
-          1080 continue
 
           ! Summary
           print_summary: if (levelm>0 .and. text>0) then
              buffer = v0
              time = .false.
              call functions%fun(error,text,vars%points,time,stride,x,buffer)
-             1090 continue
+             if (error) then
+                if (levelm>1.and.text>0) write (text, 21) id, 'RESIDUAL'
+                return
+             endif
              ynorm  = twnorm(vars%N(), buffer)
              call twlogr (yword, ynorm)
              if (levelm==1) write (text, 5) step,yword,cword,log10(stride),number,jword
@@ -1979,6 +1967,10 @@ module twopnt_core
          if (first<last .and. leveld==1) then
             write (text, 15) id
             call functions%show(error,text,v0,vars,.true.,x)
+            if (error) then
+               if (levelm>1.and.text>0) write (text, 21) id, 'SHOW'
+               return
+            endif
          end if
       end if
 
@@ -2025,8 +2017,7 @@ module twopnt_core
       15 format(/1X, a9, 'THE LATEST SOLUTION:')
 
       ! Error messages
-      21 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-                 //10X, i10, '  ROUTE')
+      21 format(/1X, a9, 'ERROR.  FAILURE EVALUATING ',a,'. ')
       23 format(/1X, a9, 'ERROR.  THE NUMBER OF TIME STEPS MUST BE POSITIVE.' &
                  //10X, i10, '  STEPS0 OR STEPS1, DESIRED NUMBER OF STEPS')
       24 format(/1X, a9, 'ERROR.  THE FACTORS FOR CHANGING THE TIME STRIDE' &
@@ -2925,7 +2916,7 @@ module twopnt_core
                   6020  continue
                   call evolve(error, text, work%above, work%below, &
                          buffer, vars, condit, desire, setup%leveld - 1, &
-                         setup%levelm - 1, name, names, xrepor, work%s0, work%s1, signal, &
+                         setup%levelm - 1, name, names, xrepor, work%s0, work%s1, &
                          stats%step, setup%steps2, setup%strid0, stride, found, setup%tdabs, &
                          setup%tdage, setup%tdec, setup%tdrel, time, setup%tinc, setup%tmax, &
                          setup%tmin, u, work%v1, work%vsave, work%y0, work%y1, ynorm, x, functions, jac)
