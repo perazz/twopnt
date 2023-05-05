@@ -295,9 +295,10 @@ module twopnt_core
        end subroutine twopnt_save
 
        ! Pass control to the problem handler on a grid update
-       subroutine twopnt_grid_update(vars,x,u)
+       subroutine twopnt_grid_update(error,vars,x,u)
           import RK, twsize
           implicit none
+          logical, intent(out)     :: error
           type(twsize), intent(in) :: vars
           real(RK), intent(in)     :: x(vars%N())
           real(RK), intent(inout)  :: u(:)
@@ -1343,7 +1344,7 @@ module twopnt_core
 
 
           real(RK) :: delta, temp
-          integer :: block, blocks, cfirst, clast, col, count, diag, j, lda, length, n, offset, &
+          integer :: block, blocks, cfirst, clast, col, count, diag, j, lda, n, offset, &
                      rfirst, rlast, row, skip, width
           intrinsic :: abs, int, max, min, mod, sqrt
           logical :: found
@@ -1753,7 +1754,7 @@ module twopnt_core
       type(twjac)      , intent(inout) :: jac
 
       real(RK)  :: change,condit,csave,dummy,high,low,stride
-      integer   :: age,agej,count,first,last,length,number,route,xrepor
+      integer   :: age,agej,count,first,last,length,number,xrepor
       intrinsic :: log10, max, min
       logical   :: exist,success,xsucce
       character(len=80) :: cword,jword,remark,yword
@@ -2548,7 +2549,7 @@ module twopnt_core
 
       real(RK) ::  maxcon, ratio(2), stride, temp, ynorm, csave
       type(twstat) :: stats
-      integer :: age, comps, desire, j, jacobs, label, length, nsteps, psave, qtask, qtype, return, &
+      integer :: age, desire, j, jacobs, label, length, nsteps, psave, qtask, qtype, return, &
                  route, steps, xrepor, jcount
       intrinsic :: max
       logical :: allow, exist, found, satisf, time
@@ -2840,7 +2841,7 @@ module twopnt_core
                   call refine(error, text, active, &
                               buffer(vars%groupa+1), vars, setup%leveld - 1, setup%levelm - 1, mark, &
                               found, setup%ipadd, ratio, work%ratio1, work%ratio2,   &
-                              signal, satisf, setup%toler0, setup%toler1, setup%toler2, u(vars%groupa + 1), &
+                              satisf, setup%toler0, setup%toler1, setup%toler2, u(vars%groupa + 1), &
                               work%vary1, work%vary2, work%vary, x, functions)
                   if (error) then
                       if (text>0) write (text, 18) id
@@ -3171,7 +3172,7 @@ module twopnt_core
 
       ! Perform automatic grid selection
       subroutine refine(error, text, active, buffer, vars, leveld, levelm, mark, newx, &
-                        padd,   ratio, ratio1, ratio2, signal, success, toler0, &
+                        padd,   ratio, ratio1, ratio2, success, toler0, &
                         toler1, toler2, u, vary1, vary2, weight, x, functions)
 
           integer,      intent(in)     :: text,leveld,levelm
@@ -3184,34 +3185,19 @@ module twopnt_core
           real(RK),     intent(inout)  :: buffer(vars%comps*vars%pmax),u(vars%comps,vars%pmax)
           real(RK),     intent(in)     :: toler0,toler1,toler2
           integer,      intent(inout), dimension(vars%pmax) :: vary1,vary2,weight
-          character(len=*), intent(inout) :: signal
           type(twfunctions), intent(in) :: functions
 
           character(len=*), parameter :: id = 'REFINE:  '
 
           character(len=80) :: word
           real(RK) :: differ,left,length,lower,maxmag,mean,range,right,temp,temp1,temp2,upper
-          integer  :: act,counted,former,itemp,j,k,least,more,most,new,old,route,signif,total
+          integer  :: act,counted,former,itemp,j,k,least,more,most,new,old,signif,total
           intrinsic :: abs, max, min, count, minval, maxval
 
-          ! Save local variables during returns for reverse communication.
-          save
-
-          ! ***** prologue. *****
-
-          ! every-time initialization: turn off all completion status flags.
+          ! Initialization: turn off all completion status flags.
           error   = .false.
           newx    = .false.
           success = .false.
-
-          ! if this is a return call, then continue where the program paused.
-          if (signal/=' ') then
-             go to (4060, 5040) route
-             error = .true.
-             ! invalid route
-             if (text>0) write (text, 101) id, route
-             return
-          end if
 
           ! Levelm printing.
           if (levelm>0 .and. text>0) write (text, 1) id
@@ -3433,14 +3419,14 @@ module twopnt_core
               former = vars%points
               vars%points = total
 
-              ! allow the user to update the solution.
-              call twcopy (vars%comps*vars%points, u, buffer)
-
-              ! Request to update the grid
-              call functions%update_grid(vars,x,buffer)
-              4060  continue
-              signal = ' '
-              call twcopy (vars%comps*vars%points,buffer,u)
+              ! Allow the user to update the solution.
+              call twcopy(vars%comps*vars%points,from=u,to=buffer)
+              call functions%update_grid(error,vars,x,buffer)
+              call twcopy(vars%comps*vars%points,from=buffer,to=u)
+              if (error) then
+                 if (levelm>0 .and. text>0) write(text, 101)
+                 return
+              endif
 
           end if add_points
 
@@ -3505,11 +3491,7 @@ module twopnt_core
              end if
           end if
 
-          ! Restart after SHOW request
-          5040 continue
-
           ! set the completion status flags.
-          signal  = ' '
           newx    = more > 0
           success = most == 0
 
@@ -3539,8 +3521,7 @@ module twopnt_core
          10 format(/1X, a9, 'THE SOLUTION GUESS FOR THE NEW GRID:')
 
          ! Error messages.
-         101 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-                  //10X, i10, '  ROUTE')
+         101 format(/1X, a9, 'ERROR.  USER-DEFINED SOLUTION UPDATE ON NEW GRID FAILED.')
          105 format(/1X, a9, 'ERROR.  THERE ARE NO ACTIVE COMPONENTS.')
          106 format(/1X, a9, 'ERROR.  THE BOUNDS ON MAGNITUDE AND RELATIVE CHANGE' &
                    /10X, 'OF MAGNITUDE FOR INSIGNIFICANT COMPONENTS MUST BE'&

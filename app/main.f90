@@ -226,12 +226,14 @@ program TWMAIN
       end subroutine residual
 
       ! Grid update function interface
-      subroutine grid_update(vars,x,u)
+      subroutine grid_update(error,vars,x,u)
+         logical, intent(out)     :: error
          type(twsize), intent(in) :: vars
          real(RK), intent(in)     :: x(vars%N())
          real(RK), intent(inout)  :: u(:)
 
          N = vars%N()
+         error = N<=0
 
       end subroutine grid_update
 
