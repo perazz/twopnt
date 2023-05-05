@@ -34,7 +34,6 @@ program TWMAIN
     integer, parameter :: GROUPA = 0
     integer, parameter :: GROUPB = 0
     integer, parameter :: PMAX   = 200
-    integer, parameter :: ASIZE = (6 * COMPS - 1) * COMPS * PMAX
     integer, parameter :: NAMES = COMPS + GROUPA + GROUPB
     logical, parameter :: RELAXED_TOLERANCES = .false.
 
@@ -45,13 +44,13 @@ program TWMAIN
     type(twsize) :: sizes
     type(twwork) :: work
     type(twfunctions) :: problem
-    real(RK) :: A(ASIZE), ABOVE(COMPS), BELOW(COMPS)
+    type(twjac) :: jac
+    real(RK) :: ABOVE(COMPS), BELOW(COMPS)
     real(RK), dimension(COMPS*PMAX) :: BUFFER
     real(RK), dimension(COMPS,PMAX) :: U,U0
     real(RK), dimension(PMAX) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0,X
     real(RK) :: CONDIT,STRIDE
     logical  :: ACTIVE(COMPS), MARK(PMAX)
-    integer  :: PIVOT(COMPS*PMAX)
     INTEGER :: J, LENGTH, N
     LOGICAL :: ERROR, TIME
 
@@ -80,6 +79,7 @@ program TWMAIN
     ! CHOOSE THE INITIAL GRID SIZE.
     sizes = twsize(GROUPA,COMPS,6,PMAX,GROUPB)
     N = sizes%N()
+    call jac%init(sizes)
 
     ! SPECIFY THE CONTROLS.
     call settings%set(ERROR, TEXT, 'ADAPT', .TRUE.)
@@ -150,8 +150,9 @@ program TWMAIN
     ACTIVE(5) = .TRUE.
 
     ! Initialize functions
-    problem%save_sol => savesol
-    problem%fun      => residual
+    problem%save_sol    => savesol
+    problem%fun         => residual
+    problem%update_grid => grid_update
 
     ! CALL TWOPNT.
     VERSIO = 'DOUBLE PRECISION VERSION 3.22'
@@ -161,46 +162,34 @@ program TWMAIN
 
           ! Call driver
           CALL TWOPNT(SETTINGS, ERROR, TEXT, VERSIO, sizes, ABOVE, ACTIVE, BELOW, BUFFER, CONDIT, &
-                      WORK, MARK, NAME, NAMES, REPORT, SIGNAL, STRIDE, TIME, U, X, problem)
+                      WORK, MARK, NAME, NAMES, REPORT, SIGNAL, STRIDE, TIME, U, X, problem, jac)
 
           IF (ERROR) GO TO 9004
 
           ! SERVICE REQUESTS FROM TWOPNT.
           select case (SIGNAL)
 
-             case ('RESIDUAL')
-
-                ! Evaluate residual
-                call residual(error,text,sizes%points,time,stride,x,buffer)
-                IF (ERROR) GO TO 9005
-
              case ('PREPARE')
 
                 ! EVALUATE AND FACTOR THE JACOBIAN
-                CALL problem%prep(ERROR, TEXT, A, ASIZE, BUFFER, sizes, CONDIT, PIVOT, time, stride, x)
+                CALL problem%prep(ERROR, TEXT, JAC, BUFFER, sizes, CONDIT, time, stride, x)
                 IF (ERROR) GO TO 9006
-
-             case ('SHOW')
-
-                 ! SHOW THE SOLUTION.
-                 CALL TWSHOW(ERROR, TEXT, BUFFER, sizes, .TRUE., X)
-                 IF (ERROR) GO TO 9007
 
              case ('SOLVE')
 
                  ! SOLVE THE LINEAR EQUATIONS.
-                 CALL TWSOLV(ERROR, TEXT, A, ASIZE, BUFFER, sizes, PIVOT)
+                 CALL TWSOLV(ERROR, TEXT, JAC, BUFFER, sizes)
                  IF (ERROR) GO TO 9008
-
-             case ('UPDATE')
-
-                 ! UPDATE THE GRID.
-                 N = sizes%N()
 
              case (' ')
 
                  ! Iteration finished
                  exit ITERATE
+
+             case default
+                 print *, SIGNAL
+
+                 GO TO 9004
 
           end select
 
@@ -218,7 +207,6 @@ program TWMAIN
 
     ! ERROR HANDLING.
     9004  IF (TEXT>0) WRITE (TEXT, 99004) ID; return
-    9005  IF (TEXT>0) WRITE (TEXT, 99005) ID; return
     9006  IF (TEXT>0) WRITE (TEXT, 99006) ID; return
     9007  IF (TEXT>0) WRITE (TEXT, 99007) ID; return
     9008  IF (TEXT>0) WRITE (TEXT, 99008) ID; return
@@ -237,7 +225,6 @@ program TWMAIN
 
     ! ERROR MESSAGES.
     99004 FORMAT(/1X, A9, 'ERROR.  TWOPNT FAILS.')
-    99005 FORMAT(/1X, A9, 'ERROR.  RESID FAILS.')
     99006 FORMAT(/1X, A9, 'ERROR.  TWPREP FAILS.')
     99007 FORMAT(/1X, A9, 'ERROR.  TWSHOW FAILS.')
     99008 FORMAT(/1X, A9, 'ERROR.  TWSOLV FAILS.')
@@ -275,6 +262,16 @@ program TWMAIN
                      STRIDE, T, T0, TIME, TMAX, TZERO, U0, WMAX, X)
 
       end subroutine residual
+
+      ! Grid update function interface
+      subroutine grid_update(vars,x,u)
+         type(twsize), intent(in) :: vars
+         real(RK), intent(in)     :: x(vars%N())
+         real(RK), intent(inout)  :: u(:)
+
+         N = vars%N()
+
+      end subroutine grid_update
 
       ! Compute density, viscosity and thermal conductivity of Argon at given T
       elemental subroutine AR_TRANSPORT(T,RHO,MU,K)

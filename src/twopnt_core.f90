@@ -181,7 +181,8 @@ module twopnt_core
 
            ! Check variable sizes
            procedure, non_overridable :: check => twsize_checks
-           procedure, non_overridable :: check_onAdd => twsize_check_onAdd
+           procedure, non_overridable :: check_onGridUpdate => twsize_check_grid
+
 
            ! Indices of relevant sizes
            procedure, non_overridable :: idx_B    => twsize_idx_B ! groupb indices
@@ -197,6 +198,7 @@ module twopnt_core
         ! These functions need to be implemented by the user
         procedure(twopnt_save), nopass, pointer :: save_sol => null()
         procedure(twopnt_residual), nopass, pointer :: fun => null()
+        procedure(twopnt_grid_update), nopass, pointer :: update_grid => null()
 
         contains
 
@@ -243,6 +245,20 @@ module twopnt_core
 
     end type twstate
 
+    ! Jacobian matrix storage
+    type, public :: twjac
+
+        real(RK), allocatable :: A(:)
+        integer :: ASIZE = 0
+        integer, allocatable :: PIVOT(:)
+
+        contains
+
+           procedure :: init    => jac_init
+           procedure :: destroy => jac_destroy
+
+    end type twjac
+
     interface realloc
         module procedure realloc_int
         module procedure realloc_real
@@ -274,10 +290,42 @@ module twopnt_core
           real(RK), intent(in) :: buffer(vars%N())
        end subroutine twopnt_save
 
+       ! Pass control to the problem handler on a grid update
+       subroutine twopnt_grid_update(vars,x,u)
+          import RK, twsize
+          implicit none
+          type(twsize), intent(in) :: vars
+          real(RK), intent(in)     :: x(vars%N())
+          real(RK), intent(inout)  :: u(:)
+       end subroutine twopnt_grid_update
+
     end interface
 
 
     contains
+
+       ! Clean Jacobian storage
+       elemental subroutine jac_destroy(this)
+          class(twjac), intent(inout) :: this
+
+          this%ASIZE = 0
+          if (allocated(this%A)) deallocate(this%A)
+          if (allocated(this%PIVOT)) deallocate(this%PIVOT)
+
+       end subroutine jac_destroy
+
+       ! Init Jacobian storage
+       pure subroutine jac_init(this,vars)
+          class(twjac), intent(inout) :: this
+          type(twsize), intent(in) :: vars
+
+          call this%destroy()
+
+          ! Allocate banded space
+          this%ASIZE = (6*vars%comps-1)*vars%comps*vars%pmax
+          allocate(this%A(this%ASIZE),this%PIVOT(vars%comps*vars%pmax))
+
+       end subroutine jac_init
 
        ! Indices of groupb variables
        pure function twsize_idx_B(this) result(igroupb)
@@ -373,44 +421,44 @@ module twopnt_core
 
        end subroutine twsize_checks
 
-       subroutine twsize_check_onAdd(this,error,id,text,padd)
-          class(twsize), intent(in)  :: this
-          logical      , intent(out) :: error
-          character(*) , intent(in)  :: id
-          integer      , intent(in)  :: text
-          integer      , intent(in)  :: padd
+       subroutine twsize_check_grid(this,error,id,text,padd)
+           class(twsize), intent(in)  :: this
+           logical      , intent(out) :: error
+           character(*) , intent(in)  :: id
+           integer      , intent(in)  :: text
+           integer      , intent(in)  :: padd
 
-          ! Check the arguments.
-          error = .not. (this%comps>=1 .and. this%points>=2)
-          if (error) then
-               if (text>0) write (text, 1) id, this%comps, this%points
-               return
-          end if
+           ! Check the arguments.
+           error = .not. (this%comps>=1 .and. this%points>=2)
+           if (error) then
+                if (text>0) write (text, 1) id, this%comps, this%points
+                return
+           end if
 
-          error = .not. (padd>=0)
-          if (error) then
-               if (text>0) write (text, 2) id, padd
-               return
-          endif
+           error = .not. padd>=0
+           if (error) then
+                if (text>0) write (text, 2) id, padd
+                return
+           endif
 
-          error = .not. (this%points<=this%pmax)
-          if (error) then
-               if (text>0) write (text, 3) id, this%points, this%pmax
-               return
-          end if
+           error = .not. (this%points<=this%pmax)
+           if (error) then
+                if (text>0) write (text, 3) id, this%points, this%pmax
+                return
+           end if
 
-          1 format(/1X, a9, 'ERROR.  THERE MUST BE AT LEAST ONE COMPONENT AND AT' &
-                  /10X, 'LEAST TWO POINTS.' &
-                 //10X, i10, '  COMPS, COMPONENTS' &
-                  /10X, i10, '  POINTS')
-          2 format(/1X, a9, 'ERROR.  THE LIMIT ON POINTS ADDED TO A GRID MUST BE' &
-                  /10X, 'ZERO OR POSITIVE.'&
-                 //10X, i10, '  PADD, LIMIT ON ADDED POINTS')
-          3 format(/1X, a9, 'ERROR.  POINTS IS OUT OF RANGE.' &
-                 //10X, i10, '  POINTS'&
-                  /10X, i10, '  PMAX, LIMIT ON POINTS')
+           1 format(/1X, a9, 'ERROR.  THERE MUST BE AT LEAST ONE COMPONENT AND AT' &
+                   /10X, 'LEAST TWO POINTS.' &
+                  //10X, i10, '  COMPS, COMPONENTS' &
+                   /10X, i10, '  POINTS')
+           2 format(/1X, a9, 'ERROR.  THE LIMIT ON POINTS ADDED TO A GRID MUST BE' &
+                   /10X, 'ZERO OR POSITIVE.'&
+                  //10X, i10, '  PADD, LIMIT ON ADDED POINTS')
+           3 format(/1X, a9, 'ERROR.  POINTS IS OUT OF RANGE.' &
+                  //10X, i10, '  POINTS'&
+                   /10X, i10, '  PMAX, LIMIT ON POINTS')
 
-       end subroutine twsize_check_onAdd
+       end subroutine twsize_check_grid
 
        ! Return total number of variables
        elemental integer function twsize_NVARS(this) result(N)
@@ -916,12 +964,11 @@ module twopnt_core
       end function twnorm
 
       ! SOLVE A SYSTEM OF LINEAR EQUATIONS USING THE MATRIX PREPARED BY TWPREP.
-      subroutine twsolv(error, text, a, asize, buffer, vars, pivot)
+      subroutine twsolv(error, text, jac, buffer, vars)
 
-          integer     , intent(in) :: asize,text
+          integer     , intent(in) :: text
           type(twsize), intent(in) :: vars
-          integer     , intent(in) :: pivot(vars%N())
-          real(RK)    , intent(in) :: a(asize)
+          type(twjac) , intent(in) :: jac
           real(RK)    , intent(inout) :: buffer(vars%N())
           logical     , intent(out) :: error
 
@@ -938,7 +985,7 @@ module twopnt_core
           ! WRITE MESSAGES only.
           if (mess .and. text>0) then
               write (text, 1) id,vars%comps,vars%points,vars%groupa,vars%groupb,n
-              write (text, 2) id,vars%comps,vars%points,vars%groupa,vars%groupb,n,width,(3*width+2)*n,asize
+              write (text, 2) id,vars%comps,vars%points,vars%groupa,vars%groupb,n,width,(3*width+2)*n,jac%ASIZE
               stop
           end if
 
@@ -948,16 +995,16 @@ module twopnt_core
           if (error) return
 
           width = vars%comps+max(vars%comps,vars%groupa,vars%groupb) - 1
-          error = .not. ((3 * width + 2) * n <= asize)
+          error = .not. ((3 * width + 2) * n <= jac%ASIZE)
           if (error) then
               if (text>0) write (text,2) id, vars%comps,vars%points,vars%groupa,vars%groupb, n, width, &
-                                         (3*width+2)*n, asize
+                                         (3*width+2)*n, jac%ASIZE
               return
           end if
 
           !***** (2) SCALE AND SOLVE THE EQUATIONS. *****
-          buffer(1:n) = buffer(1:n) * a(1:n)
-          call twgbsl(a(n + 1), 3 * width + 1, n, width, width, pivot, buffer)
+          buffer(1:n) = buffer(1:n) * jac%a(1:n)
+          call twgbsl(jac%a(n + 1), 3 * width + 1, n, width, width, jac%PIVOT, buffer)
 
           return
 
@@ -1278,15 +1325,14 @@ module twopnt_core
       ! Evaluate a block tridiagonal Jacobian matrix by one-sided finite differences and reverse
       ! communication, pack the matrix into the LINPACK banded form, scale the rows, and factor the
       ! matrix using LINPACK's SGBCO
-      subroutine twprep(this, error, text, a, asize, buffer, vars, condit, pivot, time, stride, x)
+      subroutine twprep(this, error, text, jac, buffer, vars, condit, time, stride, x)
           class(twfunctions), intent(inout) :: this
           logical,      intent(out)   :: error
           integer,      intent(in)    :: text ! output unit
-          integer,      intent(in)    :: asize
+          type(twjac),  intent(inout) :: jac
           type(twsize), intent(in)    :: vars
-          integer,      intent(inout) :: pivot (vars%N())
           real(RK),     intent(inout) :: buffer(vars%N())
-          real(RK),     intent(inout) :: a(asize), condit
+          real(RK),     intent(inout) :: condit
           logical ,     intent(in)    :: time
           real(RK),     intent(in)    :: stride
           real(RK),     intent(in)    :: x(:) ! mesh
@@ -1314,9 +1360,9 @@ module twopnt_core
           if (error) return
 
           width = vars%comps + max(vars%comps,vars%groupa,vars%groupb) - 1
-          error = .not. ((3 * width + 2) * n <= asize)
+          error = .not. ((3 * width + 2) * n <= jac%asize)
           if (error) then
-             if (text>0) write (text, 2) id, vars%comps,vars%points,vars%groupa,vars%groupb,n,width,(3*width+2) * n, asize
+             if (text>0) write (text, 2) id, vars%comps,vars%points,vars%groupa,vars%groupb,n,width,(3*width+2)*n,jac%asize
              return
           end if
 
@@ -1334,26 +1380,26 @@ module twopnt_core
           blocks = 0
           if (0 < vars%groupa) then
              blocks = blocks + 1
-             pivot(blocks) = vars%groupa
+             jac%pivot(blocks) = vars%groupa
           end if
 
           do j = 1, vars%points
              blocks = blocks + 1
-             pivot(blocks) = vars%comps
+             jac%pivot(blocks) = vars%comps
           end do
 
           if (0 < vars%groupb) then
              blocks = blocks + 1
-             pivot(blocks) = vars%groupb
+             jac%pivot(blocks) = vars%groupb
           end if
 
           ! ***** (2) INITIALIZE THE COLUMNS OF THE MATRIX *****
 
           ! Store evaluation vector
-          a(:n) = buffer(:n)
+          jac%a(:n) = buffer(:n)
 
           ! Clear matrix
-          a(n+1:n+lda*n) = zero
+          jac%a(n+1:n+lda*n) = zero
 
           ! EVALUATE THE FUNCTION AT THE UNPERTURBED X.
           call this%fun(error,text,vars%points,time,stride,x,buffer)
@@ -1363,16 +1409,16 @@ module twopnt_core
           clast = 0
           do block = 1, blocks
              cfirst = clast + 1
-             clast  = clast + pivot(block)
+             clast  = clast + jac%pivot(block)
 
              if (block > 1) then
-                rfirst = cfirst - pivot(block - 1)
+                rfirst = cfirst - jac%pivot(block - 1)
              else
                 rfirst = cfirst
              end if
 
              if (block < blocks) then
-                rlast = clast + pivot(block + 1)
+                rlast = clast + jac%pivot(block + 1)
              else
                 rlast = clast
              end if
@@ -1380,7 +1426,7 @@ module twopnt_core
              do col = cfirst, clast
                 offset = n + diag - col + lda * (col - 1)
                 do row = rfirst, rlast
-                   a(offset + row) = buffer(row)
+                   jac%a(offset + row) = buffer(row)
                 end do
              end do
           end do
@@ -1392,16 +1438,16 @@ module twopnt_core
               found = .false.
 
               ! Restore the evaluation vector
-              buffer(:n) = a(:n)
+              buffer(:n) = jac%a(:n)
 
               ! Perturb vector at independent positions.
               block = 1
               cfirst = 1
               perturb_vector: do while (block<=blocks)
-                   if (0 < pivot(block)) then
+                   if (0 < jac%pivot(block)) then
                        found = .true.
-                       col = cfirst - 1 + pivot(block)
-                       delta = relat * a(col) + sign(absol,a(col))
+                       col = cfirst - 1 + jac%pivot(block)
+                       delta = relat * jac%a(col) + sign(absol,jac%a(col))
                        buffer(col) = buffer(col) + delta
                        count = 3
                    else
@@ -1430,11 +1476,11 @@ module twopnt_core
               block  = 1
               cfirst = 1
               form_columns: do while (block<=blocks)
-                 if (0 < pivot(block)) then
-                    col = cfirst - 1 + pivot(block)
-                    pivot(block) = pivot(block) - 1
+                 if (0 < jac%pivot(block)) then
+                    col = cfirst - 1 + jac%pivot(block)
+                    jac%pivot(block) = jac%pivot(block) - 1
 
-                    delta  = relat * a(col) + sign(absol,a(col))
+                    delta  = relat * jac%a(col) + sign(absol,jac%a(col))
                     temp   = one / delta
                     offset = n + diag - col + lda * (col - 1)
 
@@ -1466,7 +1512,7 @@ module twopnt_core
                        rlast = clast
                     end if
 
-                    forall(row=rfirst:rlast) a(offset+row) = (buffer(row) - a(offset+row))*temp
+                    forall(row=rfirst:rlast) jac%a(offset+row) = (buffer(row) - jac%a(offset+row))*temp
 
                     count = 3
                  else
@@ -1489,23 +1535,23 @@ module twopnt_core
           end do column_groups
 
           ! ***** (4) CHECK FOR ZERO COLUMNS. *****
-          call count_zero_columns(a,n,diag,lda,width,count)
+          call count_zero_columns(jac%a,n,diag,lda,width,count)
           error = .not. (count == 0)
           if (error) then
-              call print_invalid_rowscols(id,text,vars,a,count,.false.)
+              call print_invalid_rowscols(id,text,vars,jac%a,count,.false.)
               return
           endif
 
           ! ***** (5) SCALE THE ROWS. *****
-          call scale_rows(a,n,diag,lda,width,count)
+          call scale_rows(jac%a,n,diag,lda,width,count)
           error = .not. (count == 0)
           if (error) then
-             call print_invalid_rowscols(id,text,vars,a,count,.true.)
+             call print_invalid_rowscols(id,text,vars,jac%a,count,.true.)
              return
           end if
 
           ! ***** (6) FACTOR THE MATRIX.
-          call twgbco(a(n+1), lda, n, width, width, pivot, condit, buffer)
+          call twgbco(jac%a(n+1), lda, n, width, width, jac%pivot, condit, buffer)
           error = condit == zero
           if (error) then
               if (text>0) write (text, 3) id
@@ -1680,7 +1726,7 @@ module twopnt_core
       subroutine evolve(error, text, above, below, buffer, vars, condit, desire, &
                         leveld, levelm, name, names, report, s0, s1, signal, &
                         step, steps2, strid0, stride, success, tdabs, tdage, tdec, &
-                        tdrel, time, tinc, tmax, tmin, v0, v1, vsave, y0, y1, ynorm, x, functions)
+                        tdrel, time, tinc, tmax, tmin, v0, v1, vsave, y0, y1, ynorm, x, functions, jac)
 
       integer,          intent(in)    :: text
       type(twsize),     intent(in)    :: vars
@@ -1701,6 +1747,7 @@ module twopnt_core
       real(RK), dimension(vars%N()), intent(in)    :: above,below,x
       real(RK), dimension(vars%N()), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1,vsave
       type(twfunctions), intent(in)   :: functions
+      type(twjac)      , intent(inout) :: jac
 
       real(RK)  :: change,condit,csave,dummy,high,low,stride
       integer   :: age,agej,count,first,last,length,number,route,xrepor
@@ -1837,10 +1884,12 @@ module twopnt_core
                  end if
               end if
 
+              ! All functions within here are done with time = .true.
+              time  = .true.
               call search(error, text, above, agej, below, buffer, vars, condit, exist, &
                           leveld - 1, levelm - 1, name, names, xrepor, &
                           s0, s1, signal, number, xsucce, v0, v1, tdabs, tdage, tdrel, y0, dummy, y1,&
-                          x, functions)
+                          x, functions, time, stride, jac)
               if (error) then
                  if (text>0) write (text, 29) id
                  return
@@ -1848,7 +1897,7 @@ module twopnt_core
 
               if (signal /= ' ') then
                  jacob = signal == 'PREPARE'
-                 time  = .true.
+                 time = .true.
         !        GO TO 1060 WHEN ROUTE = 3
                  route = 3
                  return
@@ -2024,7 +2073,7 @@ module twopnt_core
       ! Perform the damped, modified Newton's search
       subroutine search(error, text, above, age, below, buffer, vars, condit, exist, &
                         leveld, levelm, name, names, report, s0, s1, signal, steps, &
-                        success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, x, functions)
+                        success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, x, functions, time, stride, jac)
 
           type(twsize)    , intent(in)    :: vars
           integer         , intent(out)   :: report
@@ -2039,6 +2088,9 @@ module twopnt_core
           real(RK), dimension(vars%N()), intent(in)    :: above,below,x
           real(RK), dimension(vars%N()), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1
           type(twfunctions), intent(in)   :: functions
+          logical          , intent(in)   :: time
+          real(RK)         , intent(in)   :: stride
+          type(twjac)      , intent(inout) :: jac
 
           real(RK) :: abs0,abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, &
                       value, y0norm, y1norm
@@ -2130,6 +2182,9 @@ module twopnt_core
                   call twcopy(vars%N(),v0,buffer)
                   signal = 'PREPARE'
 
+                  !call functions%prep(error,text,jac,buffer,vars,condit,pivot,time,stride,x)
+
+
                   ! GO TO 2020 WHEN ROUTE = 1
                   route = 1
                   steps = number ! Copy the protected local variable
@@ -2148,17 +2203,12 @@ module twopnt_core
               update_F: if (age==0 .or. number==0) then
 
                   buffer = v0
-                  signal = 'RESIDUAL'
-            !     GO TO 2040 WHEN ROUTE = 2
-                  route = 2
+                  call functions%fun(error,text,vars%points,time,stride,x,buffer)
                   steps = number ! Copy the protected local variable
-                  return
-
                   2040 continue
                   signal = ' '
                   y0     = buffer
                   y0norm = twnorm(vars%N(),y0)
-
                   buffer = y0
                   signal = 'SOLVE'
             !     GO TO 2050 WHEN ROUTE = 3
@@ -2221,14 +2271,9 @@ module twopnt_core
 
                   ! EVALUATE Y1 := F(V1)
                   buffer = v1
-                  signal = 'RESIDUAL'
-            !     GO TO 2140 WHEN ROUTE = 4
-                  route = 4
+                  call functions%fun(error,text,vars%points,time,stride,x,buffer)
                   steps = number ! Copy the protected local variable
-                  return
-
             2140  continue
-                  signal = ' '
                   y1     = buffer
                   y1norm = twnorm (vars%N(), y1)
 
@@ -2508,7 +2553,7 @@ module twopnt_core
       subroutine twopnt(setup, error, text, versio, vars, &
                         above, active, below, buffer, condit,  &
                         work, mark, name, names, report, signal, stride, time, u, x, &
-                        functions)
+                        functions, jac)
 
       type(twcom) , intent(inout) :: setup
       logical     , intent(out)   :: error
@@ -2525,8 +2570,9 @@ module twopnt_core
       real(RK)    , intent(inout) :: condit
       type(twwork), intent(inout) :: work
       real(RK)    , intent(inout) :: u(vars%NMAX())
-      real(RK)    , intent(inout) :: x(*)
+      real(RK)    , intent(inout) :: x(:)
       type(twfunctions), intent(in) :: functions
+      type(twjac) , intent(inout) :: jac
 
       ! Local variables
       character(*), parameter :: id = 'TWOPNT:  '
@@ -2540,9 +2586,6 @@ module twopnt_core
 
       character(len=80) :: column(3),header(6),string
 
-      ! SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
-      logical,      parameter :: mess = .false.
-
       ! SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
       save
 
@@ -2552,7 +2595,7 @@ module twopnt_core
 
       ! If this is a return call, continue where the program had paused.
       if (signal /= ' ') then
-         go to (9912, 9922, 9932, 9942) route
+         go to (9912, 9922, 9932) route
          error = .true.
 
          if (text>0) write (text, 01) id, route
@@ -2573,8 +2616,7 @@ module twopnt_core
 
       ! Print entry banner
       string = vnmbr(vnmbrs)
-      if ((setup%levelm>0 .or. mess) .and. text>0) &
-         write (text, 10001) id, precision_flag(), trim(string)
+      if (setup%levelm>0 .and. text>0) write (text, 10001) id, precision_flag(), trim(string)
 
       ! CHECK THE ARGUMENTS.
       error = .not. (setup%leveld <= setup%levelm)
@@ -2619,15 +2661,10 @@ module twopnt_core
       if (setup%adapt .and. vars%points>0) call twcopy(vars%points, x, work%xsave)
       call twcopy (vars%N(), u, work%usave)
 
-!     GO TO 1090 WHEN RETURN = 1
-      return = 1
+      return = 1 !     GO TO 1090 WHEN RETURN = 1
       ! Save the last solution
-      call twcopy (vars%N(), u, buffer)
-      signal = 'SAVE'
-      ! GO TO 9912 WHEN ROUTE = 1
-      route = 1
-      return
-
+      call twcopy (vars%N(), from=u, to=buffer)
+      call functions%save_sol(vars,buffer)
 
 1090  continue
 
@@ -2758,7 +2795,7 @@ module twopnt_core
                              exist, setup%leveld - 1, setup%levelm - 1, name, names, &
                              xrepor, work%s0, work%s1, signal, nsteps, found, &
                              u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
-                             work%y1, x, functions)
+                             work%y1, x, functions, time, stride, jac)
                   if (error) then
                       if (text>0) write (text, 17) id
                       return
@@ -2778,15 +2815,9 @@ module twopnt_core
                      if (setup%adapt .and. vars%points>0) call twcopy (vars%points, x, work%xsave)
                      call twcopy(vars%N(), u, work%usave)
 
-                     ! GO TO 4030 WHEN RETURN = 5
-                     return = 5
                      ! Save the last solution
-                     call twcopy (vars%N(), u, buffer)
-                     signal = 'SAVE'
-                     ! GO TO 9912 WHEN ROUTE = 1
-                     route = 1
-                     return
-
+                     call twcopy(vars%N(), from=u, to=buffer)
+                     call functions%save_sol(vars,buffer)
                      4030  continue
 
                   else save_or_restore
@@ -2871,13 +2902,8 @@ module twopnt_core
                      call work%load_bounds(above,below,vars)
 
                      ! SAVE THE LATEST SOLUTION
-                     ! GO TO 5100 WHEN RETURN = 7
-                     return = 7
                      call twcopy (vars%N(),u,buffer)
-                     signal = 'SAVE'
-                     ! GO TO 9912 WHEN ROUTE = 1
-                     route = 1
-                     return
+                     call functions%save_sol(vars,buffer)
                      5100 continue
 
                   endif refine_found
@@ -2924,7 +2950,7 @@ module twopnt_core
                          setup%levelm - 1, name, names, xrepor, work%s0, work%s1, signal, &
                          stats%step, setup%steps2, setup%strid0, stride, found, setup%tdabs, &
                          setup%tdage, setup%tdec, setup%tdrel, time, setup%tinc, setup%tmax, &
-                         setup%tmin, u, work%v1, work%vsave, work%y0, work%y1, ynorm, x, functions)
+                         setup%tmin, u, work%v1, work%vsave, work%y0, work%y1, ynorm, x, functions, jac)
                   if (error) then
                       if (text>0) write (text, 19) id
                       return
@@ -2939,19 +2965,11 @@ module twopnt_core
 
                   ! REACT TO THE COMPLETION OF EVOLVE.
                   if (found) then
-                     ! SAVE THE LATEST SOLUTION
-                     ! GO TO 6030 WHEN RETURN = 9
-                     return = 9
-
                      ! Save the last solution
-                     call twcopy (vars%N(), u, buffer)
-                     signal = 'SAVE'
-                     ! GO TO 9912 WHEN ROUTE = 1
-                     route = 1
-                     return
-
+                     call twcopy (vars%N(), from=u, to=buffer)
+                     call functions%save_sol(vars,buffer)
                   end if
-                  6030  continue
+                  6030 continue
 
                   ! ALLOW FURTHER TIME EVOLUTION.
                   allow = xrepor == qnull
@@ -3009,17 +3027,9 @@ module twopnt_core
 
          ! EVALUATE THE STEADY STATE FUNCTION.
          call stats%tick(qfunct)
-
-         call twcopy (vars%N(), u, buffer)
-         signal = 'RESIDUAL'
+         call twcopy (vars%N(), from=u, to=buffer)
          time = .false.
-
-         ! GO TO 9942 WHEN ROUTE = 4
-         route = 4
-         return
-
-         9942  continue
-         signal = ' '
+         call functions%fun(error,text,vars%points,time,stride,x,buffer)
          call stats%tock(qfunct,event=.true.)
 
          go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
@@ -3086,7 +3096,6 @@ module twopnt_core
 
 9912  continue
       signal = ' '
-
       go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
       error = .true.
       if (text>0) write (text, 21) id, return
@@ -3236,10 +3245,10 @@ module twopnt_core
           end if
 
           ! Levelm printing.
-          if (0<levelm .and. text>0) write (text, 1) id
+          if (levelm>0 .and. text>0) write (text, 1) id
 
           ! Check the arguments.
-          call vars%check_onAdd(error,id,text,padd)
+          call vars%check_onGridUpdate(error,id,text,padd)
           if (error) return
 
           ! Check there is at least one variable that affects grid adaption
@@ -3459,13 +3468,7 @@ module twopnt_core
               call twcopy (vars%comps*vars%points, u, buffer)
 
               ! Request to update the grid
-              signal = 'UPDATE'
-              ! go to 4060 when route = 1
-              route = 1
-              return
-
-              ! Restart after grid update.
-              ! DO NOT MOVE THIS out of (more>0) block
+              call functions%update_grid(vars,x,buffer)
               4060  continue
               signal = ' '
               call twcopy (vars%comps*vars%points,buffer,u)
@@ -3527,6 +3530,7 @@ module twopnt_core
              if (leveld>0 .and. more>0) then
                 write (text, 10) id
                 call twcopy(vars%comps*vars%points,from=u,to=buffer)
+                ! CAREFUL! buffer here does not have the group-A variables
                 call functions%show(error,text,buffer,vars,.true.,x)
                 if (error) return
              end if
@@ -3543,43 +3547,43 @@ module twopnt_core
           return
 
           ! Formats section.
-             ! Informative messages.
-             1 format(/1X, a9, 'SELECT A GRID.')
-             2 format(/1X, a9, 'SUCCESS.  THE GRID IS ADEQUATE BECAUSE ALL ACTIVE' &
-                      /10X, 'COMPONENTS ARE INSIGNIFICANT.')
-             !               123456789-   1234567   1234567
-             3 format(/15X, '             RATIO 1   RATIO 2' &
-                      /15X, '             -------   -------' &
-                      /15X, '    ACTUAL', 2F10.3 &
-                      /15X, '   DESIRED', 2F10.3)
-             4 format(/1X, a9, 'SUCCESS.  THE GRID IS ADEQUATE.')
-             5 format(/1X, a9, 'FAILURE.  MORE POINTS ARE NEEDED BUT NONE CAN BE ADDED.')
-             !               123456   123456789-123456   12345678   12345678
-             6 format(/10X, 'THE NEW GRID (* MARKS NEW POINTS):' &
-                     //10X, '                             LARGEST RATIOS AND'&
-                      /10X, ' INDEX         GRID POINT      NUMBER TOO LARGE'&
-                      /10X, '------   ----------------   -------------------'&
-                      /10X, '                             RATIO 1    RATIO 2')
-             7 format(10X, i6, '*  ', 1p, e16.9, 0p, 3X, a8)
-             8 format(38X, a8)
-             9 format(10X, i6, '   ', 1p, e16.9, 0p, 14X, a8)
-            10 format(/1X, a9, 'THE SOLUTION GUESS FOR THE NEW GRID:')
+          ! Informative messages.
+          1 format(/1X, a9, 'SELECT A GRID.')
+          2 format(/1X, a9, 'SUCCESS.  THE GRID IS ADEQUATE BECAUSE ALL ACTIVE' &
+                   /10X, 'COMPONENTS ARE INSIGNIFICANT.')
+          !               123456789-   1234567   1234567
+          3 format(/15X, '             RATIO 1   RATIO 2' &
+                   /15X, '             -------   -------' &
+                   /15X, '    ACTUAL', 2F10.3 &
+                   /15X, '   DESIRED', 2F10.3)
+          4 format(/1X, a9, 'SUCCESS.  THE GRID IS ADEQUATE.')
+          5 format(/1X, a9, 'FAILURE.  MORE POINTS ARE NEEDED BUT NONE CAN BE ADDED.')
+          !               123456   123456789-123456   12345678   12345678
+          6 format(/10X, 'THE NEW GRID (* MARKS NEW POINTS):' &
+                  //10X, '                             LARGEST RATIOS AND'&
+                   /10X, ' INDEX         GRID POINT      NUMBER TOO LARGE'&
+                   /10X, '------   ----------------   -------------------'&
+                   /10X, '                             RATIO 1    RATIO 2')
+          7 format(10X, i6, '*  ', 1p, e16.9, 0p, 3X, a8)
+          8 format(38X, a8)
+          9 format(10X, i6, '   ', 1p, e16.9, 0p, 14X, a8)
+         10 format(/1X, a9, 'THE SOLUTION GUESS FOR THE NEW GRID:')
 
-            ! Error messages.
-            101 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-                     //10X, i10, '  ROUTE')
-            105 format(/1X, a9, 'ERROR.  THERE ARE NO ACTIVE COMPONENTS.')
-            106 format(/1X, a9, 'ERROR.  THE BOUNDS ON MAGNITUDE AND RELATIVE CHANGE' &
-                      /10X, 'OF MAGNITUDE FOR INSIGNIFICANT COMPONENTS MUST BE'&
-                      /10X, 'POSITIVE.'&
-                     //10X, 1p, e10.2, '  TOLER0, SIGNIFICANCE LEVEL')
-            107 format(/1X, a9, 'ERROR.  THE BOUNDS ON RELATIVE CHANGES IN MAGNITUDE'&
-                      /10X, 'AND ANGLE MUST LIE BETWEEN 0 AND 1.'&
-                     //10X, 1p, e10.2, '  TOLER1'&
-                      /10X, 1p, e10.2, '  TOLER2')
-            108 format(/1X, a9, 'ERROR.  THE GRID IS NOT ORDERED.')
-            109 format(/1X, a9, 'ERROR.  SOME INTERVALS IN THE GRID ARE TOO SHORT.'&
-                      /10X, 'THE NEW GRID WOULD NOT BE ORDERED.')
+         ! Error messages.
+         101 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
+                  //10X, i10, '  ROUTE')
+         105 format(/1X, a9, 'ERROR.  THERE ARE NO ACTIVE COMPONENTS.')
+         106 format(/1X, a9, 'ERROR.  THE BOUNDS ON MAGNITUDE AND RELATIVE CHANGE' &
+                   /10X, 'OF MAGNITUDE FOR INSIGNIFICANT COMPONENTS MUST BE'&
+                   /10X, 'POSITIVE.'&
+                  //10X, 1p, e10.2, '  TOLER0, SIGNIFICANCE LEVEL')
+         107 format(/1X, a9, 'ERROR.  THE BOUNDS ON RELATIVE CHANGES IN MAGNITUDE'&
+                   /10X, 'AND ANGLE MUST LIE BETWEEN 0 AND 1.'&
+                  //10X, 1p, e10.2, '  TOLER1'&
+                   /10X, 1p, e10.2, '  TOLER2')
+         108 format(/1X, a9, 'ERROR.  THE GRID IS NOT ORDERED.')
+         109 format(/1X, a9, 'ERROR.  SOME INTERVALS IN THE GRID ARE TOO SHORT.'&
+                   /10X, 'THE NEW GRID WOULD NOT BE ORDERED.')
 
       return
       end subroutine refine
