@@ -26,7 +26,7 @@ module twopnt_core
     implicit none
     private
 
-    public :: twlast,twcopy,twcom,twsolv,twshow,twprep,twopnt
+    public :: twlast,twcopy,twcom,twsolv,twshow,twopnt
 
     integer, parameter, public :: RK = real64
 
@@ -194,14 +194,16 @@ module twopnt_core
     ! TWOPNT problem functions
     type, public :: twfunctions
 
+        ! These functions need to be implemented by the user
         procedure(twopnt_save), nopass, pointer :: save_sol => null()
-
         procedure(twopnt_residual), nopass, pointer :: fun => null()
 
         contains
 
-           !
            procedure, nopass :: show => twshow
+
+           ! Provide dense algebra implementation of Jacobian handling
+           procedure, pass(this) :: prep => twprep
 
     end type twfunctions
 
@@ -1276,8 +1278,8 @@ module twopnt_core
       ! Evaluate a block tridiagonal Jacobian matrix by one-sided finite differences and reverse
       ! communication, pack the matrix into the LINPACK banded form, scale the rows, and factor the
       ! matrix using LINPACK's SGBCO
-      subroutine twprep(error, text, a, asize, buffer, vars, condit, pivot, time, stride, x, functions)
-
+      subroutine twprep(this, error, text, a, asize, buffer, vars, condit, pivot, time, stride, x)
+          class(twfunctions), intent(inout) :: this
           logical,      intent(out)   :: error
           integer,      intent(in)    :: text ! output unit
           integer,      intent(in)    :: asize
@@ -1288,7 +1290,7 @@ module twopnt_core
           logical ,     intent(in)    :: time
           real(RK),     intent(in)    :: stride
           real(RK),     intent(in)    :: x(:) ! mesh
-          type(twfunctions), intent(in) :: functions
+
 
           real(RK) :: delta, temp
           integer :: block, blocks, cfirst, clast, col, count, diag, j, lda, length, n, offset, &
@@ -1300,7 +1302,7 @@ module twopnt_core
           character(len=*), parameter :: id = 'TWPREP:  '
 
           ! Check that the residual function is present.
-          if (.not.associated(functions%fun)) then
+          if (.not.associated(this%fun)) then
              error = .true.
              if (text>0) write (text, 1) id
              return
@@ -1354,7 +1356,7 @@ module twopnt_core
           a(n+1:n+lda*n) = zero
 
           ! EVALUATE THE FUNCTION AT THE UNPERTURBED X.
-          call functions%fun(error,text,vars%points,time,stride,x,buffer)
+          call this%fun(error,text,vars%points,time,stride,x,buffer)
           if (error) return
 
           ! Place function values into the matrix.
@@ -1421,7 +1423,7 @@ module twopnt_core
               if (.not. found) exit column_groups
 
               ! EVALUATE THE FUNCTION AT THE PERTURBED VALUES.
-              call functions%fun(error,text,vars%points,time,stride,x,buffer)
+              call this%fun(error,text,vars%points,time,stride,x,buffer)
               if (error) return
 
               ! DIFFERENCE TO FORM THE COLUMNS OF THE JACOBIAN MATRIX.
@@ -1787,16 +1789,11 @@ module twopnt_core
       ! Print header and initial function
       if (levelm>0 .and. text>0) then
          buffer = v0
-         signal = 'RESIDUAL'
          time = .false.
-!        GO TO 1020 WHEN ROUTE = 2
-         route = 2
-         return
+         call functions%fun(error,text,vars%points,time,stride,x,buffer)
          1020 continue
-         signal = ' '
          ynorm = twnorm(vars%N(), buffer)
          call print_evolve_header(text,id,levelm,step,ynorm,stride)
-
       endif
 
       time_integration: do while (step < last)
@@ -1925,16 +1922,11 @@ module twopnt_core
           ! Summary
           print_summary: if (levelm>0 .and. text>0) then
              buffer = v0
-             signal = 'RESIDUAL'
              time = .false.
-             ! GO TO 1090 WHEN ROUTE = 5
-             route = 5
-             return
+             call functions%fun(error,text,vars%points,time,stride,x,buffer)
              1090 continue
-             signal = ' '
              ynorm  = twnorm(vars%N(), buffer)
              call twlogr (yword, ynorm)
-
              if (levelm==1) write (text, 5) step,yword,cword,log10(stride),number,jword
           end if print_summary
 
