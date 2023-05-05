@@ -97,9 +97,12 @@ module twopnt_core
         logical  :: padd   = .false.
         integer  :: ipadd  = 0
 
+        !> Steady-state: absolute, relative error; Jacobian retirement age
         real(RK) :: ssabs  = 1.0e-9_RK
-        integer  :: ssage  = 10
         real(RK) :: ssrel  = 1.0e-6_RK
+        integer  :: ssage  = 10
+
+        !> Is this a steady-state problem
         logical  :: steady = .true.
         integer  :: steps0 = 0
 
@@ -118,11 +121,11 @@ module twopnt_core
         real(RK) :: tdec   = 3.1623_RK
         real(RK) :: tinc   = 10.0_RK
 
+        ! Convergence test: absolute, relative error
         real(RK) :: tdabs  = 1.0e-9_RK
-        integer  :: tdage  = 20
-
         real(RK) :: tdrel  = 1.0e-6_RK
 
+        integer  :: tdage  = 20
 
         real(RK) :: toler0 = 1.0e-9_RK
         real(RK) :: toler1 = 0.2_RK
@@ -2131,8 +2134,6 @@ module twopnt_core
           endif
 
       end do time_integration
-
-      print *, 'age=',age,' step=',step,' stride=',stride
 
       ! Epilogue.
       if (levelm>0 .and. text>0) then
