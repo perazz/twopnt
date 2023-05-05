@@ -195,29 +195,12 @@ module twopnt_core
 
     end type twsize
 
-    ! TWOPNT problem functions
-    type, public :: twfunctions
-
-        ! These functions need to be implemented by the user
-        procedure(twopnt_save), nopass, pointer :: save_sol => null()
-        procedure(twopnt_residual), nopass, pointer :: fun => null()
-        procedure(twopnt_grid_update), nopass, pointer :: update_grid => null()
-
-        contains
-
-           procedure, nopass :: show => twshow
-
-           ! Provide dense algebra implementation of Jacobian handling
-           procedure, pass(this) :: prep => twprep
-           procedure, nopass     :: solve => twsolv
-
-    end type twfunctions
-
     ! TWOPNT statistics arrays
     type, public :: twstat
 
-        integer :: grid = 0 ! grid number
-        integer :: step = 0 ! step number
+        integer :: grid = 0   ! grid number
+        integer :: step = 0   ! step number
+        integer :: jacobs = 0 ! jacobians
 
         real(RK) :: detail(gmax,qtotal)  = zero
         real(RK) :: timer(qtotal)        = zero
@@ -234,6 +217,33 @@ module twopnt_core
            procedure :: print_stats
 
     end type twstat
+
+    ! TWOPNT problem functions
+    type, public :: twfunctions
+
+        ! Counters for all functions
+        type(twstat) :: stats
+
+        ! These functions need to be implemented by the user
+        procedure(twopnt_save), nopass, pointer :: save_sol => null()
+        procedure(twopnt_residual), nopass, pointer :: fun => null()
+        procedure(twopnt_grid_update), nopass, pointer :: update_grid => null()
+
+        contains
+
+           ! Problem wrappers
+           procedure :: f    => fun_wrapper
+           procedure :: save => save_wrapper
+           procedure :: grid => grid_wrapper
+           procedure :: jac_solve
+           procedure :: jac_prep => twprep
+
+           ! Provide dense algebra implementation of Jacobian handling
+           procedure, pass(this) :: prep  => twprep
+           procedure, nopass     :: solve => twsolv
+           procedure, nopass     :: show => twshow
+
+    end type twfunctions
 
     ! TWOPNT state structure
     type, public :: twstate
@@ -308,6 +318,73 @@ module twopnt_core
 
 
     contains
+
+       ! Wrapper to Jacobian solve
+       subroutine jac_solve(this, error, text, jac, buffer, vars)
+          class(twfunctions), intent(inout) :: this
+          integer     , intent(in) :: text
+          type(twsize), intent(in) :: vars
+          type(twjac) , intent(in) :: jac
+          real(RK)    , intent(inout) :: buffer(vars%N())
+          logical     , intent(out) :: error
+
+          call this%stats%tick(qsolve)
+          call twsolv(error,text,jac,buffer,vars)
+          call this%stats%tock(qsolve,event=.true.)
+
+       end subroutine jac_solve
+
+
+       ! Wrapper to grid update
+       subroutine grid_wrapper(this,error,vars,x,u)
+          class(twfunctions), intent(inout) :: this
+          logical, intent(out)     :: error
+          type(twsize), intent(in) :: vars
+          real(RK), intent(in)     :: x(vars%N())
+          real(RK), intent(inout)  :: u(:)
+
+          if (associated(this%update_grid)) then
+             call this%update_grid(error,vars,x,u)
+          else
+             error = .true.
+          endif
+
+       end subroutine grid_wrapper
+
+       ! Save function wrapper
+       subroutine save_wrapper(this,error,vars,buffer)
+          class(twfunctions), intent(inout) :: this
+          logical, intent(out) :: error
+          type(twsize), intent(in) :: vars
+          real(RK), intent(in) :: buffer(vars%N())
+
+          if (associated(this%save_sol)) then
+             call this%save_sol(vars,buffer)
+          else
+             error = .true.
+          endif
+
+       end subroutine save_wrapper
+
+       ! Residual function wrapper
+       subroutine fun_wrapper(this,error,text,points,time,stride,x,buffer)
+          class(twfunctions), intent(inout) :: this
+          logical, intent(out) :: error  ! .true. if something went wrong
+          integer, intent(in)  :: text   ! output unit (0 for NONE)
+          integer, intent(in)  :: points ! Number of 1D variables
+          logical, intent(in)  :: time   ! Time-resolved or steady state
+          real(RK), intent(in) :: stride !
+          real(RK), intent(in) :: x(:)   ! dimensioned >=PMAX, contains the grid
+          real(RK), intent(inout) :: buffer(:) ! on input: contains the approximate solution
+                                               ! on output:
+          if (associated(this%fun)) then
+              call this%stats%tick(qfunct)
+              call this%fun(error,text,points,time,stride,x,buffer)
+              call this%stats%tock(qfunct,event=.true.)
+          else
+              error = .true.
+          endif
+       end subroutine fun_wrapper
 
        ! Clean Jacobian storage
        elemental subroutine jac_destroy(this)
@@ -1342,7 +1419,6 @@ module twopnt_core
           real(RK),     intent(in)    :: stride
           real(RK),     intent(in)    :: x(:) ! mesh
 
-
           real(RK) :: delta, temp
           integer :: block, blocks, cfirst, clast, col, count, diag, j, lda, n, offset, &
                      rfirst, rlast, row, skip, width
@@ -1358,6 +1434,8 @@ module twopnt_core
              if (text>0) write (text, 1) id
              return
           end if
+
+          call this%stats%tick(qjacob)
 
           ! CHECK THE ARGUMENTS.
           n = vars%N()
@@ -1407,7 +1485,7 @@ module twopnt_core
           jac%a(n+1:n+lda*n) = zero
 
           ! EVALUATE THE FUNCTION AT THE UNPERTURBED X.
-          call this%fun(error,text,vars%points,time,stride,x,buffer)
+          call this%f(error,text,vars%points,time,stride,x,buffer)
           if (error) return
 
           ! Place function values into the matrix.
@@ -1474,7 +1552,7 @@ module twopnt_core
               if (.not. found) exit column_groups
 
               ! EVALUATE THE FUNCTION AT THE PERTURBED VALUES.
-              call this%fun(error,text,vars%points,time,stride,x,buffer)
+              call this%f(error,text,vars%points,time,stride,x,buffer)
               if (error) return
 
               ! DIFFERENCE TO FORM THE COLUMNS OF THE JACOBIAN MATRIX.
@@ -1538,6 +1616,8 @@ module twopnt_core
               end do form_columns
 
           end do column_groups
+
+          call this%stats%tock(qjacob,event=.true.)
 
           ! ***** (4) CHECK FOR ZERO COLUMNS. *****
           call count_zero_columns(jac%a,n,diag,lda,width,count)
@@ -1816,7 +1896,7 @@ module twopnt_core
 
          ! Send latest solution to the problem handler
          buffer = v0
-         call functions%save_sol(vars,buffer)
+         call functions%save(error,vars,buffer)
 
       endif save_initial_solution
 
@@ -1829,7 +1909,7 @@ module twopnt_core
       if (levelm>0 .and. text>0) then
          buffer = v0
          time = .false.
-         call functions%fun(error,text,vars%points,time,stride,x,buffer)
+         call functions%f(error,text,vars%points,time,stride,x,buffer)
          if (error) then
             if (levelm>1.and.text>0) write (text, 21) id, 'RESIDUAL'
             return
@@ -1934,13 +2014,13 @@ module twopnt_core
 
           ! Save latest solution for use by the function
           buffer = v0
-          call functions%save_sol(vars,buffer)
+          call functions%save(error,vars,buffer)
 
           ! Summary
           print_summary: if (levelm>0 .and. text>0) then
              buffer = v0
              time = .false.
-             call functions%fun(error,text,vars%points,time,stride,x,buffer)
+             call functions%f(error,text,vars%points,time,stride,x,buffer)
              if (error) then
                 if (levelm>1.and.text>0) write (text, 21) id, 'RESIDUAL'
                 return
@@ -2152,7 +2232,7 @@ module twopnt_core
                   call twcopy(vars%N(),v0,buffer)
 
                   ! Prepare Jacobian
-                  call functions%prep(error,text,jac,buffer,vars,condit,time,stride,x)
+                  call functions%jac_prep(error,text,jac,buffer,vars,condit,time,stride,x)
 
                   ! Update condition number
                   jcount = jcount + 1
@@ -2174,7 +2254,7 @@ module twopnt_core
 
                   ! EVALUATE Y0 := F(V0).
                   buffer = v0
-                  call functions%fun(error,text,vars%points,time,stride,x,buffer)
+                  call functions%f(error,text,vars%points,time,stride,x,buffer)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'RESIDUAL'
                       return
@@ -2184,7 +2264,7 @@ module twopnt_core
 
                   ! SOLVE J S0 = Y0.
                   buffer = y0
-                  call functions%solve(error,text,jac,buffer,vars)
+                  call functions%jac_solve(error,text,jac,buffer,vars)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'SOLVE'
                       return
@@ -2243,7 +2323,7 @@ module twopnt_core
 
                   ! EVALUATE Y1 := F(V1)
                   buffer = v1
-                  call functions%fun(error,text,vars%points,time,stride,x,buffer)
+                  call functions%f(error,text,vars%points,time,stride,x,buffer)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'RESIDUAL'
                       return
@@ -2253,7 +2333,7 @@ module twopnt_core
 
                   ! SOLVE J*S1 = Y1
                   buffer = y1
-                  call functions%solve(error,text,jac,buffer,vars)
+                  call functions%jac_solve(error,text,jac,buffer,vars)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'SOLVE'
                       return
@@ -2522,7 +2602,7 @@ module twopnt_core
       ! TWOPNT driver.
       subroutine twopnt(setup, error, text, versio, vars, &
                         above, active, below, buffer, condit,  &
-                        work, mark, name, names, report, signal, stride, time, u, x, &
+                        work, mark, name, names, report, stride, time, u, x, &
                         functions, jac)
 
       type(twcom) , intent(inout) :: setup
@@ -2530,7 +2610,7 @@ module twopnt_core
       integer     , intent(in)    :: text
       character(*), intent(in)    :: versio
       type(twsize), intent(inout) :: vars
-      character(*), intent(inout) :: signal,report
+      character(*), intent(out)   :: report
       integer     , intent(in)    :: names
 
       character(*), intent(inout) :: name(names) ! Names of the variables
@@ -2547,36 +2627,26 @@ module twopnt_core
       ! Local variables
       character(*), parameter :: id = 'TWOPNT:  '
 
-      real(RK) ::  maxcon, ratio(2), stride, temp, ynorm, csave
-      type(twstat) :: stats
-      integer :: age, desire, j, jacobs, label, length, nsteps, psave, qtask, qtype, return, &
-                 route, steps, xrepor, jcount
+      real(RK) ::  maxcon, ratio(2), stride, ynorm, csave
+      integer :: age, desire, nsteps, psave, qtask, steps, xrepor, jcount
       intrinsic :: max
       logical :: allow, exist, found, satisf, time
 
-      character(len=80) :: column(3),header(6),string,jword
+      character(len=80) :: string,jword
 
       ! SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
       save
 
-      !***** INITIALIZATION. *****
-
-      time = .false. ! Turn off all reverse communication flags
-
-      ! If this is a return call, continue where the program had paused.
-      if (signal /= ' ') then
-         go to (9912, 9922, 9932) route
-         error = .true.
-
-         if (text>0) write (text, 01) id, route
-         return
-      end if
-
       !***** ENTRY BLOCK.  INITIALIZE A NEW PROBLEM. *****
 
       ! Turn off all status reports.
-      error = .false.
+      time   = .false.
+      error  = .false.
       report = ' '
+      maxcon = zero
+      stride = zero
+      ratio  = zero
+      xrepor = qnull
 
       ! Check the version.
       call check_version(versio,text,error); if (error) return
@@ -2621,7 +2691,7 @@ module twopnt_core
       found = .true.  ! SOLUTION FLAG
 
       ! Init solver statistics
-      call stats%new(vars%points)
+      call functions%stats%new(vars%points)
 
       ! EXPAND THE BOUNDS.
       call work%load_bounds(above,below,vars)
@@ -2631,37 +2701,19 @@ module twopnt_core
       if (setup%adapt .and. vars%points>0) call twcopy(vars%points, x, work%xsave)
       call twcopy (vars%N(), u, work%usave)
 
-      return = 1 !     GO TO 1090 WHEN RETURN = 1
       ! Save the last solution
       call twcopy (vars%N(), from=u, to=buffer)
-      call functions%save_sol(vars,buffer)
+      call functions%save(error,vars,buffer)
 
-1090  continue
-
-!///  PRINT LEVELS 11, 21, AND 22.
+      ! PRINT LEVELS 11, 21, AND 22.
       if (setup%leveld>0 .and. text>0) then
          write (text, 10002) id, 'INITIAL GUESS:'
-         ! GO TO 1100 WHEN RETURN = 2
-         return = 2
-         go to 9921
+         !call twcopy (vars%N(),from=u,to=buffer)
+         call functions%show(error,text,u,vars,.true.,x)
       end if
-1100  continue
 
-!///  PRINT LEVEL 10 AND 11.
-
-!                  123456789_123456789_123456789_1234
-!                  12345678   123456  123456   123456
-      header(1) = '            LOG10   LOG10         '
-      header(2) = '    TASK   NORM F  COND J   REMARK'
-
-      if (setup%levelm == 1 .and. text>0) then
-         if (setup%leveld>0) write (text, 10002) id, 'SOLVE THE PROBLEM.'
-         write (text, 10003) (header(j), j = 1, 2)
-         ! GO TO 1110 WHEN LABEL = 1
-         label = 1
-         go to 7010
-      end if
-      1110  continue
+      ! PRINT LEVEL 10 AND 11.
+      call twopnt_print_step(setup,vars,functions,text,qtask,xrepor,found,x,u,stride,maxcon,nsteps,steps,ratio)
 
       !///////////////////////////////////////////////////////////////////////
       !
@@ -2672,7 +2724,7 @@ module twopnt_core
       new_task: do
 
           ! ENTRY WAS THE PREVIOUS TASK.
-          qtask = twopnt_next_task(setup,stats,qtask,found,satisf,allow,report,desire,error)
+          qtask = twopnt_next_task(setup,functions%stats,qtask,found,satisf,allow,report,desire,error)
           if (error) then
               if (text>0) write (text, 14) id
               return
@@ -2683,7 +2735,7 @@ module twopnt_core
               case (qexit) ! *** EXIT BLOCK. ***
 
                   ! Complete statistics for the last grid
-                  call stats%tock(qgrid)
+                  call functions%stats%tock(qgrid)
 
                   ! Restore the solution.
                   if (report /= ' ') then
@@ -2693,59 +2745,19 @@ module twopnt_core
                      call twcopy(vars%N(), work%usave, u)
                   end if
 
-                  ! PRINT LEVEL 11 OR 21.
-
-                  ! SAVE THE STATUS REPORTS DURING REVERSE COMMUNICATION
-                  string = report
-
-                  if (setup%leveld == 1 .and. text>0) then
-                     write (text, 10002) id, 'FINAL SOLUTION:'
-                     ! GO TO 3020 WHEN RETURN = 3
-                     return = 3
-                     go to 9921
-                  end if
-            3020  continue
-
-                  ! RESTORE THE STATUS REPORTS AFTER REVERSE COMMUNICATION
-                  report = string
-
                   ! Complete the total time statistics
-                  call stats%tock(qtotal)
+                  call functions%stats%tock(qtotal)
 
                   ! TOP OF THE REPORT BLOCK.
-                  print_reports: if (setup%levelm>0 .and. text>0) then
-
-                     call stats%print_stats(text,setup%adapt)
-
-                      ! Report the completion status.
-                      if (setup%levelm>0) then
-                         if (report == ' ') then
-                            write (text, 10010) id
-                         else if (report == 'NO SPACE') then
-                            write (string, '(I10)') vars%points
-                            write (text, 10011) id, trim(string), ratio, setup%toler1, setup%toler2
-                         else if (report == 'NOT SOLVED') then
-                            write (text, 10012) id
-                         else if (report == 'SOME SOLVED') then
-                            write (string, '(I10)') vars%points
-                            write (text, 10013) id, trim(string), ratio, setup%toler1, setup%toler2
-                         else
-                             error = .true.
-                             if (text>0) write (text, 16) id
-                             return
-                         end if
-                      end if
-
-                  end if print_reports
-
+                  call twopnt_final_report(setup,functions%stats,vars,functions,text,x,u,report,ratio,error)
                   return
 
               case (qsearc) ! *** SEARCH BLOCK. ***
 
                   ! INITIALIZE STATISTICS ON ENTRY TO THE SEARCH BLOCK.
-                  call stats%tick(qsearc)
-                  jacobs = 0
+                  call functions%stats%tick(qsearc)
                   maxcon = zero
+                  age    = 0
 
                   ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE SEARCH BLOCK.
                   if (setup%levelm>1 .and. text>0) write (text, 10014) id
@@ -2757,9 +2769,6 @@ module twopnt_core
                   exist = .false.
 
                   ! CALL SEARCH.
-                  age = 0
-            4020  continue
-
                   call search(error, text, &
                              work%above, age, work%below, buffer, vars, condit, &
                              exist, setup%leveld - 1, setup%levelm - 1, name, names, &
@@ -2771,12 +2780,7 @@ module twopnt_core
                       return
                   end if
 
-                  ! PASS REQUESTS FROM SEARCH TO THE CALLER.
-                  if (signal /= ' ') then
-                     ! GO TO 4020 WHEN RETURN = 4
-                     return = 4
-                     go to 9931
-                  end if
+                  maxcon = condit
 
                   ! REACT TO THE COMPLETION OF SEARCH.
                   save_or_restore: if (found) then
@@ -2787,8 +2791,7 @@ module twopnt_core
 
                      ! Save the last solution
                      call twcopy(vars%N(), from=u, to=buffer)
-                     call functions%save_sol(vars,buffer)
-                     4030  continue
+                     call functions%save(error,vars,buffer)
 
                   else save_or_restore
                      ! RESTORE THE SOLUTION
@@ -2796,35 +2799,17 @@ module twopnt_core
                   end if save_or_restore
 
                   ! COMPLETE STATISTICS FOR THE SEARCH BLOCK.
-                  call stats%tock(qsearc)
+                  call functions%stats%tock(qsearc)
 
                   ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE SEARCH BLOCK.
-                  if (setup%levelm == 1 .and. text>0) then
-                     ! GO TO 4040 WHEN LABEL = 2
-                     label = 2
-                     exit new_task
-                  end if
-            4040  continue
-
-            !///  PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE SEARCH BLOCK.
-
-                  if (setup%levelm>1) then
-                     if (found) then
-                        if (text>0) write (text, 10015) id
-                     else
-                        if (text>0) write (text, 10016) id
-                     end if
-                  end if
-
-            !///  BOTTOM OF THE SEARCH BLOCK.
+                  call twopnt_print_step(setup,vars,functions,text,qtask,xrepor,found,x,u,stride,maxcon,nsteps,steps,ratio)
 
                   cycle new_task
-
 
               case (qrefin) ! *** REFINE BLOCK. ***
 
                   ! INITIALIZE STATISTICS ON ENTRY TO THE REFINE BLOCK.
-                  call stats%tick(qrefin)
+                  call functions%stats%tick(qrefin)
 
                   ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE REFINE BLOCK.
                   if (setup%levelm>1 .and. text>0) write (text, 10017) id
@@ -2836,8 +2821,6 @@ module twopnt_core
                   exist = .false.
 
                   ! CALL REFINE.
-                  5030  continue
-                  ! Refine only modifies comps*points
                   call refine(error, text, active, &
                               buffer(vars%groupa+1), vars, setup%leveld - 1, setup%levelm - 1, mark, &
                               found, setup%ipadd, ratio, work%ratio1, work%ratio2,   &
@@ -2848,22 +2831,11 @@ module twopnt_core
                       return
                   end if
 
-                  ! SERVICE REQUESTS FROM REFINE: PASS REQUESTS TO THE CALLER.
-                  if (signal /= ' ') then
-                     ! INSERT THE GROUP A AND B UNKNOWNS
-                     buffer(1:vars%groupa) = u(1:vars%groupa)
-                     buffer(vars%idx_B()) = work%vsave(1:vars%groupb)
-
-                     ! GO TO 5030 WHEN RETURN = 6
-                     return = 6
-                     go to 9931
-                  end if
-
                   ! REACT TO THE COMPLETION OF REFINE.
                   refine_found: if (found) then
 
                      ! Initialize statistics for the new grid
-                     call stats%new_grid(vars%points)
+                     call functions%stats%new_grid(vars%points)
 
                      ! Insert the group B values
                      if (vars%groupb>0) u(vars%idx_B()) = work%vsave(:vars%groupb)
@@ -2873,22 +2845,15 @@ module twopnt_core
 
                      ! SAVE THE LATEST SOLUTION
                      call twcopy (vars%N(),u,buffer)
-                     call functions%save_sol(vars,buffer)
-                     5100 continue
+                     call functions%save(error,vars,buffer)
 
                   endif refine_found
 
                   ! COMPLETE STATISTICS FOR THE REFINE BLOCK.
-                  call stats%tock(qrefin)
+                  call functions%stats%tock(qrefin)
 
                   ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE REFINE BLOCK.
-                  if (setup%levelm == 1 .and. text>0) then
-                     write (text, '()')
-                     ! GO TO 5120 WHEN LABEL = 3
-                     label = 3
-                     exit new_task
-                  end if
-                  5120 continue
+                  call twopnt_print_step(setup,vars,functions,text,qtask,xrepor,found,x,u,stride,maxcon,nsteps,steps,ratio)
 
                   ! PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE REFINE BLOCK.
                   if (setup%levelm>1) then
@@ -2905,20 +2870,18 @@ module twopnt_core
               case (qtimst) ! *** EVOLVE BLOCK. ***
 
                   ! INITIALIZE STATISTICS ON ENTRY TO THE EVOLVE BLOCK.
-                  call stats%tick(qtimst)
-                  jacobs = 0
+                  call functions%stats%tick(qtimst)
                   maxcon = zero
-                  steps = stats%step
+                  steps = functions%stats%step
 
                   ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE EVOLVE BLOCK.
                   if (setup%levelm>1 .and. text>0) write (text, 10020) id
 
                   ! CALL EVOLVE.
-                  6020  continue
                   call evolve(error, text, work%above, work%below, &
                          buffer, vars, condit, desire, setup%leveld - 1, &
                          setup%levelm - 1, name, names, xrepor, work%s0, work%s1, &
-                         stats%step, setup%steps2, setup%strid0, stride, found, setup%tdabs, &
+                         functions%stats%step, setup%steps2, setup%strid0, stride, found, setup%tdabs, &
                          setup%tdage, setup%tdec, setup%tdrel, time, setup%tinc, setup%tmax, &
                          setup%tmin, u, work%v1, work%vsave, work%y0, work%y1, ynorm, x, functions, jac)
                   if (error) then
@@ -2926,45 +2889,23 @@ module twopnt_core
                       return
                   end if
 
-                  ! PASS REQUESTS FROM EVOLVE TO THE CALLER.
-                  if (signal /= ' ') then
-                     ! GO TO 6020 WHEN RETURN = 8
-                     return = 8
-                     go to 9931
-                  end if
-
                   ! REACT TO THE COMPLETION OF EVOLVE.
                   if (found) then
                      ! Save the last solution
                      call twcopy (vars%N(), from=u, to=buffer)
-                     call functions%save_sol(vars,buffer)
+                     call functions%save(error,vars,buffer)
                   end if
-                  6030 continue
 
                   ! ALLOW FURTHER TIME EVOLUTION.
                   allow = xrepor == qnull
 
                   ! COMPLETE STATISTICS FOR THE EVOLVE BLOCK.
-                  call stats%tock(qtimst)
+                  call functions%stats%tock(qtimst)
 
-                  steps = stats%step - steps
+                  steps = functions%stats%step - steps
 
                   ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE EVOLVE BLOCK.
-                  if (setup%levelm==1 .and. text>0) then
-                     ! GO TO 6040 WHEN LABEL = 4
-                     label = 4
-                     exit new_task
-                  end if
-                  6040  continue
-
-                  ! PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE EVOLVE BLOCK.
-                  if (setup%levelm>1) then
-                     if (found) then
-                        if (text>0) write (text, 10021) id
-                     else
-                        if (text>0) write (text, 10022) id
-                     end if
-                  end if
+                  call twopnt_print_step(setup,vars,functions,text,qtask,xrepor,found,x,u,stride,maxcon,nsteps,steps,ratio)
 
                   ! BOTTOM OF THE EVOLVE BLOCK.
 
@@ -2976,84 +2917,6 @@ module twopnt_core
 
       end do new_task
 
-!///////////////////////////////////////////////////////////////////////
-!
-!     BLOCK TO PRINT LOG LINES.
-!
-!///////////////////////////////////////////////////////////////////////
-
-      7010 continue
-
-      column(:) = ' '
-      string = ' '
-
-      ! COLUMN 1: NAME OF THE TASK
-      column(1) = trim(qname(qtask))
-
-      ! COLUMN 2: NORM OF THE STEADY STATE FUNCTION
-      if (found) then
-         ! GO TO 7030 WHEN RETURN = 10
-         return = 10
-
-         ! EVALUATE THE STEADY STATE FUNCTION.
-         call stats%tick(qfunct)
-         call twcopy (vars%N(), from=u, to=buffer)
-         time = .false.
-         call functions%fun(error,text,vars%points,time,stride,x,buffer)
-         call stats%tock(qfunct,event=.true.)
-
-         go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
-         error = .true.
-         if (text>0) write (text, 21) id, return
-         return
-
-         7030 continue
-         temp = twnorm (vars%N(), buffer)
-         call twlogr (column(2),temp)
-      endif
-
-      ! COLUMN 3: LARGEST CONDITION NUMBER
-      if (any(qtask==[qsearc,qtimst]) .and. maxcon/=zero) call twlogr (column(3), maxcon)
-
-      ! REMARK
-      if (qtask == qsearc) then
-         if (xrepor == qdvrg) then
-            string = 'DIVERGING'
-         else if (xrepor == qnull) then
-            if (nsteps == 1) then
-               write (string, '(I10, A)') nsteps, ' SEARCH STEP'
-            else
-               write (string, '(I10, A)') nsteps, ' SEARCH STEPS'
-            end if
-         else if (xrepor == qbnds) then
-            string = 'GOING OUT OF BOUNDS'
-         else
-            string = '?'
-         end if
-      else if (qtask == qtimst) then
-         if (xrepor == qbnds .or. xrepor == qdvrg .or. xrepor == qnull) then
-            write (string, '(I10, A, 1P, E10.1, A)') steps, ' TIME STEPS, ', stride, ' LAST STRIDE'
-         else
-            string = '?'
-         end if
-      else if (qtask == qentry .and. setup%adapt) then
-         write (string, '(I10, A)') vars%points, ' GRID POINTS'
-      else if (qtask == qrefin) then
-         if (found) then
-            write (string, '(F10.2, A, F10.2, A, I10, A)') &
-               ratio(1), ' AND ', ratio(2), ' RATIOS, ', vars%points, ' GRID POINTS'
-         else
-            write (string, '(F10.2, A, F10.2, A)') &
-               ratio(1), ' AND ', ratio(2), ' RATIOS'
-         end if
-      end if
-
-      call twsqez (length, string)
-      if (text>0) write (text, 10023) column, string (1 : length)
-
-      go to (1110, 4040, 5120, 6040) label
-      error = .true.
-      if (text>0) write (text, 20) id, label
       return
 
 !///////////////////////////////////////////////////////////////////////
@@ -3063,58 +2926,42 @@ module twopnt_core
 !///////////////////////////////////////////////////////////////////////
 
 !///  SAVE THE SOLUTION.
-
-9912  continue
-      signal = ' '
-      go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
-      error = .true.
-      if (text>0) write (text, 21) id, return
-      return
-
-!///  PRINT THE LATEST SOLUTION.
-
-9921  continue
-
-      call twcopy (vars%N(),u,buffer)
-      call functions%show(error,text,buffer,vars,.true.,x)
-      9922 continue
-      signal = ' '
-
-      go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
-      error = .true.
-      if (text>0) write (text, 21) id, return
-      return
-
-!///  PASS REQUESTS FROM SEARCH, REFINE, OR EVOLVE TO THE CALLER.
-
-9931  continue
-
-      ! THIS MUST BE SAVED TO GATHER STATISTICS AT REENTRY.
-      ! THE REVERSE COMMUNICATION FLAGS WILL NOT BE SAVED BECAUSE THEY ARE CLEARED AT EVERY ENTRY.
-      qtype = identify_request(signal)
-
-      ! COUNT THE JACOBIANS
-      if (qtype == qjacob) jacobs = jacobs + 1
-      call stats%tick(qtype)
-
-      !  GO TO 9932 WHEN ROUTE = 3
-      route = 3
-      return
-9932  continue
-
-!     SAVE THE CONDITION NUMBER
-      if (qtype == qjacob) maxcon = max (maxcon, condit)
-
-      call stats%tock(qtype,event=.true.)
-
-      go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
-      error = .true.
-      if (text>0) write (text, 21) id, return
-      return
+!
+!9912  continue
+!      signal = ' '
+!      go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
+!      error = .true.
+!      if (text>0) write (text, 21) id, return
+!      return
+!
+!
+!!///  PASS REQUESTS FROM SEARCH, REFINE, OR EVOLVE TO THE CALLER.
+!
+!9931  continue
+!
+!      ! THIS MUST BE SAVED TO GATHER STATISTICS AT REENTRY.
+!      ! THE REVERSE COMMUNICATION FLAGS WILL NOT BE SAVED BECAUSE THEY ARE CLEARED AT EVERY ENTRY.
+!      qtype = identify_request(signal)
+!
+!      ! COUNT THE JACOBIANS
+!      call stats%tick(qtype)
+!
+!      !  GO TO 9932 WHEN ROUTE = 3
+!      !route = 3
+!      return
+!9932  continue
+!
+!!     SAVE THE CONDITION NUMBER
+!      if (qtype == qjacob) maxcon = max (maxcon, condit)
+!
+!      call stats%tock(qtype,event=.true.)
+!
+!      go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
+!      error = .true.
+!      if (text>0) write (text, 21) id, return
+!      return
 
           ! Error messages
-           1 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-                  //10X, i10, '  ROUTE')
            5 format(/1X, a9, 'ERROR.  THE PRINTING LEVELS ARE OUT OF ORDER.' &
                    /10X, 'LEVELD CANNOT EXCEED LEVELM.' &
                   //10X, i10, '  LEVELD, FOR SOLUTIONS' &
@@ -3128,47 +2975,227 @@ module twopnt_core
           14 format(/1X, a9, 'ERROR.  NEITHER THE INITIAL TIME EVOLUTION NOR THE' &
                    /10X, 'SEARCH FOR THE STEADY STATE IS ALLOWED.')
           15 format(/1X, a9, 'ERROR.  UNKNOWN TASK.')
-          16 format(/1X, a9, 'ERROR.  UNKNOWN REPORT CODE.')
           17 format(/1X, a9, 'ERROR.  SEARCH FAILS.')
           18 format(/1X, a9, 'ERROR.  REFINE FAILS.')
           19 format(/1X, a9, 'ERROR.  EVOLVE FAILS.')
-          20 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-                  //10X, i10, '  LABEL')
-          21 format(/1X, a9, 'ERROR.  THE COMPUTED GOTO IS OUT OF RANGE.' &
-                  //10X, i10, '  RETURN')
 
        ! Informative messages
        10001 format(/1X, a9, a, ' (TWO POINT BOUNDARY VALUE PROBLEM) SOLVER,' &
                     /10X, 'VERSION ', a,' OF APRIL 1998 BY DR. JOSEPH F. GRCAR.')
        10002 format(/1X, a9, a)
-       10003 format(3(/10X, a35)/)
-       10010 format(/1X, a9, 'SUCCESS.  PROBLEM SOLVED.')
-       10011 format(/1X, a9, 'FAILURE.  A SOLUTION WAS FOUND FOR A GRID WITH ', a &
-                   /10X, 'POINTS, BUT ONE OR BOTH RATIOS ARE TOO LARGE.' &
-                  //22X, '   RATIO 1     RATIO 2' &
-                  //10X, '     FOUND', 2F12.2 &
-                   /10X, '   DESIRED', 2F12.2 &
-                  //10X, 'A LARGER GRID COULD NOT BE FORMED.')
-       10012 format(/1X, a9, 'FAILURE.  NO SOLUTION WAS FOUND.')
-       10013 format(/1X, a9, 'FAILURE.  A SOLUTION WAS FOUND FOR A GRID WITH ', a &
-                   /10X, 'POINTS, BUT ONE OR BOTH RATIOS ARE TOO LARGE.' &
-                  //22X, '   RATIO 1     RATIO 2' &
-                  //10X, '     FOUND', 2F12.2 &
-                   /10X, '   DESIRED', 2F12.2 &
-                  //10X, 'A SOLUTION COULD NOT BE FOUND FOR A LARGER GRID.')
        10014 format(/1X, a9, 'CALLING SEARCH TO SOLVE THE STEADY STATE PROBLEM.')
-       10015 format(/1X, a9, 'SEARCH FOUND THE STEADY STATE.')
-       10016 format(/1X, a9, 'SEARCH DID NOT FIND THE STEADY STATE.')
        10017 format(/1X, a9, 'CALLING REFINE TO PRODUCE A NEW GRID.')
        10018 format(/1X, a9, 'REFINE SELECTED A NEW GRID.')
        10019 format(/1X, a9, 'REFINE DID NOT SELECT A NEW GRID.')
        10020 format(/1X, a9, 'CALLING EVOLVE TO PERFORM TIME EVOLUTION.')
-       10021 format(/1X, a9, 'EVOLVE PERFORMED A TIME EVOLUTION.')
-       10022 format(/1X, a9, 'EVOLVE DID NOT PERFORM A TIME EVOLUTION.')
-       10023 format(10X, a8, 3X, a6, 2X, a6, 3X, a)
-
 
       end subroutine twopnt
+
+      subroutine twopnt_print_step(setup,vars,funs,text,qtask,xrepor,found,x,u,stride,maxcon,search_steps,time_steps,ratio)
+          type(twcom), intent(in) :: setup
+          type(twsize), intent(in) :: vars
+          type(twfunctions), intent(inout) :: funs
+          integer, intent(in) :: text,qtask,xrepor
+          logical, intent(in) :: found
+          real(RK), intent(in) :: u(:),stride,x(:),maxcon,ratio(2)
+          integer, intent(in) :: search_steps,time_steps
+
+          character(len=80) :: column(3),header(2),string
+          real(RK) :: buffer(vars%N())
+          character(*), parameter :: id = 'TWOPNT:  '
+          integer :: j
+          logical :: error
+
+          if (text==0) return
+
+          column(:) = ' '
+          string    = ' '
+
+          ! COLUMN 1: NAME OF THE TASK
+          column(1) = trim(qname(qtask))
+
+          ! COLUMN 2: NORM OF THE STEADY STATE FUNCTION
+          if (found) then
+             ! EVALUATE THE STEADY STATE FUNCTION.
+             call twcopy(vars%N(),from=u,to=buffer)
+             call funs%fun(error,text,vars%points,.false.,stride,x,buffer)
+             call twlogr(column(2),twnorm(vars%N(),buffer))
+          endif
+
+          ! Print remark depending on step taken
+          select case (qtask)
+
+             case (qentry)
+
+                ! PRINT LEVEL 10 AND 11.
+                !            123456789_123456789_123456789_1234
+                !            12345678   123456  123456   123456
+                header(1) = '            LOG10   LOG10         '
+                header(2) = '    TASK   NORM F  COND J   REMARK'
+                if (setup%levelm == 1) then
+                   if (setup%leveld>0) write (text, 10002) id, 'SOLVE THE PROBLEM.'
+                   write (text, 10003) (header(j), j = 1, 2)
+                endif
+
+                string = entry_summary(setup%adapt,vars%points)
+
+             case (qsearc)
+
+                if (setup%levelm>0) then
+                    if (maxcon/=zero) call twlogr(column(3),maxcon)
+                    string = search_task_summary(xrepor,search_steps)
+                endif
+
+                ! Level 2
+                if (setup%levelm>1) then
+                    if (found) then
+                        if (text>0) write (text, 10015) id
+                    else
+                        if (text>0) write (text, 10016) id
+                    end if
+                end if
+
+             case (qtimst)
+
+                if (setup%levelm>0) then
+                   if (maxcon/=zero) call twlogr(column(3),maxcon)
+                   string = evolve_task_summary(xrepor,time_steps,stride)
+                endif
+
+                ! Level 2
+                if (setup%levelm>1) then
+                   if (found) then
+                      if (text>0) write (text, 10021) id
+                   else
+                      if (text>0) write (text, 10022) id
+                   end if
+                end if
+
+             case (qrefin)
+                write (text, '()')
+                string = refine_step_summary(ratio,found,vars%points)
+          end select
+          write (text, 10023) column,trim(string)
+
+          return
+
+          10002 format(/1X, a9, a)
+          10003 format(3(/10X, a35)/)
+          10015 format(/1X, a9, 'SEARCH FOUND THE STEADY STATE.')
+          10016 format(/1X, a9, 'SEARCH DID NOT FIND THE STEADY STATE.')
+          10021 format(/1X, a9, 'EVOLVE PERFORMED A TIME EVOLUTION.')
+          10022 format(/1X, a9, 'EVOLVE DID NOT PERFORM A TIME EVOLUTION.')
+          10023 format(10X, a8, 3X, a6, 2X, a6, 3X, a)
+
+      end subroutine twopnt_print_step
+
+      subroutine twopnt_final_report(setup,stats,vars,funs,text,x,u,report,ratio,error)
+         type(twcom), intent(in) :: setup
+         type(twstat), intent(in) :: stats
+         type(twsize), intent(in) :: vars
+         type(twfunctions), intent(inout) :: funs
+         logical, intent(out) :: error
+         character(*), intent(in) :: report
+         real(RK), intent(in) :: ratio(2),x(:),u(:)
+         integer, intent(in) :: text
+
+         character(*), parameter :: id = 'TWOPNT:  '
+         character(len=80) :: string
+
+         error = .false.
+         if (text==0) return
+
+         ! Print the last solution
+         if (setup%leveld==1) then
+             write (text, 6) id, 'FINAL SOLUTION:'
+             call funs%show(error,text,u,vars,.true.,x)
+         endif
+
+         call stats%print_stats(text,setup%adapt)
+
+         ! Report the completion status.
+         if (setup%levelm>0) then
+             if (report == ' ') then
+                write (text, 1) id
+             else if (report == 'NO SPACE') then
+                write (string, '(I10)') vars%points
+                write (text, 2) id, trim(string), ratio, setup%toler1, setup%toler2
+             else if (report == 'NOT SOLVED') then
+                write (text, 3) id
+             else if (report == 'SOME SOLVED') then
+                write (string, '(I10)') vars%points
+                write (text, 4) id, trim(string), ratio, setup%toler1, setup%toler2
+             else
+                error = .true.
+                if (text>0) write (text, 5) id
+                return
+             end if
+         end if
+
+         ! Formats section
+         1 format(/1X, a9, 'SUCCESS.  PROBLEM SOLVED.')
+         2 format(/1X, a9, 'FAILURE.  A SOLUTION WAS FOUND FOR A GRID WITH ', a &
+                 /10X, 'POINTS, BUT ONE OR BOTH RATIOS ARE TOO LARGE.' &
+                //22X, '   RATIO 1     RATIO 2' &
+                //10X, '     FOUND', 2F12.2 &
+                 /10X, '   DESIRED', 2F12.2 &
+                //10X, 'A LARGER GRID COULD NOT BE FORMED.')
+         3 format(/1X, a9, 'FAILURE.  NO SOLUTION WAS FOUND.')
+         4 format(/1X, a9, 'FAILURE.  A SOLUTION WAS FOUND FOR A GRID WITH ', a &
+                 /10X, 'POINTS, BUT ONE OR BOTH RATIOS ARE TOO LARGE.' &
+                //22X, '   RATIO 1     RATIO 2' &
+                //10X, '     FOUND', 2F12.2 &
+                 /10X, '   DESIRED', 2F12.2 &
+                //10X, 'A SOLUTION COULD NOT BE FOUND FOR A LARGER GRID.')
+         5 format(/1X, a9, 'ERROR.  UNKNOWN REPORT CODE.')
+         6 format(/1X, a9, a)
+
+      end subroutine twopnt_final_report
+
+      ! Print summary of a refine step
+      character(len=80) function entry_summary(adapt,points) result(string)
+         logical , intent(in) :: adapt
+         integer , intent(in) :: points
+         if (adapt) then
+            write (string, '(I10, A)') points, ' GRID POINTS'
+         else
+            string = ' '
+         end if
+      end function entry_summary
+
+      ! Print summary of a refine step
+      character(len=80) function refine_step_summary(ratio,found,points) result(string)
+         real(RK), intent(in) :: ratio(2)
+         logical , intent(in) :: found
+         integer , intent(in) :: points
+         if (found) then
+            write (string, 1) ratio(1),' AND ',ratio(2),' RATIOS, ',points, ' GRID POINTS'
+         else
+            write (string, 1) ratio(1),' AND ',ratio(2),' RATIOS'
+         end if
+         1 format(2(F10.2,A),:,I10,A)
+      end function refine_step_summary
+
+      ! Print summary of a search step
+      character(len=80) function search_task_summary(xrepor,nsteps) result(string)
+         integer, intent(in) :: xrepor,nsteps
+         select case (xrepor)
+            case (qdvrg); string = 'DIVERGING'
+            case (qnull); write (string, '(I10, A)') nsteps, ' SEARCH '//merge('STEP ','STEPS',nsteps==1)
+            case (qbnds); string = 'GOING OUT OF BOUNDS'
+            case default; string = '?'
+         end select
+      end function search_task_summary
+
+      ! Print summary of an evolve step
+      character(len=80) function evolve_task_summary(xrepor,steps,stride) result(string)
+         integer, intent(in) :: xrepor,steps
+         real(RK), intent(in) :: stride
+         select case (xrepor)
+            case (qbnds,qdvrg,qnull); write (string, '(I10, A, 1P, E10.1, A)') steps,' TIME STEPS, ',stride, ' LAST STRIDE'
+            case default; string = '?'
+         end select
+      end function evolve_task_summary
 
       ! Perform automatic grid selection
       subroutine refine(error, text, active, buffer, vars, leveld, levelm, mark, newx, &
@@ -3772,6 +3799,8 @@ module twopnt_core
                                                               + this%timer(task)
           ! Task-specific finalization
           select case (task)
+             case (qjacob)
+                 this%jacobs = this%jacobs + 1
              case (qgrid)
                  this%detail(this%grid, qother) = this%detail(this%grid,task) &
                                                 - sum(this%detail(this%grid,[qfunct,qjacob,qsolve]))
@@ -4045,7 +4074,7 @@ module twopnt_core
 
 
       subroutine print_stats(this,text,adapt)
-         class(twstat), intent(inout) :: this
+         class(twstat), intent(in) :: this
          integer, intent(in) :: text
          logical, intent(in) :: adapt
 

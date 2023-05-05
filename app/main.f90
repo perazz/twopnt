@@ -37,7 +37,7 @@ program TWMAIN
     integer, parameter :: NAMES = COMPS + GROUPA + GROUPB
     logical, parameter :: RELAXED_TOLERANCES = .false.
 
-    character(len=16) :: NAME(NAMES), REPORT, SIGNAL
+    character(len=16) :: NAME(NAMES), REPORT
     character(len=80) :: VERSIO
 
     type(twcom) :: settings
@@ -156,11 +156,10 @@ program TWMAIN
 
     ! CALL TWOPNT.
     VERSIO = 'DOUBLE PRECISION VERSION 3.22'
-    SIGNAL = ' '
 
     ! Call driver
     CALL TWOPNT(SETTINGS, ERROR, TEXT, VERSIO, sizes, ABOVE, ACTIVE, BELOW, BUFFER, CONDIT, &
-                WORK, MARK, NAME, NAMES, REPORT, SIGNAL, STRIDE, TIME, U, X, problem, jac)
+                WORK, MARK, NAME, NAMES, REPORT, STRIDE, TIME, U, X, problem, jac)
     IF (ERROR) GO TO 9004
 
     ! CHECK FOR SUCCESS.
