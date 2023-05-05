@@ -1834,7 +1834,7 @@ module twopnt_core
       type(twjac)      , intent(inout) :: jac
 
       real(RK)  :: change,condit,csave,dummy,high,low,stride
-      integer   :: age,agej,count,first,last,length,number,xrepor
+      integer   :: age,agej,count,first,last,number,xrepor
       intrinsic :: log10, max, min
       logical   :: exist,success,xsucce
       character(len=80) :: cword,jword,remark,yword
@@ -1908,7 +1908,7 @@ module twopnt_core
       ! Print header and initial function
       if (levelm>0 .and. text>0) then
          buffer = v0
-         time = .false.
+         time   = .false.
          call functions%f(error,text,vars%points,time,stride,x,buffer)
          if (error) then
             if (levelm>1.and.text>0) write (text, 21) id, 'RESIDUAL'
@@ -1957,16 +1957,13 @@ module twopnt_core
               if (.not. xsucce) then
                  if (levelm==1 .and. text>0) then
                     if (xrepor == qbnds) then
-                       length = 6
                        remark = 'BOUNDS'
                     else if (xrepor == qdvrg) then
-                       length = 7
                        remark = 'DIVERGE'
                     else
-                       length = 1
                        remark = ' '
                     end if
-                    write (text, 1) step + 1, log10 (stride), number, jword, remark (1:length)
+                    write (text, 1) step + 1, log10 (stride), number, jword, trim(remark)
                  end if
 
                  ! Retry with decreased strinde, if possible
@@ -2016,19 +2013,20 @@ module twopnt_core
           buffer = v0
           call functions%save(error,vars,buffer)
 
-          ! Summary
-          print_summary: if (levelm>0 .and. text>0) then
-             buffer = v0
-             time = .false.
-             call functions%f(error,text,vars%points,time,stride,x,buffer)
-             if (error) then
-                if (levelm>1.and.text>0) write (text, 21) id, 'RESIDUAL'
-                return
-             endif
-             ynorm  = twnorm(vars%N(), buffer)
-             call twlogr (yword, ynorm)
-             if (levelm==1) write (text, 5) step,yword,cword,log10(stride),number,jword
-          end if print_summary
+          buffer = v0
+          time = .false.
+          call functions%f(error,text,vars%points,time,stride,x,buffer)
+          if (error) then
+             if (levelm>1.and.text>0) write (text, 21) id, 'RESIDUAL'
+             return
+          endif
+          ynorm  = twnorm(vars%N(), buffer)
+
+          ! Print summary
+          if (levelm>0) then
+              call twlogr (yword, ynorm)
+              if (text/=0) write (text, 5) step,yword,cword,log10(stride),number,jword
+          endif
 
       end do time_integration
 
@@ -2261,6 +2259,7 @@ module twopnt_core
                   end if
                   y0     = buffer
                   y0norm = twnorm(vars%N(),y0)
+                  y1norm = y0norm
 
                   ! SOLVE J S0 = Y0.
                   buffer = y0
@@ -2634,9 +2633,6 @@ module twopnt_core
 
       character(len=80) :: string,jword
 
-      ! SAVE LOCAL VALUES DURING RETURNS FOR REVERSE COMMUNCIATION.
-      save
-
       !***** ENTRY BLOCK.  INITIALIZE A NEW PROBLEM. *****
 
       ! Turn off all status reports.
@@ -2804,8 +2800,6 @@ module twopnt_core
                   ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE SEARCH BLOCK.
                   call twopnt_print_step(setup,vars,functions,text,qtask,xrepor,found,x,u,stride,maxcon,nsteps,steps,ratio)
 
-                  cycle new_task
-
               case (qrefin) ! *** REFINE BLOCK. ***
 
                   ! INITIALIZE STATISTICS ON ENTRY TO THE REFINE BLOCK.
@@ -2864,14 +2858,10 @@ module twopnt_core
                      end if
                   end if
 
-                  ! BOTTOM OF THE REFINE BLOCK.
-                  cycle new_task
-
               case (qtimst) ! *** EVOLVE BLOCK. ***
 
                   ! INITIALIZE STATISTICS ON ENTRY TO THE EVOLVE BLOCK.
                   call functions%stats%tick(qtimst)
-                  maxcon = zero
                   steps = functions%stats%step
 
                   ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE EVOLVE BLOCK.
@@ -2889,6 +2879,8 @@ module twopnt_core
                       return
                   end if
 
+
+
                   ! REACT TO THE COMPLETION OF EVOLVE.
                   if (found) then
                      ! Save the last solution
@@ -2903,11 +2895,10 @@ module twopnt_core
                   call functions%stats%tock(qtimst)
 
                   steps = functions%stats%step - steps
+                  maxcon = condit
 
                   ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE EVOLVE BLOCK.
                   call twopnt_print_step(setup,vars,functions,text,qtask,xrepor,found,x,u,stride,maxcon,nsteps,steps,ratio)
-
-                  ! BOTTOM OF THE EVOLVE BLOCK.
 
               case default
                   error = .true.
@@ -2918,48 +2909,6 @@ module twopnt_core
       end do new_task
 
       return
-
-!///////////////////////////////////////////////////////////////////////
-!
-!     REQUEST REVERSE COMMUNICATION.
-!
-!///////////////////////////////////////////////////////////////////////
-
-!///  SAVE THE SOLUTION.
-!
-!9912  continue
-!      signal = ' '
-!      go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
-!      error = .true.
-!      if (text>0) write (text, 21) id, return
-!      return
-!
-!
-!!///  PASS REQUESTS FROM SEARCH, REFINE, OR EVOLVE TO THE CALLER.
-!
-!9931  continue
-!
-!      ! THIS MUST BE SAVED TO GATHER STATISTICS AT REENTRY.
-!      ! THE REVERSE COMMUNICATION FLAGS WILL NOT BE SAVED BECAUSE THEY ARE CLEARED AT EVERY ENTRY.
-!      qtype = identify_request(signal)
-!
-!      ! COUNT THE JACOBIANS
-!      call stats%tick(qtype)
-!
-!      !  GO TO 9932 WHEN ROUTE = 3
-!      !route = 3
-!      return
-!9932  continue
-!
-!!     SAVE THE CONDITION NUMBER
-!      if (qtype == qjacob) maxcon = max (maxcon, condit)
-!
-!      call stats%tock(qtype,event=.true.)
-!
-!      go to (1090, 1100, 3020, 4020, 4030, 5030, 5100, 6020, 6030, 7030) return
-!      error = .true.
-!      if (text>0) write (text, 21) id, return
-!      return
 
           ! Error messages
            5 format(/1X, a9, 'ERROR.  THE PRINTING LEVELS ARE OUT OF ORDER.' &
@@ -3391,8 +3340,9 @@ module twopnt_core
 
           ! ***** halve the intervals, if any. *****
 
-          ! total number of points in the new grid.
-          total = vars%points + more
+          ! total number of points in the new and old grid.
+          total  = vars%points + more
+          former = vars%points
 
           add_points: if (more>0) then
 
@@ -3443,7 +3393,6 @@ module twopnt_core
               mark(new) = .false.
 
               ! update the number of points.
-              former = vars%points
               vars%points = total
 
               ! Allow the user to update the solution.
