@@ -29,7 +29,7 @@ program TWMAIN
 
     ! Parameters
     character(len=*), parameter :: ID = 'TWMAIN:  '
-    integer, parameter :: TEXT = OUTPUT_UNIT
+    integer, parameter :: TEXT = output_unit
     integer, parameter :: COMPS  = 5
     integer, parameter :: GROUPA = 0
     integer, parameter :: GROUPB = 0
@@ -50,11 +50,8 @@ program TWMAIN
     real(RK), dimension(PMAX) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0,X
     real(RK) :: CONDIT,STRIDE
     logical  :: ACTIVE(COMPS), MARK(PMAX)
-    INTEGER :: J, LENGTH, N
+    INTEGER :: J, N
     LOGICAL :: ERROR, TIME
-
-    ! PROLOGUE. OPEN FILES.
-!   OPEN (FILE = 'twopnt.out', STATUS='UNKNOWN',FORM = 'FORMATTED', UNIT = TEXT)
 
     ! *** PROBLEM PARAMETERS. ***
 
@@ -73,6 +70,9 @@ program TWMAIN
     ! DISTANCE BETWEEN DISKS
     real(RK), parameter :: ZMAX = 5.0_RK
 
+    ! PROLOGUE. OPEN FILES.
+    !OPEN (FILE = 'twopnt.out', STATUS='UNKNOWN',FORM = 'FORMATTED', UNIT = TEXT)
+
     ! *** SET TWOPNT CONTROLS. ***
 
     ! ASSIGN INITIAL PROBLEM SIZES AND NAMES FOR THE UNKNOWNS.
@@ -84,7 +84,7 @@ program TWMAIN
     call jac%init(sizes)
 
     ! SPECIFY THE CONTROLS.
-    call settings%set(ERROR, TEXT, 'ADAPT', .TRUE.)
+    call settings%set(ERROR, TEXT, 'ADAPT', .true.)
     call settings%set(ERROR, TEXT, 'LEVELD', 1)
     call settings%set(ERROR, TEXT, 'LEVELM', 1)
     call settings%set(ERROR, TEXT, 'STEPS1', 50)
@@ -126,16 +126,11 @@ program TWMAIN
     end do init_unknowns
 
     ! ASSIGN LIMITS FOR THE UNKNOWNS.
-    ABOVE(1) = 4.0
-    BELOW(1) = - 4.0
-    ABOVE(2) = 1.0E4
-    BELOW(2) = - 1.0E4
-    ABOVE(3) = 1.0E4
-    BELOW(3) = - 1.0E4
-    ABOVE(4) = 1.0E4
-    BELOW(4) = - 1.0E4
-    ABOVE(5) = 2.0 * TMAX
-    BELOW(5) = 0.5 * TZERO
+    BELOW(1) = - 4.0;            ABOVE(1) = 4.0
+    BELOW(2) = - 1.0E4;          ABOVE(2) = 1.0E4
+    BELOW(3) = - 1.0E4;          ABOVE(3) = 1.0E4
+    BELOW(4) = - 1.0E4;          ABOVE(4) = 1.0E4
+    BELOW(5) = 0.5 * TZERO;      ABOVE(5) = 2.0 * TMAX
 
     ! CHOOSE UNKNOWNS TO EXAMINE FOR GRID ADAPTION.
     ACTIVE(1) = .TRUE.
@@ -153,11 +148,13 @@ program TWMAIN
     VERSIO = 'DOUBLE PRECISION VERSION 3.22'
 
     ! Call driver
-    call problem%run(SETTINGS, ERROR, TEXT, VERSIO, sizes, ABOVE, ACTIVE, BELOW, BUFFER, CONDIT, &
+    call problem%run(settings, ERROR, TEXT, VERSIO, sizes, ABOVE, ACTIVE, BELOW, BUFFER, CONDIT, &
                      WORK, MARK, REPORT, STRIDE, TIME, U, X, jac)
 
     ! WRITE A SUMMARY.
     WRITE (TEXT, 10001) ID, U(4, 1), OMEGA, TZERO, TMAX, WMAX
+
+    close(TEXT)
 
     ! SUCCESSFUL RETURN.
     return

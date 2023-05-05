@@ -2858,7 +2858,6 @@ module twopnt_core
       ! PRINT LEVELS 11, 21, AND 22.
       if (setup%leveld>0 .and. text>0) then
          write (text, 10) id, 'INITIAL GUESS:'
-         !call twcopy (vars%N(),from=u,to=buffer)
          call this%show(error,text,u,vars,.true.,x)
       end if
 
