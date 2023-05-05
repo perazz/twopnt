@@ -102,16 +102,28 @@ module twopnt_core
         real(RK) :: ssrel  = 1.0e-6_RK
         logical  :: steady = .true.
         integer  :: steps0 = 0
+
+        !> Desired number of timesteps for EVOLVE
         integer  :: steps1 = 200
-        integer  :: steps2 = 100
+
+        !> Max number of timesteps between stride increases
+        integer  :: steps2 = 10
+
+        !> Timestep bounds: initial, max, min
         real(RK) :: strid0 = 1.0e-4_RK
-        real(RK) :: tdabs  = 1.0e-9_RK
-        integer  :: tdage  = 20
-        real(RK) :: tdec   = 3.1623_RK
-        real(RK) :: tdrel  = 1.0e-6_RK
-        real(RK) :: tinc   = 10.0_RK
         real(RK) :: tmax   = 1.0e-2_RK
         real(RK) :: tmin   = 1.0e-20_RK
+
+        !> New timestep increase/decrease factors
+        real(RK) :: tdec   = 3.1623_RK
+        real(RK) :: tinc   = 10.0_RK
+
+        real(RK) :: tdabs  = 1.0e-9_RK
+        integer  :: tdage  = 20
+
+        real(RK) :: tdrel  = 1.0e-6_RK
+
+
         real(RK) :: toler0 = 1.0e-9_RK
         real(RK) :: toler1 = 0.2_RK
         real(RK) :: toler2 = 0.2_RK
@@ -200,6 +212,8 @@ module twopnt_core
 
         integer :: grid = 0   ! grid number
         integer :: step = 0   ! step number
+        integer :: age  = 0   ! age of current stepsize
+        integer :: agej = 0   ! age of the Jacobian matrix
         integer :: jacobs = 0 ! jacobians
 
         real(RK) :: detail(gmax,qtotal)  = zero
@@ -232,7 +246,7 @@ module twopnt_core
         contains
 
            ! Problem wrappers
-           procedure :: f    => fun_wrapper
+           procedure :: f        => fun_wrapper
            procedure :: save => save_wrapper
            procedure :: grid => grid_wrapper
            procedure :: jac_solve
@@ -375,8 +389,7 @@ module twopnt_core
           logical, intent(in)  :: time   ! Time-resolved or steady state
           real(RK), intent(in) :: stride !
           real(RK), intent(in) :: x(:)   ! dimensioned >=PMAX, contains the grid
-          real(RK), intent(inout) :: buffer(:) ! on input: contains the approximate solution
-                                               ! on output:
+          real(RK), intent(inout) :: buffer(:) ! on input: contains the approximate solution; on output, the residuals
           if (associated(this%fun)) then
               call this%stats%tick(qfunct)
               call this%fun(error,text,points,time,stride,x,buffer)
@@ -1808,23 +1821,17 @@ module twopnt_core
       end subroutine twlaps
 
       ! Perform time evolution
-      subroutine evolve(error, text, above, below, buffer, vars, condit, desire, &
-                        leveld, levelm, name, names, report, s0, s1, &
-                        step, steps2, strid0, stride, success, tdabs, tdage, tdec, &
-                        tdrel, time, tinc, tmax, tmin, v0, v1, vsave, y0, y1, ynorm, x, functions, jac)
+      subroutine evolve(setup, error, text, above, below, buffer, vars, condit, desire, name, names, report, s0, s1, &
+                        step, stride, age, success, time, v0, v1, vsave, y0, y1, ynorm, x, functions, jac)
 
+      type(twcom),      intent(in)    :: setup
       integer,          intent(in)    :: text
       type(twsize),     intent(in)    :: vars
       logical,          intent(out)   :: error
       logical,          intent(out)   :: time
-      real(RK),         intent(in)    :: strid0
-      real(RK),         intent(in)    :: tinc      ! dt increment factor
-      real(RK),         intent(in)    :: tmin,tmax ! dt bounds
-      real(RK),         intent(in)    :: tdec,tdrel,tdabs
       integer,          intent(in)    :: desire ! Desired number of timesteps
-      integer,          intent(in)    :: levelm,leveld,steps2,tdage
-      real(RK),         intent(inout) :: ynorm
-      integer,          intent(inout) :: step
+      real(RK),         intent(inout) :: ynorm,stride
+      integer,          intent(inout) :: step,age
       integer,          intent(in)    :: names
       integer,          intent(out)   :: report
       character(len=*), intent(in)    :: name(names)
@@ -1833,19 +1840,25 @@ module twopnt_core
       type(twfunctions), intent(inout) :: functions
       type(twjac)      , intent(inout) :: jac
 
-      real(RK)  :: change,condit,csave,dummy,high,low,stride
-      integer   :: age,agej,count,first,last,number,xrepor
+      real(RK)  :: change,condit,csave,dummy,high,low
+      integer   :: count,first,last,number,xrepor,leveld,levelm
       intrinsic :: log10, max, min
-      logical   :: exist,success,xsucce
+      logical   :: exist,success,xsucce,new_dt
       character(len=80) :: cword,jword,remark,yword
 
       character(len=*), parameter :: id = 'EVOLVE:  '
+
+      ! Evolve is a level-1 branch subroutine
+      leveld = setup%leveld-1
+      levelm = setup%levelm-1
 
       ! Initialization.
       time    = .false. ! Turn off reverse communication flags.
       error   = .false. ! Turn off all completion status flags.
       report  = qnull
       success = .false.
+      new_dt  = .false.
+      call twlogr(yword,ynorm)
 
       ! Check the arguments
       call vars%check(error,id,text)
@@ -1857,23 +1870,23 @@ module twopnt_core
          return
       end if
 
-      error = .not. (tdec>=one .and. tinc>=one)
+      error = .not. (setup%tdec>=one .and. setup%tinc>=one)
       if (error) then
-         if (text>0) write (text, 24) id, tdec, tinc
+         if (text>0) write (text, 24) id, setup%tdec, setup%tinc
          return
       end if
 
       ! stride bounds OK
-      error = .not. (tmin>zero .and. tmax>=tmin)
+      error = .not. (setup%tmin>zero .and. setup%tmax>=setup%tmin)
       if (error) then
-         if (text>0) write (text, 25) id, tmin, tmax
+         if (text>0) write (text, 25) id, setup%tmin, setup%tmax
          return
       end if
 
       ! strid0 in bounds
-      error = .not. (strid0>=tmin .and. tmax>=strid0)
+      error = .not. (setup%strid0>=setup%tmin .and. setup%tmax>=setup%strid0)
       if (error) then
-         if (text>0) write (text, 26) id, tmin, strid0, tmax
+         if (text>0) write (text, 26) id, setup%tmin, setup%strid0, setup%tmax
          return
       end if
 
@@ -1883,15 +1896,16 @@ module twopnt_core
          return
       end if
 
-      error = tinc>one .and. .not. steps2>0
+      error = setup%tinc>one .and. .not. setup%steps2>0
       if (error) then
-         if (text>0) write (text, 28) id, steps2
+         if (text>0) write (text, 28) id, setup%steps2
          return
       end if
 
       ! ***** Time evolution. *****
       save_initial_solution: if (step<=0) then
-         stride = strid0
+
+         stride = setup%strid0
          age    = 0
 
          ! Send latest solution to the problem handler
@@ -1918,20 +1932,19 @@ module twopnt_core
          call print_evolve_header(text,id,levelm,step,ynorm,stride)
       endif
 
+      low  = setup%tmin
+      high = setup%tmax
+
       time_integration: do while (step < last)
 
-          low  = tmin
-          high = tmax
-
           ! Increase dt if possible
-          if (age == steps2 .and. stride < high .and. tinc>one) then
-             age    = 0
-             exist  = .false.
-             low    = stride * tdec
-             stride = min (high, stride * tinc)
-             if (levelm>1.and.text>0)            write (text, 10) id, step, yword, log10(stride)
-          else
-             if (levelm>1.and.text>0.and.step>0) write (text, 9) id, step, yword, log10(stride)
+          if (age==setup%steps2) new_dt = increase_timestep(setup,low,high,stride,age,exist)
+          if (levelm>1 .and. text>0) then
+             if (new_dt) then
+                write (text, 10) id, step, yword, log10(stride)
+             elseif (step>0) then
+                write (text, 9) id, step, yword, log10(stride)
+             endif
           end if
 
           xsucce = .false.
@@ -1944,9 +1957,9 @@ module twopnt_core
 
               ! All functions within here are done with time = .true.
               time  = .true.
-              call search(error, text, above, agej, below, buffer, vars, condit, exist, &
+              call search(error, text, above, functions%stats%agej, below, buffer, vars, condit, exist, &
                           leveld - 1, levelm - 1, name, names, xrepor, &
-                          s0, s1, number, xsucce, v0, v1, tdabs, tdage, tdrel, y0, dummy, y1,&
+                          s0, s1, number, xsucce, v0, v1, setup%tdabs, setup%tdage, setup%tdrel, y0, dummy, y1,&
                           x, functions, time, stride, jac, count, csave, jword)
               if (error) then
                  if (text>0) write (text, 29) id
@@ -1966,19 +1979,16 @@ module twopnt_core
                     write (text, 1) step + 1, log10 (stride), number, jword, trim(remark)
                  end if
 
-                 ! Retry with decreased strinde, if possible
-                 decrease_dt: if (low<stride .and. one<tdec) then
-                    age = 0
+                 ! Retry with decreased stride, if possible
+                 new_dt = decrease_timestep(setup,low,high,stride,age,exist)
+                 if (new_dt) then
+                    ! Restart the unknowns and the cycle
                     call twcopy (vars%N(), vsave, v0)
-                    exist = .false.
-                    high = stride / tinc
-                    stride = max (low, stride / tdec)
                     if (levelm>1 .and. text>0) write (text, 11) id, step, yword, log10 (stride)
                     cycle newton_search
-                 else
-                    ! FAILURE
+                 else ! FAILURE
                     exit time_integration
-                 end if decrease_dt
+                 end if
 
               end if
 
@@ -1987,21 +1997,16 @@ module twopnt_core
               change = twnorm(vars%N(),buffer)
               call twlogr(cword, change)
 
-              unchanged_solution: if (change == zero) then
+              increase_dt: if (change == zero) then
                  if (levelm==1 .and. text>0) write (text, 4) step+1,'  ZERO',log10(stride),number,jword
-
-                 increase_dt: if (tinc>one .and. stride < high) then
-                    age = 0
-                    exist = .false.
-                    low = stride*tdec
-                    stride = min (high, stride * tinc)
+                 new_dt = increase_timestep(setup,low,high,stride,age,exist)
+                 if (new_dt) then
                     if (levelm>1 .and. text>0) write (text, 12) id, step, yword, log10 (stride)
                     cycle newton_search
                  else
                     exit time_integration
-                 end if increase_dt
-
-              end if unchanged_solution
+                 end if
+              end if increase_dt
 
           end do newton_search
 
@@ -2024,11 +2029,13 @@ module twopnt_core
 
           ! Print summary
           if (levelm>0) then
-              call twlogr (yword, ynorm)
+              call twlogr (yword,ynorm)
               if (text/=0) write (text, 5) step,yword,cword,log10(stride),number,jword
           endif
 
       end do time_integration
+
+      print *, 'age=',age,' step=',step,' stride=',stride
 
       ! Epilogue.
       if (levelm>0 .and. text>0) then
@@ -2122,6 +2129,56 @@ module twopnt_core
 
       end subroutine evolve
 
+      logical function increase_timestep(setup,low,high,stride,age,exist)
+         type(twcom), intent(in) :: setup
+         integer , intent(inout) :: age
+         logical , intent(inout) :: exist
+         real(RK), intent(inout) :: low,high,stride
+
+         increase_timestep = stride < high .and. setup%tinc>one
+
+         ! Increase dt if possible
+         if (increase_timestep) then
+            ! Reset age of this timestep
+            age    = 0
+
+            ! Need a new Jacobian
+            exist  = .false.
+
+            ! New low bound is inceased
+            low    = stride*setup%tdec
+
+            ! New stride
+            stride = min(high, stride*setup%tinc)
+         end if
+
+      end function increase_timestep
+
+
+      logical function decrease_timestep(setup,low,high,stride,age,exist)
+         type(twcom), intent(in) :: setup
+         integer , intent(inout) :: age
+         logical , intent(inout) :: exist
+         real(RK), intent(inout) :: low,high,stride
+
+         decrease_timestep = stride > low .and. setup%tdec>one
+
+         if (decrease_timestep) then
+            ! Reset age of this timestep
+            age    = 0
+
+            ! Need a new Jacobian
+            exist  = .false.
+
+            ! New low bound is inceased
+            high   = stride / setup%tinc
+
+            ! New stride
+            stride = max(low, stride / setup%tdec)
+         end if
+
+      end function decrease_timestep
+
       ! Perform the damped, modified Newton's search
       subroutine search(error, text, above, age, below, buffer, vars, condit, exist, &
                         leveld, levelm, name, names, report, s0, s1, steps, &
@@ -2135,6 +2192,7 @@ module twopnt_core
           integer         , intent(in)    :: text
           real(RK)        , intent(in)    :: xxabs,xxrel ! settings
           integer         , intent(in)    :: xxage
+          integer         , intent(inout) :: age ! Jacobian age
           integer         , intent(in)    :: names
           character(len=*), intent(in)    :: name(names)
           real(RK), dimension(vars%N()), intent(in)    :: above,below,x
@@ -2149,7 +2207,7 @@ module twopnt_core
 
           real(RK) :: abs0,abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, &
                       value, y0norm, y1norm
-          integer  :: age, entry, expone, leveld, levelm, route
+          integer  :: entry, expone, leveld, levelm
           intrinsic :: abs, int, log10, max, min, mod
           logical   :: force,success,converged,update_jac
           character(len=*), parameter :: id = 'SEARCH:  '
@@ -2216,6 +2274,7 @@ module twopnt_core
 
           ! Number of steps
           steps      = 0
+          age        = 0
           update_jac = .false.
           converged  = .false.
 
@@ -2268,7 +2327,6 @@ module twopnt_core
                       if (levelm>0 .and. text>0) write (text, 5) id, 'SOLVE'
                       return
                   end if
-                  route = 3
                   s0     = buffer
                   s0norm = twnorm(vars%N(),s0)
 
@@ -2288,7 +2346,7 @@ module twopnt_core
               end if
 
               !///  0 < DELTAB?
-              if (.not. (zero < deltab)) then
+              if (.not. deltab>zero) then
 
                  ! If deltab becomes negative after some iterations, try a recovery by updating
                  ! the Jacobian.
@@ -2372,6 +2430,7 @@ module twopnt_core
               call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
 
               ! Advance step
+              steps  = steps + 1
               age    = age + 1
               s0     = s1; s0norm = s1norm
               v0     = v1; y0norm = y1norm
@@ -2627,7 +2686,7 @@ module twopnt_core
       character(*), parameter :: id = 'TWOPNT:  '
 
       real(RK) ::  maxcon, ratio(2), stride, ynorm, csave
-      integer :: age, desire, nsteps, psave, qtask, steps, xrepor, jcount
+      integer :: desire, nsteps, psave, qtask, steps, xrepor, jcount
       intrinsic :: max
       logical :: allow, exist, found, satisf, time
 
@@ -2753,7 +2812,7 @@ module twopnt_core
                   ! INITIALIZE STATISTICS ON ENTRY TO THE SEARCH BLOCK.
                   call functions%stats%tick(qsearc)
                   maxcon = zero
-                  age    = 0
+
 
                   ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE SEARCH BLOCK.
                   if (setup%levelm>1 .and. text>0) write (text, 10014) id
@@ -2765,8 +2824,7 @@ module twopnt_core
                   exist = .false.
 
                   ! CALL SEARCH.
-                  call search(error, text, &
-                             work%above, age, work%below, buffer, vars, condit, &
+                  call search(error, text, work%above, functions%stats%agej, work%below, buffer, vars, condit, &
                              exist, setup%leveld - 1, setup%levelm - 1, name, names, &
                              xrepor, work%s0, work%s1, nsteps, found, &
                              u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
@@ -2868,12 +2926,9 @@ module twopnt_core
                   if (setup%levelm>1 .and. text>0) write (text, 10020) id
 
                   ! CALL EVOLVE.
-                  call evolve(error, text, work%above, work%below, &
-                         buffer, vars, condit, desire, setup%leveld - 1, &
-                         setup%levelm - 1, name, names, xrepor, work%s0, work%s1, &
-                         functions%stats%step, setup%steps2, setup%strid0, stride, found, setup%tdabs, &
-                         setup%tdage, setup%tdec, setup%tdrel, time, setup%tinc, setup%tmax, &
-                         setup%tmin, u, work%v1, work%vsave, work%y0, work%y1, ynorm, x, functions, jac)
+                  call evolve(setup, error, text, work%above, work%below, buffer, vars, condit, desire, name, names, xrepor, &
+                              work%s0, work%s1, functions%stats%step, stride, functions%stats%age, found, time, u, work%v1, &
+                              work%vsave, work%y0, work%y1, ynorm, x, functions, jac)
                   if (error) then
                       if (text>0) write (text, 19) id
                       return
@@ -3719,6 +3774,8 @@ module twopnt_core
          integer      , intent(in)    :: points
 
           ! Init statistics arrays
+          this%age = 0
+          this%agej = 0
           this%total = zero
           this%detail = zero
           this%event = 0

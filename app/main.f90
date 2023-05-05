@@ -83,8 +83,8 @@ program TWMAIN
 
     ! SPECIFY THE CONTROLS.
     call settings%set(ERROR, TEXT, 'ADAPT', .TRUE.)
-    call settings%set(ERROR, TEXT, 'LEVELD', 0)
-    call settings%set(ERROR, TEXT, 'LEVELM', 0)
+    call settings%set(ERROR, TEXT, 'LEVELD', 1)
+    call settings%set(ERROR, TEXT, 'LEVELM', 1)
     call settings%set(ERROR, TEXT, 'STEPS1', 50)
     call settings%set(ERROR, TEXT, 'STEPS2', 50)
     call settings%set(ERROR, TEXT, 'STRID0', 1.0e-3_RK)
