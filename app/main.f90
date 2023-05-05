@@ -34,10 +34,9 @@ program TWMAIN
     integer, parameter :: GROUPA = 0
     integer, parameter :: GROUPB = 0
     integer, parameter :: PMAX   = 200
-    integer, parameter :: NAMES = COMPS + GROUPA + GROUPB
     logical, parameter :: RELAXED_TOLERANCES = .false.
 
-    character(len=16) :: NAME(NAMES), REPORT
+    character(len=16) :: REPORT
     character(len=80) :: VERSIO
 
     type(twcom) :: settings
@@ -76,8 +75,11 @@ program TWMAIN
 
     ! *** SET TWOPNT CONTROLS. ***
 
+    ! ASSIGN INITIAL PROBLEM SIZES AND NAMES FOR THE UNKNOWNS.
+    call sizes%new(ERROR,GROUPA,COMPS,6,PMAX,GROUPB, &
+                   [character(6) :: 'F','G','H','LAMBDA','T'])
+
     ! CHOOSE THE INITIAL GRID SIZE.
-    sizes = twsize(GROUPA,COMPS,6,PMAX,GROUPB)
     N = sizes%N()
     call jac%init(sizes)
 
@@ -135,13 +137,6 @@ program TWMAIN
     ABOVE(5) = 2.0 * TMAX
     BELOW(5) = 0.5 * TZERO
 
-    ! ASSIGN NAMES FOR THE UNKNOWNS.
-    NAME(1) = 'F'
-    NAME(2) = 'G'
-    NAME(3) = 'H'
-    NAME(4) = 'LAMBDA'
-    NAME(5) = 'T'
-
     ! CHOOSE UNKNOWNS TO EXAMINE FOR GRID ADAPTION.
     ACTIVE(1) = .TRUE.
     ACTIVE(2) = .TRUE.
@@ -159,7 +154,7 @@ program TWMAIN
 
     ! Call driver
     CALL TWOPNT(SETTINGS, ERROR, TEXT, VERSIO, sizes, ABOVE, ACTIVE, BELOW, BUFFER, CONDIT, &
-                WORK, MARK, NAME, NAMES, REPORT, STRIDE, TIME, U, X, problem, jac)
+                WORK, MARK, REPORT, STRIDE, TIME, U, X, problem, jac)
     IF (ERROR) GO TO 9004
 
     ! CHECK FOR SUCCESS.

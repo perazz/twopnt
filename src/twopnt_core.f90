@@ -183,7 +183,16 @@ module twopnt_core
         ! Group B variables
         integer :: groupb = 0
 
+        ! Names of the variables
+        character(len=:), allocatable :: NAME(:)
+        integer :: names = 0
+
         contains
+
+           ! Initialize problem variables
+           procedure, non_overridable :: new_1name
+           procedure, non_overridable :: new_allnames
+           generic :: new => new_1name, new_allnames
 
            ! Number of unknowns to be solved on the current grid
            procedure, non_overridable :: N    => twsize_N
@@ -197,6 +206,11 @@ module twopnt_core
            ! Check variable sizes
            procedure, non_overridable :: check => twsize_checks
            procedure, non_overridable :: check_onGridUpdate => twsize_check_grid
+
+           ! Set names
+           procedure, non_overridable, private :: set_name_1
+           procedure, non_overridable, private :: set_names_all
+           generic :: set_names => set_name_1,set_names_all
 
 
            ! Indices of relevant sizes
@@ -246,7 +260,7 @@ module twopnt_core
         contains
 
            ! Problem wrappers
-           procedure :: f        => fun_wrapper
+           procedure :: f    => fun_wrapper
            procedure :: save => save_wrapper
            procedure :: grid => grid_wrapper
            procedure :: jac_solve
@@ -436,6 +450,78 @@ module twopnt_core
 
        end function twsize_idx_B
 
+       ! Initialize problem variables
+       subroutine new_1name(this,error,GROUPA,COMPS,POINTS,PMAX,GROUPB,NAME)
+          class(twsize), intent(inout) :: this
+          logical, intent(out) :: error
+          integer, intent(in) :: GROUPA,COMPS,POINTS,PMAX,GROUPB
+          character(*), intent(in) :: NAME
+
+          this%groupa = GROUPA
+          this%comps = COMPS
+          this%groupb = GROUPB
+          this%points = POINTS
+          this%pmax = PMAX
+
+          call this%set_names(error,name)
+
+       end subroutine new_1name
+
+       ! Initialize problem variables
+       subroutine new_allnames(this,error,GROUPA,COMPS,POINTS,PMAX,GROUPB,NAMES)
+          class(twsize), intent(inout) :: this
+          logical, intent(out) :: error
+          integer, intent(in) :: GROUPA,COMPS,POINTS,PMAX,GROUPB
+          character(*), intent(in) :: NAMES(GROUPA+COMPS+GROUPB)
+
+          this%groupa = GROUPA
+          this%comps = COMPS
+          this%groupb = GROUPB
+          this%points = POINTS
+          this%pmax = PMAX
+
+          call this%set_names(error,NAMES)
+
+       end subroutine new_allnames
+
+       ! Set a single name for all variables
+       subroutine set_name_1(this,error,name)
+          class(twsize), intent(inout) :: this
+          logical, intent(out) :: error
+          character(len=*), intent(in) :: name
+
+          if (allocated(this%NAME)) deallocate(this%NAME)
+          allocate(character(len=len_trim(name)) :: this%NAME(1))
+          this%NAME(1) = trim(name)
+          this%names = 1
+
+          ! We can always have a unique name
+          error = .false.
+       end subroutine set_name_1
+
+       ! Set names for each variable: size should be [GROUPA + GROUPB + COMPS]
+       subroutine set_names_all(this,error,names)
+          class(twsize), intent(inout) :: this
+          logical, intent(out) :: error
+          character(len=*), intent(in) :: names(:)
+          integer :: lmax,j
+          if (allocated(this%NAME)) deallocate(this%NAME)
+
+          lmax = 0
+          do j=1,size(names)
+             lmax = max(lmax,len_trim(names(j)))
+          end do
+          allocate(character(len=lmax) :: this%NAME(size(names)))
+          do j=1,size(names)
+             this%NAME(j) = trim(names(j))
+          end do
+          this%names = size(names)
+
+          ! The number of names must match GROUPA + GROUPB + COMPS size (one name per variable)
+          error = .not. this%names == this%groupa+this%groupb+this%comps
+
+       end subroutine set_names_all
+
        ! Indices of all grid variables of component comp (one per grid point)
        elemental integer function twsize_idx_comp_one(this,comp,point) result(icomp)
           class(twsize), intent(in) :: this
@@ -489,10 +575,18 @@ module twopnt_core
           end if
 
           ! Check storage size
-          too_many_points: if (.not.(this%points<=this%pmax)) then
+          error = .not.(this%points<=this%pmax)
+          too_many_points: if (error) then
               if (text>0) write (text, 4) id, this%points, this%pmax
               return
           endif too_many_points
+
+          ! Check variable names: either 1 only, or 1 per variable
+          error = .not. (this%names== 1 .or. this%names == this%NVAR())
+          number_of_names: if (error) then
+              if (text>0) write (text,5) id,this%names,this%comps,this%groupa,this%groupb,this%NVAR()
+              return
+          end if number_of_names
 
           1 format(/1X, a9, 'ERROR.  NUMBERS OF ALL TYPES OF UNKNOWNS MUST BE AT' &
                   /10X, 'LEAST ZERO.' &
@@ -513,6 +607,12 @@ module twopnt_core
           4 format(/1X, a9, 'ERROR.  THERE ARE TOO MANY POINTS.' &
                  //10X, i10, '  POINTS' &
                   /10X, i10, '  PMAX, LIMIT ON POINTS')
+          5 format(/1X, a9, 'ERROR.  THE NUMBER OF NAMES IS WRONG.' &
+                 //10X, i10, '  NAMES' &
+                 //10X, i10, '  COMPS, COMPONENTS' &
+                  /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                  /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                  /10X, i10, '  TOTAL NUMBER')
 
        end subroutine twsize_checks
 
@@ -1821,7 +1921,7 @@ module twopnt_core
       end subroutine twlaps
 
       ! Perform time evolution
-      subroutine evolve(setup, error, text, above, below, buffer, vars, condit, desire, name, names, report, s0, s1, &
+      subroutine evolve(setup, error, text, above, below, buffer, vars, condit, desire, report, s0, s1, &
                         step, stride, age, success, time, v0, v1, vsave, y0, y1, ynorm, x, functions, jac)
 
       type(twcom),      intent(in)    :: setup
@@ -1832,9 +1932,7 @@ module twopnt_core
       integer,          intent(in)    :: desire ! Desired number of timesteps
       real(RK),         intent(inout) :: ynorm,stride
       integer,          intent(inout) :: step,age
-      integer,          intent(in)    :: names
       integer,          intent(out)   :: report
-      character(len=*), intent(in)    :: name(names)
       real(RK), dimension(vars%N()), intent(in)    :: above,below,x
       real(RK), dimension(vars%N()), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1,vsave
       type(twfunctions), intent(inout) :: functions
@@ -1958,9 +2056,8 @@ module twopnt_core
               ! All functions within here are done with time = .true.
               time  = .true.
               call search(error, text, above, functions%stats%agej, below, buffer, vars, condit, exist, &
-                          leveld - 1, levelm - 1, name, names, xrepor, &
-                          s0, s1, number, xsucce, v0, v1, setup%tdabs, setup%tdage, setup%tdrel, y0, dummy, y1,&
-                          x, functions, time, stride, jac, count, csave, jword)
+                          leveld - 1, levelm - 1, xrepor, s0, s1, number, xsucce, v0, v1, setup%tdabs, setup%tdage, &
+                          setup%tdrel, y0, dummy, y1, x, functions, time, stride, jac, count, csave, jword)
               if (error) then
                  if (text>0) write (text, 29) id
                  return
@@ -2181,7 +2278,7 @@ module twopnt_core
 
       ! Perform the damped, modified Newton's search
       subroutine search(error, text, above, age, below, buffer, vars, condit, exist, &
-                        leveld, levelm, name, names, report, s0, s1, steps, &
+                        leveld, levelm, report, s0, s1, steps, &
                         success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, x, functions, time, stride, jac, &
                         jcount, csave, jword)
 
@@ -2193,8 +2290,6 @@ module twopnt_core
           real(RK)        , intent(in)    :: xxabs,xxrel ! settings
           integer         , intent(in)    :: xxage
           integer         , intent(inout) :: age ! Jacobian age
-          integer         , intent(in)    :: names
-          character(len=*), intent(in)    :: name(names)
           real(RK), dimension(vars%N()), intent(in)    :: above,below,x
           real(RK), dimension(vars%N()), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1
           type(twfunctions), intent(inout) :: functions
@@ -2228,24 +2323,17 @@ module twopnt_core
           call vars%check(error,id,text)
           if (error) return
 
-          ! Check variable names
-          error = .not. (names== 1 .or. names == vars%NVAR())
-          number_of_names: if (error) then
-              if (text>0) write (text,7) id,names,vars%comps,vars%groupa,vars%groupb,vars%NVAR()
-              return
-          end if number_of_names
-
           ! Check variable bounds
           error = any(.not.below<above)
           if (error) then
-             call print_invalid_bounds(id,text,name,vars,below,above)
+             call print_invalid_bounds(id,text,vars,below,above)
              return
           end if
 
           ! Check the unknowns are valid
           error = any(.not.(below<=v0 .and. v0<=above))
           if (error) then
-             call print_invalid_ranges(id,text,name,vars,below,above,v0)
+             call print_invalid_ranges(id,text,vars,below,above,v0)
              return
           end if
 
@@ -2355,7 +2443,7 @@ module twopnt_core
 
                  if (levelm>0 .and. text>0) then
                     call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
-                    call print_invalid_ranges(id,text,name,vars,below,above,v0,s0)
+                    call print_invalid_ranges(id,text,vars,below,above,v0,s0)
                  end if
 
                  report  = qbnds
@@ -2469,12 +2557,6 @@ module twopnt_core
 
           ! Error messages.
           5 format(/1X, a9, 'ERROR.  CALL TO ', a,' FAILED.')
-          7 format(/1X, a9, 'ERROR.  THE NUMBER OF NAMES IS WRONG.' &
-                 //10X, i10, '  NAMES' &
-                 //10X, i10, '  COMPS, COMPONENTS' &
-                  /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-                  /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-                  /10X, i10, '  TOTAL NUMBER')
           8 format(/1X, a9, 'ERROR.  THE BOUNDS FOR THE ABSOLUTE AND RELATIVE' &
                   /10X, 'CONVERGENCE TESTS MUST BE ZERO OR POSITIVE.' &
                  //10X, 1p, e10.2, '  SSABS OR TDABS, ABSOLUTE ERROR' &
@@ -2660,7 +2742,7 @@ module twopnt_core
       ! TWOPNT driver.
       subroutine twopnt(setup, error, text, versio, vars, &
                         above, active, below, buffer, condit,  &
-                        work, mark, name, names, report, stride, time, u, x, &
+                        work, mark, report, stride, time, u, x, &
                         functions, jac)
 
       type(twcom) , intent(inout) :: setup
@@ -2669,9 +2751,6 @@ module twopnt_core
       character(*), intent(in)    :: versio
       type(twsize), intent(inout) :: vars
       character(*), intent(out)   :: report
-      integer     , intent(in)    :: names
-
-      character(*), intent(inout) :: name(names) ! Names of the variables
       real(RK)    , intent(inout), dimension(vars%NVAR()) :: above,below
       logical     , intent(inout) :: active(*),mark(*)
       real(RK)    , intent(inout) :: buffer(vars%NMAX())
@@ -2723,16 +2802,10 @@ module twopnt_core
       ! Check variable sizes
       call vars%check(error,id,text); if (error) return
 
-      error = .not. (names == 1 .or. names == vars%NVAR())
-      number_of_names: if (error) then
-          if (text>0) write (text, 9) id,names,vars%comps,vars%groupa,vars%groupb,vars%NVAR()
-          return
-      end if number_of_names
-
       ! Check variable bounds
       error = any(.not.below<above)
       if (error) then
-          call print_invalid_bounds(id,text,name,vars,below,above)
+          call print_invalid_bounds(id,text,vars,below,above)
           return
       end if
 
@@ -2825,7 +2898,7 @@ module twopnt_core
 
                   ! CALL SEARCH.
                   call search(error, text, work%above, functions%stats%agej, work%below, buffer, vars, condit, &
-                             exist, setup%leveld - 1, setup%levelm - 1, name, names, &
+                             exist, setup%leveld - 1, setup%levelm - 1, &
                              xrepor, work%s0, work%s1, nsteps, found, &
                              u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
                              work%y1, x, functions, time, stride, jac, jcount, csave, jword)
@@ -2926,7 +2999,7 @@ module twopnt_core
                   if (setup%levelm>1 .and. text>0) write (text, 10020) id
 
                   ! CALL EVOLVE.
-                  call evolve(setup, error, text, work%above, work%below, buffer, vars, condit, desire, name, names, xrepor, &
+                  call evolve(setup, error, text, work%above, work%below, buffer, vars, condit, desire, xrepor, &
                               work%s0, work%s1, functions%stats%step, stride, functions%stats%age, found, time, u, work%v1, &
                               work%vsave, work%y0, work%y1, ynorm, x, functions, jac)
                   if (error) then
@@ -2970,12 +3043,6 @@ module twopnt_core
                    /10X, 'LEVELD CANNOT EXCEED LEVELM.' &
                   //10X, i10, '  LEVELD, FOR SOLUTIONS' &
                    /10X, i10, '  LEVELM, FOR MESSAGES')
-           9 format(/1X, a9, 'ERROR.  THE NUMBER OF NAMES IS WRONG.' &
-                  //10X, i10, '  NAMES' &
-                  //10X, i10, '  COMPS, COMPONENTS' &
-                   /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-                   /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-                   /10X, i10, '  TOTAL NUMBER')
           14 format(/1X, a9, 'ERROR.  NEITHER THE INITIAL TIME EVOLUTION NOR THE' &
                    /10X, 'SEARCH FOR THE STEADY STATE IS ALLOWED.')
           15 format(/1X, a9, 'ERROR.  UNKNOWN TASK.')
@@ -3886,12 +3953,12 @@ module twopnt_core
       end function unknown_class_name
 
       ! Detailed error message for a case with invalid variable bounds
-      subroutine print_invalid_bounds(id,text,name,vars,below,above)
+      subroutine print_invalid_bounds(id,text,vars,below,above)
          integer     , intent(in) :: text
          type(twsize), intent(in) :: vars
          real(RK),     intent(in) :: below(vars%N())
          real(RK),     intent(in) :: above(vars%N())
-         character(len=*), intent(in) :: id,name(:)
+         character(len=*), intent(in) :: id
 
          integer :: j,counter,len1,len2,local,length
          intrinsic :: count
@@ -3914,8 +3981,8 @@ module twopnt_core
             if (counter > MAX_ERROR_LINES) exit loop_bounds
 
             ! Use variable names, if provided
-            if (size(name) == vars%NVAR()) then
-                ctemp1 = name(j)
+            if (vars%names == vars%NVAR()) then
+                ctemp1 = vars%name(j)
             else
                 ctemp1 = ' '
             end if
@@ -3964,14 +4031,14 @@ module twopnt_core
 
       end subroutine print_invalid_bounds
 
-      subroutine print_invalid_ranges(id,text,name,vars,below,above,v0,s0)
+      subroutine print_invalid_ranges(id,text,vars,below,above,v0,s0)
          integer     , intent(in) :: text
          type(twsize), intent(in) :: vars
          real(RK),     intent(in) :: below (vars%N())
          real(RK),     intent(in) :: above (vars%N())
          real(RK),     intent(in) :: v0    (vars%N())
          real(RK),     intent(in), optional :: s0(vars%N())
-         character(len=*), intent(in) :: id,name(:)
+         character(len=*), intent(in) :: id
 
          integer :: i,j,counter,len1,len2,length
          logical :: search,verified(vars%N())
@@ -4012,8 +4079,8 @@ module twopnt_core
             end if
 
             ! Use variable names, if provided
-            if (size(name) == vars%NVAR()) then
-                ctemp1 = name(i)
+            if (vars%names == vars%NVAR()) then
+                ctemp1 = vars%name(i)
             else
                 ctemp1 = ' '
             end if
