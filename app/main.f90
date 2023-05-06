@@ -76,7 +76,7 @@ program TWMAIN
 
     ! ASSIGN INITIAL PROBLEM SIZES AND NAMES FOR THE UNKNOWNS.
     call sizes%new(ERROR,GROUPA,COMPS,6,PMAX,GROUPB, &
-                   [character(6) :: 'F','G','H','LAMBDA','T'])
+                   [character(6) :: 'F','G','H','LAMBDA','T'],[zero,ZMAX])
 
     ! CHOOSE THE INITIAL GRID SIZE.
     N = sizes%N()
