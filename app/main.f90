@@ -37,12 +37,11 @@ program TWMAIN
     logical, parameter :: RELAXED_TOLERANCES = .false.
 
     character(len=16) :: REPORT
-    character(len=80) :: VERSIO
 
-    type(twcom) :: settings
-    type(twsize) :: sizes
-    type(twwork) :: work
-    type(twfunctions) :: problem
+    type(TwoPntSolverSetup) :: settings
+    type(TwoPntBVPDomain) :: sizes
+    type(TwoPntSolverStorage) :: work
+    type(TwoPntBVProblem) :: problem
     type(twjac) :: jac
     real(RK) :: ABOVE(COMPS), BELOW(COMPS)
     real(RK), dimension(COMPS*PMAX) :: BUFFER
@@ -142,13 +141,10 @@ program TWMAIN
     ! Initialize functions
     problem%save_sol    => savesol
     problem%fun         => residual
-    problem%update_grid => grid_update
-
-    ! CALL TWOPNT.
-    VERSIO = 'DOUBLE PRECISION VERSION 3.22'
+    problem%update_grid => on_grid_update
 
     ! Call driver
-    call problem%run(settings, ERROR, TEXT, VERSIO, sizes, ABOVE, ACTIVE, BELOW, BUFFER, CONDIT, &
+    call problem%run(settings, ERROR, TEXT, sizes, ABOVE, ACTIVE, BELOW, BUFFER, CONDIT, &
                      WORK, MARK, REPORT, STRIDE, TIME, U, X, jac)
 
     ! WRITE A SUMMARY.
@@ -170,7 +166,7 @@ program TWMAIN
 
       !  Save function interface
       subroutine savesol(vars,buffer)
-         type(twsize), intent(in) :: vars
+         type(TwoPntBVPDomain), intent(in) :: vars
          real(RK),     intent(in) :: buffer(vars%N())
 
 
@@ -200,16 +196,16 @@ program TWMAIN
       end subroutine residual
 
       ! Grid update function interface
-      subroutine grid_update(error,vars,x,u)
+      subroutine on_grid_update(error,vars,x,u)
          logical, intent(out)     :: error
-         type(twsize), intent(in) :: vars
+         type(TwoPntBVPDomain), intent(in) :: vars
          real(RK), intent(in)     :: x(vars%N())
          real(RK), intent(inout)  :: u(:)
 
          N = vars%N()
          error = N<=0
 
-      end subroutine grid_update
+      end subroutine on_grid_update
 
       ! Compute density, viscosity and thermal conductivity of Argon at given T
       elemental subroutine AR_TRANSPORT(T,RHO,MU,K)

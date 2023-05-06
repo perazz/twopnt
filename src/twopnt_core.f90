@@ -26,7 +26,7 @@ module twopnt_core
     implicit none
     private
 
-    public :: twlast,twcopy,twcom,twsolv,twshow,twopnt
+    public :: twlast,twcopy,TwoPntSolverSetup,twsolv,twshow,twopnt
 
     integer, parameter, public :: RK = real64
 
@@ -71,10 +71,10 @@ module twopnt_core
     integer,  parameter, public :: gmax = 100
 
     logical, parameter :: DEBUG = .true.
-    integer, parameter :: CONTRL_MAX_LEN = 40
-    integer, parameter :: MAX_ERROR_LINES = 20
+    integer, parameter :: CONTRL_MAX_LEN       = 40
+    integer, parameter :: MAX_ERROR_LINES      = 20
     integer, parameter :: MAX_DECAY_ITERATIONS = 5
-    integer, parameter :: DEFAULT_MAX_POINTS = 200
+    integer, parameter :: DEFAULT_MAX_POINTS   = 200
 
     ! Supported versions
     character(len=8), parameter :: vnmbr(*) = [character(len=8) :: '3.18', '3.19', '3.20', '3.21', &
@@ -82,14 +82,13 @@ module twopnt_core
                                                                    '3.26', '3.27', '3.28', '3.29']
     integer, parameter :: vnmbrs = size(vnmbr)
 
-    ! Settings structure (formerly a common block)
-    integer, parameter :: cntrls = 22
-
     ! TWOPNT settings
-    type, public :: twcom
+    type, public :: TwoPntSolverSetup
 
         !> Adaptive grid size
         logical  :: adapt  = .false.
+
+        !> Verbosity levels
         integer  :: leveld = 1
         integer  :: levelm = 1
 
@@ -102,15 +101,10 @@ module twopnt_core
         real(RK) :: ssrel  = 1.0e-6_RK
         integer  :: ssage  = 10
 
-        !> Is this a steady-state problem
-        logical  :: steady = .true.
-        integer  :: steps0 = 0
-
-        !> Desired number of timesteps for EVOLVE
-        integer  :: steps1 = 200
-
-        !> Max number of timesteps between stride increases
-        integer  :: steps2 = 10
+        !> Transient:  absolute, relative error; Jacobian retirement age
+        real(RK) :: tdabs  = 1.0e-9_RK
+        real(RK) :: tdrel  = 1.0e-6_RK
+        integer  :: tdage  = 20
 
         !> Timestep bounds: initial, max, min
         real(RK) :: strid0 = 1.0e-4_RK
@@ -121,11 +115,17 @@ module twopnt_core
         real(RK) :: tdec   = 3.1623_RK
         real(RK) :: tinc   = 10.0_RK
 
-        ! Convergence test: absolute, relative error
-        real(RK) :: tdabs  = 1.0e-9_RK
-        real(RK) :: tdrel  = 1.0e-6_RK
+        !> Is this a steady-state problem
+        logical  :: steady = .true.
 
-        integer  :: tdage  = 20
+        !> Desired initial number of steps
+        integer  :: steps0 = 0
+
+        !> Desired number of timesteps for EVOLVE
+        integer  :: steps1 = 200
+
+        !> Max number of timesteps between stride increases
+        integer  :: steps2 = 10
 
         real(RK) :: toler0 = 1.0e-9_RK
         real(RK) :: toler1 = 0.2_RK
@@ -145,10 +145,10 @@ module twopnt_core
            !> Check timestepping constraints
            procedure :: check_stepping
 
-    end type twcom
+    end type TwoPntSolverSetup
 
-    ! TWOPNT work arrays
-    type, public :: twwork
+    ! TWOPNT solver work arrays
+    type, public :: TwoPntSolverStorage
 
         integer, allocatable :: vary (:)   ! (PMAX)
         integer, allocatable :: vary1(:)   ! (PMAX)
@@ -172,10 +172,10 @@ module twopnt_core
             procedure :: init => partition_working_space
             procedure :: load_bounds => expand_bounds
 
-    end type twwork
+    end type TwoPntSolverStorage
 
     ! TWOPNT variables
-    type, public :: twsize
+    type, public :: TwoPntBVPDomain
 
         ! Group A variables
         integer :: groupa = 0
@@ -196,48 +196,54 @@ module twopnt_core
         character(len=:), allocatable :: NAME(:)
         integer :: names = 0
 
+        ! The computational domain
+        real(RK), allocatable :: x(:)
+
         contains
 
            ! Initialize problem variables
+           procedure :: destroy => domain_destroy
            procedure, non_overridable :: new_1name
            procedure, non_overridable :: new_allnames
            generic :: new => new_1name, new_allnames
 
            ! Number of unknowns to be solved on the current grid
-           procedure, non_overridable :: N    => twsize_N
+           procedure, non_overridable :: N    => TwoPntBVPDomain_N
 
            ! Max number of unknowns (storage size)
-           procedure, non_overridable :: NMAX => twsize_max
+           procedure, non_overridable :: NMAX => TwoPntBVPDomain_max
 
            ! Number of independent variables
-           procedure, non_overridable :: NVAR => twsize_NVARS
+           procedure, non_overridable :: NVAR => TwoPntBVPDomain_NVARS
 
            ! Check variable sizes
-           procedure, non_overridable :: check => twsize_checks
-           procedure, non_overridable :: check_onGridUpdate => twsize_check_grid
+           procedure, non_overridable :: check => TwoPntBVPDomain_checks
+           procedure, non_overridable :: check_onGridUpdate => TwoPntBVPDomain_check_grid
 
            ! Set names
            procedure, non_overridable, private :: set_name_1
            procedure, non_overridable, private :: set_names_all
            generic :: set_names => set_name_1,set_names_all
 
+           ! Set grid
+           procedure :: set_uniform_grid
 
            ! Indices of relevant sizes
-           procedure, non_overridable :: idx_B    => twsize_idx_B ! groupb indices
-           procedure, non_overridable, private :: twsize_idx_comp_all ! grid component indices
-           procedure, non_overridable, private :: twsize_idx_comp_one
-           generic :: idx_comp => twsize_idx_comp_all,twsize_idx_comp_one
+           procedure, non_overridable :: idx_B    => TwoPntBVPDomain_idx_B ! groupb indices
+           procedure, non_overridable, private :: TwoPntBVPDomain_idx_comp_all ! grid component indices
+           procedure, non_overridable, private :: TwoPntBVPDomain_idx_comp_one
+           generic :: idx_comp => TwoPntBVPDomain_idx_comp_all,TwoPntBVPDomain_idx_comp_one
 
-    end type twsize
+    end type TwoPntBVPDomain
 
     ! TWOPNT statistics arrays
-    type, public :: twstat
+    type, public :: TwoPntSolverStats
 
-        integer :: grid = 0   ! grid number
-        integer :: step = 0   ! step number
-        integer :: age  = 0   ! age of current stepsize
-        integer :: agej = 0   ! age of the Jacobian matrix
-        integer :: jacobs = 0 ! jacobians
+        integer :: grid   = 0   ! grid number
+        integer :: step   = 0   ! step number
+        integer :: age    = 0   ! age of current stepsize
+        integer :: agej   = 0   ! age of the Jacobian matrix
+        integer :: jacobs = 0   ! jacobians
 
         real(RK) :: detail(gmax,qtotal)  = zero
         real(RK) :: timer(qtotal)        = zero
@@ -253,13 +259,12 @@ module twopnt_core
            procedure :: tock => tock_stats
            procedure :: print_stats
 
-    end type twstat
+    end type TwoPntSolverStats
 
-    ! TWOPNT problem functions
-    type, public :: twfunctions
+    type, public :: TwoPntBVProblem
 
         ! Counters for all functions
-        type(twstat) :: stats
+        type(TwoPntSolverStats) :: stats
 
         ! These functions need to be implemented by the user
         procedure(twopnt_save), nopass, pointer :: save_sol => null()
@@ -283,21 +288,7 @@ module twopnt_core
            procedure, nopass     :: solve => twsolv
            procedure, nopass     :: show => twshow
 
-    end type twfunctions
-
-    ! TWOPNT state structure
-    type, public :: twstate
-
-       ! Present task: ENTRY
-       integer :: qtask = qentry
-
-       ! Allow further time evolution
-       logical :: allow = .true.
-
-       ! Solution found
-       logical :: found = .true.
-
-    end type twstate
+    end type TwoPntBVProblem
 
     ! Jacobian matrix storage
     type, public :: twjac
@@ -337,19 +328,19 @@ module twopnt_core
 
        ! Pass solution at the beginning of the timestep to the solver
        subroutine twopnt_save(vars,buffer)
-          import RK, twsize
+          import RK, TwoPntBVPDomain
           implicit none
           ! Initial solution passed back to the user
-          type(twsize), intent(in) :: vars
+          type(TwoPntBVPDomain), intent(in) :: vars
           real(RK), intent(in) :: buffer(vars%N())
        end subroutine twopnt_save
 
        ! Pass control to the problem handler on a grid update
        subroutine twopnt_grid_update(error,vars,x,u)
-          import RK, twsize
+          import RK, TwoPntBVPDomain
           implicit none
           logical, intent(out)     :: error
-          type(twsize), intent(in) :: vars
+          type(TwoPntBVPDomain), intent(in) :: vars
           real(RK), intent(in)     :: x(vars%N())
           real(RK), intent(inout)  :: u(:)
        end subroutine twopnt_grid_update
@@ -361,9 +352,9 @@ module twopnt_core
 
        ! Wrapper to Jacobian solve
        subroutine jac_solve(this, error, text, jac, buffer, vars)
-          class(twfunctions), intent(inout) :: this
+          class(TwoPntBVProblem), intent(inout) :: this
           integer     , intent(in) :: text
-          type(twsize), intent(in) :: vars
+          type(TwoPntBVPDomain), intent(in) :: vars
           type(twjac) , intent(in) :: jac
           real(RK)    , intent(inout) :: buffer(vars%N())
           logical     , intent(out) :: error
@@ -377,9 +368,9 @@ module twopnt_core
 
        ! Wrapper to grid update
        subroutine grid_wrapper(this,error,vars,x,u)
-          class(twfunctions), intent(inout) :: this
+          class(TwoPntBVProblem), intent(inout) :: this
           logical, intent(out)     :: error
-          type(twsize), intent(in) :: vars
+          type(TwoPntBVPDomain), intent(in) :: vars
           real(RK), intent(in)     :: x(vars%N())
           real(RK), intent(inout)  :: u(:)
 
@@ -393,9 +384,9 @@ module twopnt_core
 
        ! Save function wrapper
        subroutine save_wrapper(this,error,vars,buffer)
-          class(twfunctions), intent(inout) :: this
+          class(TwoPntBVProblem), intent(inout) :: this
           logical, intent(out) :: error
-          type(twsize), intent(in) :: vars
+          type(TwoPntBVPDomain), intent(in) :: vars
           real(RK), intent(in) :: buffer(vars%N())
 
           if (associated(this%save_sol)) then
@@ -408,7 +399,7 @@ module twopnt_core
 
        ! Residual function wrapper
        subroutine fun_wrapper(this,error,text,points,time,stride,x,buffer)
-          class(twfunctions), intent(inout) :: this
+          class(TwoPntBVProblem), intent(inout) :: this
           logical, intent(out) :: error  ! .true. if something went wrong
           integer, intent(in)  :: text   ! output unit (0 for NONE)
           integer, intent(in)  :: points ! Number of 1D variables
@@ -438,7 +429,7 @@ module twopnt_core
        ! Init Jacobian storage
        pure subroutine jac_init(this,vars)
           class(twjac), intent(inout) :: this
-          type(twsize), intent(in) :: vars
+          type(TwoPntBVPDomain), intent(in) :: vars
 
           call this%destroy()
 
@@ -449,8 +440,8 @@ module twopnt_core
        end subroutine jac_init
 
        ! Indices of groupb variables
-       pure function twsize_idx_B(this) result(igroupb)
-          class(twsize), intent(in) :: this
+       pure function TwoPntBVPDomain_idx_B(this) result(igroupb)
+          class(TwoPntBVPDomain), intent(in) :: this
           integer, allocatable :: igroupb(:)
           integer :: j
 
@@ -460,31 +451,62 @@ module twopnt_core
              igroupb = this%groupa + this%comps*this%points +[(j,j=1,this%groupb)]
           end if
 
-       end function twsize_idx_B
+       end function TwoPntBVPDomain_idx_B
+
+       ! Set a uniform grid
+       pure subroutine set_uniform_grid(this,XRANGE)
+          class(TwoPntBVPDomain), intent(inout) :: this
+          real(RK), intent(in) :: XRANGE(2)
+
+          integer :: i
+          real(RK) :: xstep
+
+          ! FORM THE INITIAL GRID.
+          xstep = (XRANGE(2)-XRANGE(1))/real(this%points-1,RK)
+          forall(i=1:this%points) this%x(i) = XRANGE(1) + (i-1)*xstep
+
+       end subroutine set_uniform_grid
 
        ! Initialize problem variables
-       subroutine new_1name(this,error,GROUPA,COMPS,POINTS,PMAX,GROUPB,NAME)
-          class(twsize), intent(inout) :: this
+       subroutine new_1name(this,error,GROUPA,COMPS,POINTS,PMAX,GROUPB,NAME,XRANGE)
+          class(TwoPntBVPDomain), intent(inout) :: this
           logical, intent(out) :: error
           integer, intent(in) :: GROUPA,COMPS,POINTS,PMAX,GROUPB
+          real(RK), optional, intent(in) :: XRANGE(2)
           character(*), intent(in) :: NAME
+
+          call this%destroy()
 
           this%groupa = GROUPA
           this%comps = COMPS
           this%groupb = GROUPB
           this%points = POINTS
           this%pmax = PMAX
+
+          ! Allocate grid
+          allocate(this%x(PMAX),source=zero)
+
+          ! Initialize grid
+          if (this%POINTS>0 .and. .not.present(XRANGE)) then
+             error = .true.
+             return
+          end if
+
+          call this%set_uniform_grid(XRANGE)
 
           call this%set_names(error,name)
 
        end subroutine new_1name
 
        ! Initialize problem variables
-       subroutine new_allnames(this,error,GROUPA,COMPS,POINTS,PMAX,GROUPB,NAMES)
-          class(twsize), intent(inout) :: this
+       subroutine new_allnames(this,error,GROUPA,COMPS,POINTS,PMAX,GROUPB,NAMES,XRANGE)
+          class(TwoPntBVPDomain), intent(inout) :: this
           logical, intent(out) :: error
           integer, intent(in) :: GROUPA,COMPS,POINTS,PMAX,GROUPB
+          real(RK), optional, intent(in) :: XRANGE(2)
           character(*), intent(in) :: NAMES(GROUPA+COMPS+GROUPB)
+
+          call this%destroy()
 
           this%groupa = GROUPA
           this%comps = COMPS
@@ -492,13 +514,35 @@ module twopnt_core
           this%points = POINTS
           this%pmax = PMAX
 
+          ! Allocate grid
+          allocate(this%x(PMAX),source=zero)
+
+          ! Initialize grid
+          if (this%POINTS>0 .and. .not.present(XRANGE)) then
+             error = .true.
+             return
+          end if
+
+          call this%set_uniform_grid(XRANGE)
+
           call this%set_names(error,NAMES)
 
        end subroutine new_allnames
 
+       ! Destroy problem domain
+       subroutine domain_destroy(this)
+          class(TwoPntBVPDomain), intent(inout) :: this
+          this%groupa = 0
+          this%comps = 0
+          this%points = 0
+          this%groupb = 0
+          this%pmax = 0
+          if (allocated(this%x))deallocate(this%x)
+       end subroutine domain_destroy
+
        ! Set a single name for all variables
        subroutine set_name_1(this,error,name)
-          class(twsize), intent(inout) :: this
+          class(TwoPntBVPDomain), intent(inout) :: this
           logical, intent(out) :: error
           character(len=*), intent(in) :: name
 
@@ -513,7 +557,7 @@ module twopnt_core
 
        ! Set names for each variable: size should be [GROUPA + GROUPB + COMPS]
        subroutine set_names_all(this,error,names)
-          class(twsize), intent(inout) :: this
+          class(TwoPntBVPDomain), intent(inout) :: this
           logical, intent(out) :: error
           character(len=*), intent(in) :: names(:)
           integer :: lmax,j
@@ -535,15 +579,15 @@ module twopnt_core
        end subroutine set_names_all
 
        ! Indices of all grid variables of component comp (one per grid point)
-       elemental integer function twsize_idx_comp_one(this,comp,point) result(icomp)
-          class(twsize), intent(in) :: this
+       elemental integer function TwoPntBVPDomain_idx_comp_one(this,comp,point) result(icomp)
+          class(TwoPntBVPDomain), intent(in) :: this
           integer,       intent(in) :: comp,point
           icomp = this%groupa + comp + this%comps*(point - 1)
-       end function twsize_idx_comp_one
+       end function TwoPntBVPDomain_idx_comp_one
 
        ! Indices of all grid variables of component comp (one per grid point)
-       pure function twsize_idx_comp_all(this,comp) result(icomp)
-          class(twsize), intent(in) :: this
+       pure function TwoPntBVPDomain_idx_comp_all(this,comp) result(icomp)
+          class(TwoPntBVPDomain), intent(in) :: this
           integer,       intent(in) :: comp
           integer, allocatable :: icomp(:)
 
@@ -555,11 +599,11 @@ module twopnt_core
              icomp = this%groupa + comp + [(this%comps*(point - 1), point=1,this%points)]
           end if
 
-       end function twsize_idx_comp_all
+       end function TwoPntBVPDomain_idx_comp_all
 
        ! Check variable sizes
-       subroutine twsize_checks(this,error,id,text)
-          class(twsize), intent(in)  :: this
+       subroutine TwoPntBVPDomain_checks(this,error,id,text)
+          class(TwoPntBVPDomain), intent(in)  :: this
           logical,       intent(out) :: error
           integer,       intent(in)  :: text
           character(*),  intent(in)  :: id
@@ -626,10 +670,10 @@ module twopnt_core
                   /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
                   /10X, i10, '  TOTAL NUMBER')
 
-       end subroutine twsize_checks
+       end subroutine TwoPntBVPDomain_checks
 
-       subroutine twsize_check_grid(this,error,id,text,padd)
-           class(twsize), intent(in)  :: this
+       subroutine TwoPntBVPDomain_check_grid(this,error,id,text,padd)
+           class(TwoPntBVPDomain), intent(in)  :: this
            logical      , intent(out) :: error
            character(*) , intent(in)  :: id
            integer      , intent(in)  :: text
@@ -665,29 +709,29 @@ module twopnt_core
                   //10X, i10, '  POINTS'&
                    /10X, i10, '  PMAX, LIMIT ON POINTS')
 
-       end subroutine twsize_check_grid
+       end subroutine TwoPntBVPDomain_check_grid
 
        ! Return total number of variables
-       elemental integer function twsize_NVARS(this) result(N)
-          class(twsize), intent(in) :: this
+       elemental integer function TwoPntBVPDomain_NVARS(this) result(N)
+          class(TwoPntBVPDomain), intent(in) :: this
           N = this%GROUPA + this%COMPS + this%GROUPB
-       end function twsize_NVARS
+       end function TwoPntBVPDomain_NVARS
 
        ! Return total number of unknowns
-       elemental integer function twsize_N(this) result(N)
-          class(twsize), intent(in) :: this
+       elemental integer function TwoPntBVPDomain_N(this) result(N)
+          class(TwoPntBVPDomain), intent(in) :: this
           N = this%GROUPA + this%COMPS * this%POINTS + this%GROUPB
-       end function twsize_N
+       end function TwoPntBVPDomain_N
 
        ! Return max allocation size
-       elemental integer function twsize_max(this) result(N)
-          class(twsize), intent(in) :: this
+       elemental integer function TwoPntBVPDomain_max(this) result(N)
+          class(TwoPntBVPDomain), intent(in) :: this
           N = this%GROUPA + this%COMPS * this%PMAX + this%GROUPB
-       end function twsize_max
+       end function TwoPntBVPDomain_max
 
        ! Initialize the control structure
        elemental subroutine twinit (this)
-          class(twcom), intent(inout) :: this
+          class(TwoPntSolverSetup), intent(inout) :: this
 
           character(len=9), parameter :: id = 'TWINIT:  '
 
@@ -721,7 +765,7 @@ module twopnt_core
 
       ! Set a control that takes a real value
       subroutine twsetr(this, error, text, contrl, value)
-          class(twcom), intent(inout) :: this
+          class(TwoPntSolverSetup), intent(inout) :: this
           logical,          intent(out) :: error
           integer,          intent(in)  :: text  ! output unit
           character(len=*), intent(in)  :: contrl
@@ -814,7 +858,7 @@ module twopnt_core
 
       ! Set a control that takes an integer value,
       subroutine twseti(this, error, text, contrl, value)
-          class(twcom), intent(inout) :: this
+          class(TwoPntSolverSetup), intent(inout) :: this
           logical,          intent(out) :: error
           integer,          intent(in)  :: text  ! output unit
           character(len=*), intent(in)  :: contrl
@@ -897,7 +941,7 @@ module twopnt_core
 
       ! Set a control that takes a logical value
       subroutine twsetl(this, error, text, contrl, value)
-          class(twcom), intent(inout) :: this
+          class(TwoPntSolverSetup), intent(inout) :: this
           logical,          intent(out) :: error
           integer,          intent(in)  :: text  ! output unit
           character(len=*), intent(in)  :: contrl
@@ -962,7 +1006,7 @@ module twopnt_core
 
       !> Check validity of the timestepping constraints
       subroutine check_stepping(this,error,id,text,desire,step)
-         class(twcom), intent(in) :: this
+         class(TwoPntSolverSetup), intent(in) :: this
          logical, intent(out) :: error
          character(*), intent(in) :: id
          integer, intent(in) :: text
@@ -1125,7 +1169,7 @@ module twopnt_core
       subroutine twshow(error, text, buffer, vars, grid, x)
           logical,      intent(out) :: error
           integer,      intent(in)  :: text
-          type(twsize), intent(in) :: vars
+          type(TwoPntBVPDomain), intent(in) :: vars
           logical,      intent(in)  :: grid
           real(RK),     intent(in) :: buffer(vars%N()), x(*)
 
@@ -1244,7 +1288,7 @@ module twopnt_core
       subroutine twsolv(error, text, jac, buffer, vars)
 
           integer     , intent(in) :: text
-          type(twsize), intent(in) :: vars
+          type(TwoPntBVPDomain), intent(in) :: vars
           type(twjac) , intent(in) :: jac
           real(RK)    , intent(inout) :: buffer(vars%N())
           logical     , intent(out) :: error
@@ -1603,11 +1647,11 @@ module twopnt_core
       ! communication, pack the matrix into the LINPACK banded form, scale the rows, and factor the
       ! matrix using LINPACK's SGBCO
       subroutine twprep(this, error, text, jac, buffer, vars, condit, time, stride, x)
-          class(twfunctions), intent(inout) :: this
+          class(TwoPntBVProblem), intent(inout) :: this
           logical,      intent(out)   :: error
           integer,      intent(in)    :: text ! output unit
           type(twjac),  intent(inout) :: jac
-          type(twsize), intent(in)    :: vars
+          type(TwoPntBVPDomain), intent(in)    :: vars
           real(RK),     intent(inout) :: buffer(vars%N())
           real(RK),     intent(inout) :: condit
           logical ,     intent(in)    :: time
@@ -1915,7 +1959,7 @@ module twopnt_core
       subroutine print_invalid_rowscols(id,text,vars,a,invalid,rows)
          character(*), intent(in) :: id
          integer, intent(in) :: text
-         type(twsize), intent(in) :: vars
+         type(TwoPntBVPDomain), intent(in) :: vars
          real(RK), intent(in) :: a(*)
          integer,  intent(in) :: invalid
          logical, intent(in) :: rows
@@ -2005,10 +2049,10 @@ module twopnt_core
       ! Perform time evolution
       subroutine evolve(this, setup, error, text, above, below, buffer, vars, condit, desire, report, s0, s1, &
                         stride, success, time, v0, v1, vsave, y0, y1, ynorm, x, jac)
-      type(twfunctions), intent(inout) :: this
-      type(twcom),      intent(in)    :: setup
+      type(TwoPntBVProblem), intent(inout) :: this
+      type(TwoPntSolverSetup),      intent(in)    :: setup
       integer,          intent(in)    :: text
-      type(twsize),     intent(in)    :: vars
+      type(TwoPntBVPDomain),     intent(in)    :: vars
       logical,          intent(out)   :: error
       logical,          intent(out)   :: time
       integer,          intent(in)    :: desire ! Desired number of timesteps
@@ -2249,7 +2293,7 @@ module twopnt_core
       end subroutine evolve
 
       logical function increase_timestep(setup,low,high,stride,age,exist)
-         type(twcom), intent(in) :: setup
+         type(TwoPntSolverSetup), intent(in) :: setup
          integer , intent(inout) :: age
          logical , intent(inout) :: exist
          real(RK), intent(inout) :: low,high,stride
@@ -2275,7 +2319,7 @@ module twopnt_core
 
 
       logical function decrease_timestep(setup,low,high,stride,age,exist)
-         type(twcom), intent(in) :: setup
+         type(TwoPntSolverSetup), intent(in) :: setup
          integer , intent(inout) :: age
          logical , intent(inout) :: exist
          real(RK), intent(inout) :: low,high,stride
@@ -2303,8 +2347,8 @@ module twopnt_core
                         leveld, levelm, report, s0, s1, steps, &
                         success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, x, time, stride, jac, &
                         jcount, csave, jword)
-          class(twfunctions), intent(inout) :: this
-          type(twsize)    , intent(in)    :: vars
+          class(TwoPntBVProblem), intent(inout) :: this
+          type(TwoPntBVPDomain)    , intent(in)    :: vars
           integer         , intent(out)   :: report
           logical         , intent(out)   :: error
           logical         , intent(inout) :: exist ! Do we have a valid Jacobian
@@ -2763,22 +2807,20 @@ module twopnt_core
       end subroutine print_search_header
 
       ! TWOPNT driver.
-      subroutine twopnt(this, setup, error, text, versio, vars, &
-                        above, active, below, buffer, condit,  &
-                        work, mark, report, stride, time, u, x, jac)
+      subroutine twopnt(this, setup, error, text, vars, above, active, below, buffer, &
+                        condit, work, mark, report, stride, time, u, x, jac)
 
-         class(twfunctions), intent(inout) :: this
-      type(twcom) , intent(inout) :: setup
+         class(TwoPntBVProblem), intent(inout) :: this
+      type(TwoPntSolverSetup) , intent(inout) :: setup
       logical     , intent(out)   :: error
       integer     , intent(in)    :: text
-      character(*), intent(in)    :: versio
-      type(twsize), intent(inout) :: vars
+      type(TwoPntBVPDomain), intent(inout) :: vars
       character(*), intent(out)   :: report
       real(RK)    , intent(inout), dimension(vars%NVAR()) :: above,below
       logical     , intent(inout) :: active(*),mark(*)
       real(RK)    , intent(inout) :: buffer(vars%NMAX())
       real(RK)    , intent(inout) :: condit
-      type(twwork), intent(inout) :: work
+      type(TwoPntSolverStorage), intent(inout) :: work
       real(RK)    , intent(inout) :: u(vars%NMAX())
       real(RK)    , intent(inout) :: x(:)
       type(twjac) , intent(inout) :: jac
@@ -2803,9 +2845,6 @@ module twopnt_core
       stride = zero
       ratio  = zero
       xrepor = qnull
-
-      ! Check the version.
-      call check_version(versio,text,error); if (error) return
 
       ! Additional settings initialization
       if (.not.setup%padd) setup%ipadd = vars%pmax
@@ -3094,9 +3133,9 @@ module twopnt_core
       end subroutine twopnt
 
       subroutine twopnt_print_step(setup,vars,funs,text,qtask,xrepor,found,x,u,stride,maxcon,search_steps,time_steps,ratio)
-          type(twcom), intent(in) :: setup
-          type(twsize), intent(in) :: vars
-          type(twfunctions), intent(inout) :: funs
+          type(TwoPntSolverSetup), intent(in) :: setup
+          type(TwoPntBVPDomain), intent(in) :: vars
+          type(TwoPntBVProblem), intent(inout) :: funs
           integer, intent(in) :: text,qtask,xrepor
           logical, intent(in) :: found
           real(RK), intent(in) :: u(:),stride,x(:),maxcon,ratio(2)
@@ -3192,10 +3231,10 @@ module twopnt_core
       end subroutine twopnt_print_step
 
       subroutine twopnt_final_report(setup,stats,vars,funs,text,x,u,report,ratio,error)
-         type(twcom), intent(in) :: setup
-         type(twstat), intent(in) :: stats
-         type(twsize), intent(in) :: vars
-         type(twfunctions), intent(inout) :: funs
+         type(TwoPntSolverSetup), intent(in) :: setup
+         type(TwoPntSolverStats), intent(in) :: stats
+         type(TwoPntBVPDomain), intent(in) :: vars
+         type(TwoPntBVProblem), intent(inout) :: funs
          logical, intent(out) :: error
          character(*), intent(in) :: report
          real(RK), intent(in) :: ratio(2),x(:),u(:)
@@ -3302,10 +3341,10 @@ module twopnt_core
       ! Perform automatic grid selection
       subroutine refine(this, error, setup, text, active, buffer, vars, mark, newx, &
                         ratio, ratio1, ratio2, success, u, vary1, vary2, weight, x)
-          class(twfunctions), intent(in) :: this
-          type(twcom),  intent(in)     :: setup
+          class(TwoPntBVProblem), intent(in) :: this
+          type(TwoPntSolverSetup),  intent(in)     :: setup
           integer,      intent(in)     :: text
-          type(twsize), intent(inout)  :: vars
+          type(TwoPntBVPDomain), intent(inout)  :: vars
           logical,      intent(inout)  :: error, newx, success
           logical,      intent(inout)  :: active(vars%comps)
           logical,      intent(inout)  :: mark(vars%pmax)
@@ -3690,41 +3729,6 @@ module twopnt_core
 
       end function precision_flag
 
-      !> Check that the requested version is supported
-      subroutine check_version(version_label,text,error)
-         character(len=*), intent(in) :: version_label
-         integer, intent(in) :: text
-         logical, intent(out) :: error
-
-         integer :: j
-         logical :: match_found
-         character(*), parameter :: id = 'TWOPNT:  '
-
-         ! Check all compatible versions for a match
-         match_found = .false.
-         do j = 1, vnmbrs
-            match_found = version_label == precision_flag()//' VERSION ' // vnmbr(j)
-            if (match_found) exit
-         end do
-
-         error = .not.match_found
-
-         if (error .and. text>0) then
-            write (text, 1) id, trim(version_label),precision_flag(),vnmbr(vnmbrs)
-            do j = vnmbrs - 1, 1, - 1
-                write (text,'(10X,A,A)')' CAN REPLACE:  '//precision_flag()//' VERSION ',vnmbr(j)
-            end do
-         end if
-
-         return
-
-         1 format(/1X, a9, 'ERROR.  THE CALLING PROGRAM EXPECTS A VERSION OF' &
-                 /10X, 'TWOPNT NOT COMPATIBLE WITH THIS VERSION.' &
-                //10X, '     EXPECTS:  ', a &
-                //10X, 'THIS VERSION:  ',a,' VERSION ', a)
-
-      end subroutine check_version
-
       ! Print computer time
       function print_time(seconds) result(string)
           real(RK), intent(in) :: seconds
@@ -3745,9 +3749,9 @@ module twopnt_core
       end function print_time
 
       subroutine partition_working_space(this,text,vars,error)
-          class(twwork), intent(inout) :: this
+          class(TwoPntSolverStorage), intent(inout) :: this
           integer,       intent(in)    :: text
-          type(twsize),  intent(in)    :: vars
+          type(TwoPntBVPDomain),  intent(in)    :: vars
           logical,       intent(out)   :: error
 
           character(*), parameter :: id = 'TWOPNT:  '
@@ -3782,9 +3786,9 @@ module twopnt_core
       end subroutine partition_working_space
 
       pure subroutine expand_bounds(this,above,below,vars)
-         class(twwork), intent(inout) :: this
+         class(TwoPntSolverStorage), intent(inout) :: this
          real(RK),      intent(in)    :: above(:),below(:)
-         type(twsize),  intent(in)    :: vars
+         type(TwoPntBVPDomain),  intent(in)    :: vars
 
          integer :: ptr,j,k
 
@@ -3869,7 +3873,7 @@ module twopnt_core
       end subroutine realloc_int
 
       subroutine init_stats(this,points)
-         class(twstat), intent(inout) :: this
+         class(TwoPntSolverStats), intent(inout) :: this
          integer      , intent(in)    :: points
 
           ! Init statistics arrays
@@ -3894,7 +3898,7 @@ module twopnt_core
       end subroutine init_stats
 
       subroutine tock_stats(this,task,event)
-          class(twstat), intent(inout) :: this
+          class(TwoPntSolverStats), intent(inout) :: this
           integer, intent(in) :: task
           logical, optional, intent(in) :: event
 
@@ -3920,13 +3924,13 @@ module twopnt_core
       end subroutine tock_stats
 
       subroutine tick_stats(this,task)
-         class(twstat), intent(inout) :: this
+         class(TwoPntSolverStats), intent(inout) :: this
          integer, intent(in) :: task
          call twtime(this%timer(task))
       end subroutine tick_stats
 
       subroutine stats_new_grid(this,points)
-         class(twstat), intent(inout) :: this
+         class(TwoPntSolverStats), intent(inout) :: this
          integer, intent(in) :: points
 
          ! Complete statistics for the last grid
@@ -3987,7 +3991,7 @@ module twopnt_core
       ! Detailed error message for a case with invalid variable bounds
       subroutine print_invalid_bounds(id,text,vars,below,above)
          integer     , intent(in) :: text
-         type(twsize), intent(in) :: vars
+         type(TwoPntBVPDomain), intent(in) :: vars
          real(RK),     intent(in) :: below(vars%N())
          real(RK),     intent(in) :: above(vars%N())
          character(len=*), intent(in) :: id
@@ -4065,7 +4069,7 @@ module twopnt_core
 
       subroutine print_invalid_ranges(id,text,vars,below,above,v0,s0)
          integer     , intent(in) :: text
-         type(twsize), intent(in) :: vars
+         type(TwoPntBVPDomain), intent(in) :: vars
          real(RK),     intent(in) :: below (vars%N())
          real(RK),     intent(in) :: above (vars%N())
          real(RK),     intent(in) :: v0    (vars%N())
@@ -4179,7 +4183,7 @@ module twopnt_core
 
 
       subroutine print_stats(this,text,adapt)
-         class(twstat), intent(in) :: this
+         class(TwoPntSolverStats), intent(in) :: this
          integer, intent(in) :: text
          logical, intent(in) :: adapt
 
@@ -4274,8 +4278,8 @@ module twopnt_core
 
       ! Decision block: the previous task determines the next
       integer function twopnt_next_task(setup,stats,old_task,found,satisf,allow,report,desire,error) result(qtask)
-          type(twcom),  intent(in)    :: setup
-          type(twstat), intent(inout)  :: stats
+          type(TwoPntSolverSetup),  intent(in)    :: setup
+          type(TwoPntSolverStats), intent(inout)  :: stats
           integer,      intent(in)     :: old_task
           logical,      intent(in)     :: found,satisf
           logical,      intent(inout)  :: allow
