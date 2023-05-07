@@ -160,17 +160,23 @@ module twopnt_core
         real(RK), allocatable :: ratio2(:) ! PMAX
         real(RK), allocatable :: s0(:)     ! (GROUPA + COMPS * PMAX + GROUPB)
         real(RK), allocatable :: s1(:)     ! (GROUPA + COMPS * PMAX + GROUPB)
-        real(RK), allocatable :: usave(:)  ! (GROUPA + COMPS * PMAX + GROUPB)
         real(RK), allocatable :: vsave(:)  ! (GROUPA + COMPS * PMAX + GROUPB)
         real(RK), allocatable :: v1(:)     ! (GROUPA + COMPS * PMAX + GROUPB)
-        real(RK), allocatable :: xsave(:)  ! PMAX
         real(RK), allocatable :: y0(:)     ! (GROUPA + COMPS * PMAX + GROUPB)
         real(RK), allocatable :: y1(:)     ! (GROUPA + COMPS * PMAX + GROUPB)
+
+        ! Saved solution
+        integer :: psave
+        real(RK), allocatable :: xsave(:)  ! PMAX
+        real(RK), allocatable :: usave(:)  ! (GROUPA + COMPS * PMAX + GROUPB)
 
         contains
 
             procedure :: init => partition_working_space
             procedure :: load_bounds => expand_bounds
+
+            procedure :: store_solution
+            procedure :: restore_solution
 
     end type TwoPntSolverStorage
 
@@ -2830,7 +2836,7 @@ module twopnt_core
       character(*), parameter :: id = 'TWOPNT:  '
 
       real(RK) ::  maxcon, ratio(2), stride, ynorm, csave
-      integer :: desire, nsteps, psave, qtask, steps, xrepor, jcount
+      integer :: desire, nsteps, qtask, steps, xrepor, jcount
       intrinsic :: max
       logical :: allow, exist, found, satisf, time
 
@@ -2887,9 +2893,7 @@ module twopnt_core
       call work%load_bounds(above,below,vars)
 
       ! SAVE THE INITIAL SOLUTION.
-      psave = vars%points
-      if (setup%adapt .and. vars%points>0) call twcopy(vars%points, vars%x, work%xsave)
-      call twcopy (vars%N(), u, work%usave)
+      call work%store_solution(u,vars,setup%adapt)
 
       ! Save the last solution
       call twcopy (vars%N(), from=u, to=buffer)
@@ -2927,12 +2931,7 @@ module twopnt_core
                   call this%stats%tock(qgrid)
 
                   ! Restore the solution.
-                  if (report /= ' ') then
-                     ! BE CAREFUL NOT TO ASSIGN A VALUE TO A PARAMETER
-                     if (vars%points /= psave) vars%points = psave
-                     if (setup%adapt .and. vars%points>0) call twcopy(vars%points, work%xsave, vars%x)
-                     call twcopy(vars%N(), work%usave, u)
-                  end if
+                  if (report /= ' ') call work%restore_solution(u,vars,setup%adapt)
 
                   ! Complete the total time statistics
                   call this%stats%tock(qtotal)
@@ -2973,11 +2972,10 @@ module twopnt_core
                   ! REACT TO THE COMPLETION OF SEARCH.
                   save_or_restore: if (found) then
 
-                     psave = vars%points
-                     if (setup%adapt .and. vars%points>0) call twcopy (vars%points, vars%x, work%xsave)
-                     call twcopy(vars%N(), u, work%usave)
-
                      ! Save the last solution
+                     call work%store_solution(u,vars,setup%adapt)
+
+                     ! Let user save last valid solution
                      call twcopy(vars%N(), from=u, to=buffer)
                      call this%save(error,vars,buffer)
 
@@ -3828,6 +3826,32 @@ module twopnt_core
          end do
 
       end subroutine expand_bounds
+
+      ! SAVE THE INITIAL SOLUTION.
+      pure subroutine store_solution(this,u,vars,adapt)
+         class(TwoPntSolverStorage), intent(inout) :: this
+         real(RK), intent(in) :: u(:)
+         type(TwoPntBVPDomain), intent(in) :: vars
+         logical, intent(in) :: adapt
+
+         this%psave = vars%points
+         if (adapt .and. vars%points>0) call twcopy(vars%points, vars%x, this%xsave)
+         call twcopy(vars%N(), u, this%usave)
+      end subroutine store_solution
+
+      ! RESTORE SOLUTION
+      pure subroutine restore_solution(this,u,vars,adapt)
+         class(TwoPntSolverStorage), intent(in) :: this
+         real(RK), intent(inout) :: u(:)
+         type(TwoPntBVPDomain), intent(inout) :: vars
+         logical, intent(in) :: adapt
+
+         ! BE CAREFUL NOT TO ASSIGN A VALUE TO A PARAMETER
+         if (vars%points /= this%psave) vars%points = this%psave
+         if (adapt .and. vars%points>0) call twcopy(vars%points, this%xsave, vars%x)
+         call twcopy(vars%N(), this%usave, u)
+
+      end subroutine restore_solution
 
       pure subroutine realloc_real(array,min_size,error)
          real(RK), allocatable, intent(inout) :: array(:)
