@@ -216,6 +216,9 @@ module twopnt_core
            ! Number of independent variables
            procedure, non_overridable :: NVAR => TwoPntBVPDomain_NVARS
 
+           ! Number of variable groups
+           procedure, non_overridable :: groups => count_groups
+
            ! Check variable sizes
            procedure, non_overridable :: check => TwoPntBVPDomain_checks
            procedure, non_overridable :: check_onGridUpdate => TwoPntBVPDomain_check_grid
@@ -286,7 +289,7 @@ module twopnt_core
            ! Provide dense algebra implementation of Jacobian handling
            procedure, pass(this) :: prep  => twprep
            procedure, nopass     :: solve => twsolv
-           procedure, nopass     :: show => twshow
+           procedure, nopass     :: show  => twshow
 
     end type TwoPntBVProblem
 
@@ -336,12 +339,11 @@ module twopnt_core
        end subroutine twopnt_save
 
        ! Pass control to the problem handler on a grid update
-       subroutine twopnt_grid_update(error,vars,x,u)
+       subroutine twopnt_grid_update(error,vars,u)
           import RK, TwoPntBVPDomain
           implicit none
           logical, intent(out)     :: error
           type(TwoPntBVPDomain), intent(in) :: vars
-          real(RK), intent(in)     :: x(vars%N())
           real(RK), intent(inout)  :: u(:)
        end subroutine twopnt_grid_update
 
@@ -367,15 +369,14 @@ module twopnt_core
 
 
        ! Wrapper to grid update
-       subroutine grid_wrapper(this,error,vars,x,u)
+       subroutine grid_wrapper(this,error,vars,u)
           class(TwoPntBVProblem), intent(inout) :: this
           logical, intent(out)     :: error
           type(TwoPntBVPDomain), intent(in) :: vars
-          real(RK), intent(in)     :: x(vars%N())
           real(RK), intent(inout)  :: u(:)
 
           if (associated(this%update_grid)) then
-             call this%update_grid(error,vars,x,u)
+             call this%update_grid(error,vars,u)
           else
              error = .true.
           endif
@@ -452,6 +453,15 @@ module twopnt_core
           end if
 
        end function TwoPntBVPDomain_idx_B
+
+       ! Number of variable groups
+       elemental integer function count_groups(this) result(groups)
+          class(TwoPntBVPDomain), intent(in) :: this
+          groups = 0
+          if (0 < this%groupa) groups = groups + 1
+          if (0 < this%groupb) groups = groups + 1
+          if (this%comps>0 .and. this%points>0) groups = groups + 1
+       end function count_groups
 
        ! Set a uniform grid
        pure subroutine set_uniform_grid(this,XRANGE)
@@ -1166,12 +1176,12 @@ module twopnt_core
       ! MATH
       ! *******************************************************************************************************
 
-      subroutine twshow(error, text, buffer, vars, grid, x)
+      subroutine twshow(error, text, buffer, vars, grid)
           logical,      intent(out) :: error
           integer,      intent(in)  :: text
           type(TwoPntBVPDomain), intent(in) :: vars
           logical,      intent(in)  :: grid
-          real(RK),     intent(in) :: buffer(vars%N()), x(*)
+          real(RK),     intent(in) :: buffer(vars%N())
 
           ! Local variables
           character(len=80) :: string, title(6)
@@ -1183,20 +1193,13 @@ module twopnt_core
           call vars%check(error,id,text)
           if (error) return
 
-          !///  COUNT THE GROUPS.
-          groups = 0
-          if (0 < vars%groupa) groups = groups + 1
-          if (0 < vars%groupb) groups = groups + 1
-          if (vars%comps>0 .and. vars%points>0) groups = groups + 1
+          ! COUNT THE GROUPS.
+          groups = vars%groups()
 
-          !///  CHOOSE NUMBER OF DATA COLUMNS.
+          ! CHOOSE NUMBER OF DATA COLUMNS.
           cols = merge(5,6,grid)
 
-          !///////////////////////////////////////////////////////////////////////
-          !
-          !
-          !
-          !///////////////////////////////////////////////////////////////////////
+          ! Print data
           print_data: if (text>0) then
 
               ! (2) PRINT THE GROUPED DATA.
@@ -1235,7 +1238,7 @@ module twopnt_core
 
                     if (count == cols) then
                        if (grid) then
-                          write (text, 14) (point, x(point), (buffer(vars%idx_comp(comp,point)), &
+                          write (text, 14) (point, vars%x(point), (buffer(vars%idx_comp(comp,point)), &
                              comp = first, last), point = 1, vars%points)
                        else
                           write (text, 15) (point, (buffer(vars%idx_comp(comp,point)), &
@@ -1244,7 +1247,7 @@ module twopnt_core
                     else
                        do point = 1, vars%points
                           if (grid) then
-                             write (text, 14) point, x(point), (buffer(vars%idx_comp(comp,point)), &
+                             write (text, 14) point, vars%x(point), (buffer(vars%idx_comp(comp,point)), &
                                 comp = first, last)
                           else
                              write (text, 15) point, (buffer(vars%idx_comp(comp,point)), comp = first, last)
@@ -1646,7 +1649,7 @@ module twopnt_core
       ! Evaluate a block tridiagonal Jacobian matrix by one-sided finite differences and reverse
       ! communication, pack the matrix into the LINPACK banded form, scale the rows, and factor the
       ! matrix using LINPACK's SGBCO
-      subroutine twprep(this, error, text, jac, buffer, vars, condit, time, stride, x)
+      subroutine twprep(this, error, text, jac, buffer, vars, condit, time, stride)
           class(TwoPntBVProblem), intent(inout) :: this
           logical,      intent(out)   :: error
           integer,      intent(in)    :: text ! output unit
@@ -1656,7 +1659,6 @@ module twopnt_core
           real(RK),     intent(inout) :: condit
           logical ,     intent(in)    :: time
           real(RK),     intent(in)    :: stride
-          real(RK),     intent(in)    :: x(:) ! mesh
 
           real(RK) :: delta, temp
           integer :: block, blocks, cfirst, clast, col, count, diag, j, lda, n, offset, &
@@ -1724,7 +1726,7 @@ module twopnt_core
           jac%a(n+1:n+lda*n) = zero
 
           ! EVALUATE THE FUNCTION AT THE UNPERTURBED X.
-          call this%f(error,text,vars%points,time,stride,x,buffer)
+          call this%f(error,text,vars%points,time,stride,vars%x,buffer)
           if (error) return
 
           ! Place function values into the matrix.
@@ -1791,7 +1793,7 @@ module twopnt_core
               if (.not. found) exit column_groups
 
               ! EVALUATE THE FUNCTION AT THE PERTURBED VALUES.
-              call this%f(error,text,vars%points,time,stride,x,buffer)
+              call this%f(error,text,vars%points,time,stride,vars%x,buffer)
               if (error) return
 
               ! DIFFERENCE TO FORM THE COLUMNS OF THE JACOBIAN MATRIX.
@@ -2048,7 +2050,7 @@ module twopnt_core
 
       ! Perform time evolution
       subroutine evolve(this, setup, error, text, above, below, buffer, vars, condit, desire, report, s0, s1, &
-                        stride, success, time, v0, v1, vsave, y0, y1, ynorm, x, jac)
+                        stride, success, time, v0, v1, vsave, y0, y1, ynorm, jac)
       type(TwoPntBVProblem), intent(inout) :: this
       type(TwoPntSolverSetup),      intent(in)    :: setup
       integer,          intent(in)    :: text
@@ -2058,7 +2060,7 @@ module twopnt_core
       integer,          intent(in)    :: desire ! Desired number of timesteps
       real(RK),         intent(inout) :: ynorm,stride
       integer,          intent(out)   :: report
-      real(RK), dimension(vars%N()), intent(in)    :: above,below,x
+      real(RK), dimension(vars%N()), intent(in)    :: above,below
       real(RK), dimension(vars%N()), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1,vsave
 
       type(twjac)      , intent(inout) :: jac
@@ -2109,7 +2111,7 @@ module twopnt_core
       if (levelm>0 .and. text>0) then
          buffer = v0
          time   = .false.
-         call this%f(error,text,vars%points,time,stride,x,buffer)
+         call this%f(error,text,vars%points,time,stride,vars%x,buffer)
          if (error) then
             if (levelm>1.and.text>0) write (text, 21) id, 'RESIDUAL'
             return
@@ -2145,7 +2147,7 @@ module twopnt_core
               time  = .true.
               call search(this, error, text, above, below, buffer, vars, condit, exist, &
                           leveld - 1, levelm - 1, xrepor, s0, s1, number, xsucce, v0, v1, setup%tdabs, setup%tdage, &
-                          setup%tdrel, y0, dummy, y1, x, time, stride, jac, count, csave, jword)
+                          setup%tdrel, y0, dummy, y1, time, stride, jac, count, csave, jword)
               if (error) then
                  if (text>0) write (text, 29) id
                  return
@@ -2205,7 +2207,7 @@ module twopnt_core
 
           buffer = v0
           time = .false.
-          call this%f(error,text,vars%points,time,stride,x,buffer)
+          call this%f(error,text,vars%points,time,stride,vars%x,buffer)
           if (error) then
              if (levelm>1.and.text>0) write (text, 21) id, 'RESIDUAL'
              return
@@ -2235,7 +2237,7 @@ module twopnt_core
 
          if (first<last .and. leveld==1) then
             write (text, 15) id
-            call this%show(error,text,v0,vars,.true.,x)
+            call this%show(error,text,v0,vars,.true.)
             if (error) then
                if (levelm>1.and.text>0) write (text, 21) id, 'SHOW'
                return
@@ -2345,7 +2347,7 @@ module twopnt_core
       ! Perform the damped, modified Newton's search
       subroutine search(this, error, text, above, below, buffer, vars, condit, exist, &
                         leveld, levelm, report, s0, s1, steps, &
-                        success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, x, time, stride, jac, &
+                        success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, time, stride, jac, &
                         jcount, csave, jword)
           class(TwoPntBVProblem), intent(inout) :: this
           type(TwoPntBVPDomain)    , intent(in)    :: vars
@@ -2355,7 +2357,7 @@ module twopnt_core
           integer         , intent(in)    :: text
           real(RK)        , intent(in)    :: xxabs,xxrel ! settings
           integer         , intent(in)    :: xxage
-          real(RK), dimension(vars%N()), intent(in)    :: above,below,x
+          real(RK), dimension(vars%N()), intent(in)    :: above,below
           real(RK), dimension(vars%N()), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1
 
           logical          , intent(in)    :: time
@@ -2443,7 +2445,7 @@ module twopnt_core
                   call twcopy(vars%N(),v0,buffer)
 
                   ! Prepare Jacobian
-                  call this%jac_prep(error,text,jac,buffer,vars,condit,time,stride,x)
+                  call this%jac_prep(error,text,jac,buffer,vars,condit,time,stride)
 
                   ! Update condition number
                   jcount = jcount + 1
@@ -2465,7 +2467,7 @@ module twopnt_core
 
                   ! EVALUATE Y0 := F(V0).
                   buffer = v0
-                  call this%f(error,text,vars%points,time,stride,x,buffer)
+                  call this%f(error,text,vars%points,time,stride,vars%x,buffer)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'RESIDUAL'
                       return
@@ -2534,7 +2536,7 @@ module twopnt_core
 
                   ! EVALUATE Y1 := F(V1)
                   buffer = v1
-                  call this%f(error,text,vars%points,time,stride,x,buffer)
+                  call this%f(error,text,vars%points,time,stride,vars%x,buffer)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'RESIDUAL'
                       return
@@ -2603,7 +2605,7 @@ module twopnt_core
              if (leveld>0) then
                 ! Ask to display the final solution
                 write (text, 3) id
-                call this%show(error,text,v0,vars,.true.,x)
+                call this%show(error,text,v0,vars,.true.)
                 if (error) then
                     if (text>0) write (text, 5) id, 'SHOW'
                     return
@@ -2808,7 +2810,7 @@ module twopnt_core
 
       ! TWOPNT driver.
       subroutine twopnt(this, setup, error, text, vars, above, active, below, buffer, &
-                        condit, work, mark, report, stride, time, u, x, jac)
+                        condit, work, mark, report, stride, time, u, jac)
 
          class(TwoPntBVProblem), intent(inout) :: this
       type(TwoPntSolverSetup) , intent(inout) :: setup
@@ -2822,7 +2824,6 @@ module twopnt_core
       real(RK)    , intent(inout) :: condit
       type(TwoPntSolverStorage), intent(inout) :: work
       real(RK)    , intent(inout) :: u(vars%NMAX())
-      real(RK)    , intent(inout) :: x(:)
       type(twjac) , intent(inout) :: jac
 
       ! Local variables
@@ -2887,7 +2888,7 @@ module twopnt_core
 
       ! SAVE THE INITIAL SOLUTION.
       psave = vars%points
-      if (setup%adapt .and. vars%points>0) call twcopy(vars%points, x, work%xsave)
+      if (setup%adapt .and. vars%points>0) call twcopy(vars%points, vars%x, work%xsave)
       call twcopy (vars%N(), u, work%usave)
 
       ! Save the last solution
@@ -2897,11 +2898,11 @@ module twopnt_core
       ! PRINT LEVELS 11, 21, AND 22.
       if (setup%leveld>0 .and. text>0) then
          write (text, 10) id, 'INITIAL GUESS:'
-         call this%show(error,text,u,vars,.true.,x)
+         call this%show(error,text,u,vars,.true.)
       end if
 
       ! PRINT LEVEL 10 AND 11.
-      call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,x,u,stride,maxcon,nsteps,steps,ratio)
+      call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,maxcon,nsteps,steps,ratio)
 
       !///////////////////////////////////////////////////////////////////////
       !
@@ -2929,7 +2930,7 @@ module twopnt_core
                   if (report /= ' ') then
                      ! BE CAREFUL NOT TO ASSIGN A VALUE TO A PARAMETER
                      if (vars%points /= psave) vars%points = psave
-                     if (setup%adapt .and. vars%points>0) call twcopy(vars%points, work%xsave, x)
+                     if (setup%adapt .and. vars%points>0) call twcopy(vars%points, work%xsave, vars%x)
                      call twcopy(vars%N(), work%usave, u)
                   end if
 
@@ -2937,7 +2938,7 @@ module twopnt_core
                   call this%stats%tock(qtotal)
 
                   ! TOP OF THE REPORT BLOCK.
-                  call twopnt_final_report(setup,this%stats,vars,this,text,x,u,report,ratio,error)
+                  call twopnt_final_report(setup,this%stats,vars,this,text,u,report,ratio,error)
                   exit new_task
 
               case (qsearc) ! *** SEARCH BLOCK. ***
@@ -2961,7 +2962,7 @@ module twopnt_core
                              exist, setup%leveld - 1, setup%levelm - 1, &
                              xrepor, work%s0, work%s1, nsteps, found, &
                              u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
-                             work%y1, x, time, stride, jac, jcount, csave, jword)
+                             work%y1, time, stride, jac, jcount, csave, jword)
                   if (error) then
                       if (text>0) write (text, 4) id
                       exit new_task
@@ -2973,7 +2974,7 @@ module twopnt_core
                   save_or_restore: if (found) then
 
                      psave = vars%points
-                     if (setup%adapt .and. vars%points>0) call twcopy (vars%points, x, work%xsave)
+                     if (setup%adapt .and. vars%points>0) call twcopy (vars%points, vars%x, work%xsave)
                      call twcopy(vars%N(), u, work%usave)
 
                      ! Save the last solution
@@ -2989,7 +2990,7 @@ module twopnt_core
                   call this%stats%tock(qsearc)
 
                   ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE SEARCH BLOCK.
-                  call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,x,u,stride,maxcon,nsteps,steps,ratio)
+                  call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,maxcon,nsteps,steps,ratio)
 
               case (qrefin) ! *** REFINE BLOCK. ***
 
@@ -3008,7 +3009,7 @@ module twopnt_core
                   ! CALL REFINE.
                   call refine(this, error, setup, text, active, buffer(vars%groupa+1), vars, mark, &
                               found, ratio, work%ratio1, work%ratio2, satisf, u(vars%groupa + 1), &
-                              work%vary1, work%vary2, work%vary, x)
+                              work%vary1, work%vary2, work%vary)
                   if (error) then
                       if (text>0) write (text, 5) id
                       exit new_task
@@ -3036,7 +3037,7 @@ module twopnt_core
                   call this%stats%tock(qrefin)
 
                   ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE REFINE BLOCK.
-                  call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,x,u,stride,maxcon,nsteps,steps,ratio)
+                  call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,maxcon,nsteps,steps,ratio)
 
                   ! PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE REFINE BLOCK.
                   if (setup%levelm>1) then
@@ -3059,7 +3060,7 @@ module twopnt_core
                   ! CALL EVOLVE.
                   call evolve(this, setup, error, text, work%above, work%below, buffer, vars, condit, &
                               desire, xrepor, work%s0, work%s1, stride, found, time, u, work%v1, &
-                              work%vsave, work%y0, work%y1, ynorm, x, jac)
+                              work%vsave, work%y0, work%y1, ynorm, jac)
                   if (error) then
                       if (text>0) write (text, 6) id
                       exit new_task
@@ -3082,7 +3083,7 @@ module twopnt_core
                   maxcon = condit
 
                   ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE EVOLVE BLOCK.
-                  call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,x,u,stride,maxcon,nsteps,steps,ratio)
+                  call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,maxcon,nsteps,steps,ratio)
 
               case default
                   error = .true.
@@ -3132,13 +3133,13 @@ module twopnt_core
 
       end subroutine twopnt
 
-      subroutine twopnt_print_step(setup,vars,funs,text,qtask,xrepor,found,x,u,stride,maxcon,search_steps,time_steps,ratio)
+      subroutine twopnt_print_step(setup,vars,funs,text,qtask,xrepor,found,u,stride,maxcon,search_steps,time_steps,ratio)
           type(TwoPntSolverSetup), intent(in) :: setup
           type(TwoPntBVPDomain), intent(in) :: vars
           type(TwoPntBVProblem), intent(inout) :: funs
           integer, intent(in) :: text,qtask,xrepor
           logical, intent(in) :: found
-          real(RK), intent(in) :: u(:),stride,x(:),maxcon,ratio(2)
+          real(RK), intent(in) :: u(:),stride,maxcon,ratio(2)
           integer, intent(in) :: search_steps,time_steps
 
           character(len=80) :: column(3),header(2),string
@@ -3159,7 +3160,7 @@ module twopnt_core
           if (found) then
              ! EVALUATE THE STEADY STATE FUNCTION.
              call twcopy(vars%N(),from=u,to=buffer)
-             call funs%fun(error,text,vars%points,.false.,stride,x,buffer)
+             call funs%fun(error,text,vars%points,.false.,stride,vars%x,buffer)
              call twlogr(column(2),twnorm(vars%N(),buffer))
           endif
 
@@ -3230,14 +3231,14 @@ module twopnt_core
 
       end subroutine twopnt_print_step
 
-      subroutine twopnt_final_report(setup,stats,vars,funs,text,x,u,report,ratio,error)
+      subroutine twopnt_final_report(setup,stats,vars,funs,text,u,report,ratio,error)
          type(TwoPntSolverSetup), intent(in) :: setup
          type(TwoPntSolverStats), intent(in) :: stats
          type(TwoPntBVPDomain), intent(in) :: vars
          type(TwoPntBVProblem), intent(inout) :: funs
          logical, intent(out) :: error
          character(*), intent(in) :: report
-         real(RK), intent(in) :: ratio(2),x(:),u(:)
+         real(RK), intent(in) :: ratio(2),u(:)
          integer, intent(in) :: text
 
          character(*), parameter :: id = 'TWOPNT:  '
@@ -3249,7 +3250,7 @@ module twopnt_core
          ! Print the last solution
          if (setup%leveld==1) then
              write (text, 6) id, 'FINAL SOLUTION:'
-             call funs%show(error,text,u,vars,.true.,x)
+             call funs%show(error,text,u,vars,.true.)
          endif
 
          call stats%print_stats(text,setup%adapt)
@@ -3340,7 +3341,7 @@ module twopnt_core
 
       ! Perform automatic grid selection
       subroutine refine(this, error, setup, text, active, buffer, vars, mark, newx, &
-                        ratio, ratio1, ratio2, success, u, vary1, vary2, weight, x)
+                        ratio, ratio1, ratio2, success, u, vary1, vary2, weight)
           class(TwoPntBVProblem), intent(in) :: this
           type(TwoPntSolverSetup),  intent(in)     :: setup
           integer,      intent(in)     :: text
@@ -3348,7 +3349,7 @@ module twopnt_core
           logical,      intent(inout)  :: error, newx, success
           logical,      intent(inout)  :: active(vars%comps)
           logical,      intent(inout)  :: mark(vars%pmax)
-          real(RK),     intent(inout)  :: ratio1(vars%pmax),ratio2(vars%pmax),ratio(2),x(vars%pmax)
+          real(RK),     intent(inout)  :: ratio1(vars%pmax),ratio2(vars%pmax),ratio(2)
           real(RK),     intent(inout)  :: buffer(vars%comps*vars%pmax),u(vars%comps,vars%pmax)
           integer,      intent(inout), dimension(vars%pmax) :: vary1,vary2,weight
 
@@ -3397,7 +3398,7 @@ module twopnt_core
           end if
 
           ! Check monotonic
-          counted = count(x(1:vars%points-1)<x(2:vars%points))
+          counted = count(vars%x(1:vars%points-1)<vars%x(2:vars%points))
           error = .not. (counted==0 .or. counted==vars%points-1)
           if (error) then
               if (text>0) write (text, 108) id
@@ -3445,11 +3446,11 @@ module twopnt_core
              end do max_du
 
              ! find the global change of the component'S DERIVATIVE.
-             temp  = grad(u,x,comp=j,point=1)
+             temp  = grad(u,vars%x,comp=j,point=1)
              lower = temp
              upper = temp
              max_grad: do k = 2, vars%points - 1
-                 temp  = grad(u,x,comp=j,point=k)
+                 temp  = grad(u,vars%x,comp=j,point=k)
                  lower = min(lower, temp)
                  upper = max(upper, temp)
              end do max_grad
@@ -3457,10 +3458,10 @@ module twopnt_core
 
              ! at each interior point, see whether the derivative'S CHANGE
              ! exceeds some fraction of the derivative'S GLOBAL CHANGE.
-             right =  grad(u,x,comp=j,point=1)
+             right =  grad(u,vars%x,comp=j,point=1)
              do k = 2, vars%points - 1
                  left = right
-                 right = grad(u,x,comp=j,point=k)
+                 right = grad(u,vars%x,comp=j,point=k)
                  differ = abs (left - right)
                  if (zero<range) ratio2(k) = max (ratio2(k), differ / range)
                  if (toler2 * range < differ) vary2(k) = vary2(k) + 1
@@ -3539,13 +3540,13 @@ module twopnt_core
           add_points: if (more>0) then
 
               counted = 0
-              length  = abs(x(vars%points) - x(1))
+              length  = abs(vars%x(vars%points) - vars%x(1))
               check_degenerate: do k = 1, vars%points - 1
                  if (mark(k)) then
-                    mean = half*(x(k)+x(k+1))
+                    mean = half*(vars%x(k)+vars%x(k+1))
                     ! Check this interval is not degenerate
-                    if (.not. ((x(k)  <mean .and. mean<x(k+1)) .or. &
-                               (x(k+1)<mean .and. mean<x(k)))) counted = counted + 1
+                    if (.not. ((vars%x(k)  <mean .and. mean<vars%x(k+1)) .or. &
+                               (vars%x(k+1)<mean .and. mean<vars%x(k)))) counted = counted + 1
                  end if
               end do check_degenerate
               error = counted>0
@@ -3559,15 +3560,15 @@ module twopnt_core
               new_points: do old = vars%points, 2, - 1
 
                  ! Copy right boundary
-                 x(new)   = x(old)
+                 vars%x(new)   = vars%x(old)
                  u(:,new) = u(:,old)
 
                  new = new - 1
 
                  ! Interpolate solution and location
                  if (mark(old-1)) then
-                    x(new)   = half*(x(old)+x(old-1))
-                    u(:,new) = half*(u(:,old)+u(:,old-1))
+                    vars%x(new) = half*(vars%x(old)+vars%x(old-1))
+                    u(:,new)    = half*(u(:,old)+u(:,old-1))
                     new = new - 1
                  end if
               end do new_points
@@ -3589,7 +3590,7 @@ module twopnt_core
 
               ! Allow the user to update the solution.
               call twcopy(vars%comps*vars%points,from=u,to=buffer)
-              call this%update_grid(error,vars,x,buffer)
+              call this%update_grid(error,vars,buffer)
               call twcopy(vars%comps*vars%points,from=buffer,to=u)
               if (error) then
                  if (levelm>0 .and. text>0) write(text, 101)
@@ -3629,7 +3630,7 @@ module twopnt_core
                                 write (word, '(F4.2, I4)') ratio1(old - 1)
                              end if
                              if (mark(k - 1)) then
-                                write (text, 7) k - 1, x(k - 1), word
+                                write (text, 7) k - 1, vars%x(k - 1), word
                              else
                                 write (text, 8) word
                              end if
@@ -3641,9 +3642,9 @@ module twopnt_core
                              else
                                  write (word, '(F4.2, I4)') ratio2(old)
                              end if
-                             write (text, 9) k, x(k), word
+                             write (text, 9) k, vars%x(k), word
                           else
-                             write (text, 9) k, x(k)
+                             write (text, 9) k, vars%x(k)
                           end if
                        end if
                     end do
@@ -3654,7 +3655,7 @@ module twopnt_core
                 write (text, 10) id
                 call twcopy(vars%comps*vars%points,from=u,to=buffer)
                 ! CAREFUL! buffer here does not have the group-A variables
-                call this%show(error,text,buffer,vars,.true.,x)
+                call this%show(error,text,buffer,vars,.true.)
                 if (error) return
              end if
           end if

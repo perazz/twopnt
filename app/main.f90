@@ -46,7 +46,7 @@ program TWMAIN
     real(RK) :: ABOVE(COMPS), BELOW(COMPS)
     real(RK), dimension(COMPS*PMAX) :: BUFFER
     real(RK), dimension(COMPS,PMAX) :: U,U0
-    real(RK), dimension(PMAX) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0,X
+    real(RK), dimension(PMAX) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0
     real(RK) :: CONDIT,STRIDE
     logical  :: ACTIVE(COMPS), MARK(PMAX)
     INTEGER :: J, N
@@ -101,9 +101,6 @@ program TWMAIN
 
     ! INITIALIZE ARRAYS FOR TWOPNT.
 
-    ! FORM THE INITIAL GRID.
-    FORALL(J=1:sizes%POINTS) X(J) = ZMAX*(REAL(J-1,RK)/REAL(sizes%POINTS-1,RK))
-
     ! CHOOSE GUESSES FOR THE UNKNOWNS.
     init_unknowns: DO J = 1, sizes%POINTS
 
@@ -111,16 +108,16 @@ program TWMAIN
          U(1, J) = zero
 
          ! G
-         U(2, J) = OMEGA * X(J) / ZMAX
+         U(2, J) = OMEGA * sizes%X(J) / ZMAX
 
          ! H
-         U(3, J) = WMAX * (one - X(J) / ZMAX)
+         U(3, J) = WMAX * (one - sizes%X(J) / ZMAX)
 
          ! LAMBDA
          U(4, J) = zero
 
          ! T
-         U(5, J) = (one - X(J) / ZMAX) * TZERO + (X(J) / ZMAX) * TMAX
+         U(5, J) = (one - sizes%X(J) / ZMAX) * TZERO + (sizes%X(J) / ZMAX) * TMAX
 
     end do init_unknowns
 
@@ -145,7 +142,7 @@ program TWMAIN
 
     ! Call driver
     call problem%run(settings, ERROR, TEXT, sizes, ABOVE, ACTIVE, BELOW, BUFFER, CONDIT, &
-                     WORK, MARK, REPORT, STRIDE, TIME, U, X, jac)
+                     WORK, MARK, REPORT, STRIDE, TIME, U, jac)
 
     ! WRITE A SUMMARY.
     WRITE (TEXT, 10001) ID, U(4, 1), OMEGA, TZERO, TMAX, WMAX
@@ -196,10 +193,9 @@ program TWMAIN
       end subroutine residual
 
       ! Grid update function interface
-      subroutine on_grid_update(error,vars,x,u)
+      subroutine on_grid_update(error,vars,u)
          logical, intent(out)     :: error
          type(TwoPntBVPDomain), intent(in) :: vars
-         real(RK), intent(in)     :: x(vars%N())
          real(RK), intent(inout)  :: u(:)
 
          N = vars%N()
