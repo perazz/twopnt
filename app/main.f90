@@ -47,7 +47,7 @@ program TWMAIN
     real(RK), dimension(COMPS*PMAX) :: BUFFER
     real(RK), dimension(COMPS,PMAX) :: U,U0
     real(RK), dimension(PMAX) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0
-    real(RK) :: CONDIT,STRIDE
+    real(RK) :: STRIDE
     logical  :: ACTIVE(COMPS), MARK(PMAX)
     INTEGER :: J, N
     LOGICAL :: ERROR, TIME
@@ -141,7 +141,7 @@ program TWMAIN
     problem%update_grid => on_grid_update
 
     ! Call driver
-    call problem%run(settings, ERROR, TEXT, sizes, ABOVE, ACTIVE, BELOW, BUFFER, CONDIT, &
+    call problem%run(settings, ERROR, TEXT, sizes, ABOVE, ACTIVE, BELOW, BUFFER, &
                      WORK, MARK, REPORT, STRIDE, TIME, U, jac)
 
     ! WRITE A SUMMARY.

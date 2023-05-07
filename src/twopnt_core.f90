@@ -272,7 +272,7 @@ module twopnt_core
 
     type, public :: TwoPntBVProblem
 
-        ! Counters for all functions
+        !> Counters for all functions
         type(TwoPntSolverStats) :: stats
 
         ! These functions need to be implemented by the user
@@ -301,6 +301,9 @@ module twopnt_core
 
     ! Jacobian matrix storage
     type, public :: twjac
+
+        !> Jacobian condition number
+        real(RK) :: condit = zero
 
         real(RK), allocatable :: A(:)
         integer :: ASIZE = 0
@@ -1655,14 +1658,13 @@ module twopnt_core
       ! Evaluate a block tridiagonal Jacobian matrix by one-sided finite differences and reverse
       ! communication, pack the matrix into the LINPACK banded form, scale the rows, and factor the
       ! matrix using LINPACK's SGBCO
-      subroutine twprep(this, error, text, jac, buffer, vars, condit, time, stride)
+      subroutine twprep(this, error, text, jac, buffer, vars, time, stride)
           class(TwoPntBVProblem), intent(inout) :: this
           logical,      intent(out)   :: error
           integer,      intent(in)    :: text ! output unit
           type(twjac),  intent(inout) :: jac
           type(TwoPntBVPDomain), intent(in)    :: vars
           real(RK),     intent(inout) :: buffer(vars%N())
-          real(RK),     intent(inout) :: condit
           logical ,     intent(in)    :: time
           real(RK),     intent(in)    :: stride
 
@@ -1883,13 +1885,13 @@ module twopnt_core
           end if
 
           ! ***** (6) FACTOR THE MATRIX.
-          call twgbco(jac%a(n+1), lda, n, width, width, jac%pivot, condit, buffer)
-          error = condit == zero
+          call twgbco(jac%a(n+1), lda, n, width, width, jac%pivot, jac%condit, buffer)
+          error = jac%condit == zero
           if (error) then
               if (text>0) write (text, 3) id
               return
           end if
-          condit = one/condit
+          jac%condit = one/jac%condit
 
           return
 
@@ -2055,7 +2057,7 @@ module twopnt_core
       end subroutine twlaps
 
       ! Perform time evolution
-      subroutine evolve(this, setup, error, text, above, below, buffer, vars, condit, desire, report, s0, s1, &
+      subroutine evolve(this, setup, error, text, above, below, buffer, vars, desire, report, s0, s1, &
                         stride, success, time, v0, v1, vsave, y0, y1, ynorm, jac)
       type(TwoPntBVProblem), intent(inout) :: this
       type(TwoPntSolverSetup),      intent(in)    :: setup
@@ -2071,7 +2073,7 @@ module twopnt_core
 
       type(twjac)      , intent(inout) :: jac
 
-      real(RK)  :: change,condit,csave,dummy,high,low
+      real(RK)  :: change,csave,dummy,high,low
       integer   :: count,first,last,number,xrepor
       intrinsic :: log10, max, min
       logical   :: exist,success,xsucce,new_dt
@@ -2151,7 +2153,7 @@ module twopnt_core
 
               ! All functions within here are done with time = .true.
               time  = .true.
-              call search(this, error, text, above, below, buffer, vars, condit, exist, &
+              call search(this, error, text, above, below, buffer, vars, exist, &
                           leveld - 1, levelm - 1, xrepor, s0, s1, number, xsucce, v0, v1, setup%tdabs, setup%tdage, &
                           setup%tdrel, y0, dummy, y1, time, stride, jac, count, csave, jword)
               if (error) then
@@ -2351,7 +2353,7 @@ module twopnt_core
       end function decrease_timestep
 
       ! Perform the damped, modified Newton's search
-      subroutine search(this, error, text, above, below, buffer, vars, condit, exist, &
+      subroutine search(this, error, text, above, below, buffer, vars, exist, &
                         leveld, levelm, report, s0, s1, steps, &
                         success, v0, v1, xxabs, xxage, xxrel, y0, y0norm, y1, time, stride, jac, &
                         jcount, csave, jword)
@@ -2373,7 +2375,7 @@ module twopnt_core
           real(RK)         , intent(out)   :: csave
           character(len=80), intent(out)   :: jword
 
-          real(RK) :: abs0,abs1, condit, deltab, deltad, rel0, rel1, s0norm, s1norm, &
+          real(RK) :: abs0,abs1, deltab, deltad, rel0, rel1, s0norm, s1norm, &
                       value, y0norm, y1norm
           integer  :: entry, expone, leveld, levelm
           intrinsic :: abs, int, log10, max, min, mod
@@ -2451,11 +2453,11 @@ module twopnt_core
                   call twcopy(vars%N(),v0,buffer)
 
                   ! Prepare Jacobian
-                  call this%jac_prep(error,text,jac,buffer,vars,condit,time,stride)
+                  call this%jac_prep(error,text,jac,buffer,vars,time,stride)
 
                   ! Update condition number
                   jcount = jcount + 1
-                  csave = max(condit, csave)
+                  csave = max(jac%condit, csave)
                   if (csave == zero) then
                      write (jword, '(I3, 3X, A6)') jcount, '    NA'
                   else
@@ -2516,7 +2518,7 @@ module twopnt_core
                  if (update_jac) cycle newton_iterations
 
                  if (levelm>0 .and. text>0) then
-                    call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
+                    call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,jac%condit)
                     call print_invalid_ranges(id,text,vars,below,above,v0,s0)
                  end if
 
@@ -2577,7 +2579,7 @@ module twopnt_core
 
                  ! Failed too many times.
                  if (levelm>0 .and. text>0) then
-                    call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
+                    call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,jac%condit)
                     write (text, 1) id
                  end if
 
@@ -2589,7 +2591,7 @@ module twopnt_core
 
               ! Print summary.
               if (levelm>0 .and. text>0) &
-              call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
+              call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,jac%condit)
 
               ! Advance step
               steps  = steps + 1
@@ -2606,7 +2608,7 @@ module twopnt_core
 
           ! Print summary.
           if (levelm>0 .and. text>0) then
-             call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,condit)
+             call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,jac%condit)
 
              if (leveld>0) then
                 ! Ask to display the final solution
@@ -2816,7 +2818,7 @@ module twopnt_core
 
       ! TWOPNT driver.
       subroutine twopnt(this, setup, error, text, vars, above, active, below, buffer, &
-                        condit, work, mark, report, stride, time, u, jac)
+                        work, mark, report, stride, time, u, jac)
 
          class(TwoPntBVProblem), intent(inout) :: this
       type(TwoPntSolverSetup) , intent(inout) :: setup
@@ -2827,7 +2829,6 @@ module twopnt_core
       real(RK)    , intent(inout), dimension(vars%NVAR()) :: above,below
       logical     , intent(inout) :: active(*),mark(*)
       real(RK)    , intent(inout) :: buffer(vars%NMAX())
-      real(RK)    , intent(inout) :: condit
       type(TwoPntSolverStorage), intent(inout) :: work
       real(RK)    , intent(inout) :: u(vars%NMAX())
       type(twjac) , intent(inout) :: jac
@@ -2835,7 +2836,7 @@ module twopnt_core
       ! Local variables
       character(*), parameter :: id = 'TWOPNT:  '
 
-      real(RK) ::  maxcon, ratio(2), stride, ynorm, csave
+      real(RK) ::  ratio(2), stride, ynorm, csave
       integer :: desire, nsteps, qtask, steps, xrepor, jcount
       intrinsic :: max
       logical :: allow, exist, found, satisf, time
@@ -2848,7 +2849,6 @@ module twopnt_core
       time   = .false.
       error  = .false.
       report = ' '
-      maxcon = zero
       stride = zero
       ratio  = zero
       xrepor = qnull
@@ -2906,7 +2906,7 @@ module twopnt_core
       end if
 
       ! PRINT LEVEL 10 AND 11.
-      call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,maxcon,nsteps,steps,ratio)
+      call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,jac%condit,nsteps,steps,ratio)
 
       !///////////////////////////////////////////////////////////////////////
       !
@@ -2944,8 +2944,6 @@ module twopnt_core
 
                   ! INITIALIZE STATISTICS ON ENTRY TO THE SEARCH BLOCK.
                   call this%stats%tick(qsearc)
-                  maxcon = zero
-
 
                   ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE SEARCH BLOCK.
                   if (setup%levelm>1 .and. text>0) write (text, 11) id
@@ -2957,7 +2955,7 @@ module twopnt_core
                   exist = .false.
 
                   ! CALL SEARCH.
-                  call search(this, error, text, work%above, work%below, buffer, vars, condit, &
+                  call search(this, error, text, work%above, work%below, buffer, vars, &
                              exist, setup%leveld - 1, setup%levelm - 1, &
                              xrepor, work%s0, work%s1, nsteps, found, &
                              u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
@@ -2966,8 +2964,6 @@ module twopnt_core
                       if (text>0) write (text, 4) id
                       exit new_task
                   end if
-
-                  maxcon = condit
 
                   ! REACT TO THE COMPLETION OF SEARCH.
                   save_or_restore: if (found) then
@@ -2988,7 +2984,7 @@ module twopnt_core
                   call this%stats%tock(qsearc)
 
                   ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE SEARCH BLOCK.
-                  call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,maxcon,nsteps,steps,ratio)
+                  call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,jac%condit,nsteps,steps,ratio)
 
               case (qrefin) ! *** REFINE BLOCK. ***
 
@@ -3035,7 +3031,7 @@ module twopnt_core
                   call this%stats%tock(qrefin)
 
                   ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE REFINE BLOCK.
-                  call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,maxcon,nsteps,steps,ratio)
+                  call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,jac%condit,nsteps,steps,ratio)
 
                   ! PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE REFINE BLOCK.
                   if (setup%levelm>1) then
@@ -3056,7 +3052,7 @@ module twopnt_core
                   if (setup%levelm>1 .and. text>0) write (text, 15) id
 
                   ! CALL EVOLVE.
-                  call evolve(this, setup, error, text, work%above, work%below, buffer, vars, condit, &
+                  call evolve(this, setup, error, text, work%above, work%below, buffer, vars, &
                               desire, xrepor, work%s0, work%s1, stride, found, time, u, work%v1, &
                               work%vsave, work%y0, work%y1, ynorm, jac)
                   if (error) then
@@ -3078,10 +3074,9 @@ module twopnt_core
                   call this%stats%tock(qtimst)
 
                   steps = this%stats%step - steps
-                  maxcon = condit
 
                   ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE EVOLVE BLOCK.
-                  call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,maxcon,nsteps,steps,ratio)
+                  call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,jac%condit,nsteps,steps,ratio)
 
               case default
                   error = .true.
