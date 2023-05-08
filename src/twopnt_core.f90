@@ -529,6 +529,7 @@ module twopnt_core
           character(len=*), parameter :: id = 'DOMAIN:  '
 
           call this%destroy()
+          error = .false.
 
           this%groupa = GROUPA
           this%comps  = COMPS
