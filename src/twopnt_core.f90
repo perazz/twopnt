@@ -147,12 +147,30 @@ module twopnt_core
 
     end type TwoPntSolverSetup
 
+    ! Jacobian matrix storage
+    type, public :: TwoPntJacobian
+
+        !> Jacobian condition number
+        real(RK) :: condit = zero
+
+        real(RK), allocatable :: A(:)
+        integer :: ASIZE = 0
+        integer, allocatable :: PIVOT(:)
+
+        contains
+
+           procedure :: init    => jac_init
+           procedure :: destroy => jac_destroy
+
+    end type TwoPntJacobian
+
     ! TWOPNT solver work arrays
     type, public :: TwoPntSolverStorage
 
         integer, allocatable :: vary (:)   ! (PMAX)
         integer, allocatable :: vary1(:)   ! (PMAX)
         integer, allocatable :: vary2(:)   ! (PMAX)
+        logical, allocatable :: mark (:)   ! (PMAX)
 
         real(RK), allocatable :: above(:)  ! (GROUPA + COMPS * PMAX + GROUPB)
         real(RK), allocatable :: below(:)  ! (GROUPA + COMPS * PMAX + GROUPB)
@@ -165,10 +183,16 @@ module twopnt_core
         real(RK), allocatable :: y0(:)     ! (GROUPA + COMPS * PMAX + GROUPB)
         real(RK), allocatable :: y1(:)     ! (GROUPA + COMPS * PMAX + GROUPB)
 
+        ! 1D Grid solution buffer
+        real(RK), allocatable :: buffer(:) ! (COMPS*PMAX)
+
         ! Saved solution
         integer :: psave
         real(RK), allocatable :: xsave(:)  ! PMAX
         real(RK), allocatable :: usave(:)  ! (GROUPA + COMPS * PMAX + GROUPB)
+
+        ! Solution Jacobian
+        type(TwoPntJacobian) :: jac
 
         contains
 
@@ -180,7 +204,7 @@ module twopnt_core
 
     end type TwoPntSolverStorage
 
-    ! TWOPNT variables
+    ! TWOPNT variable domain
     type, public :: TwoPntBVPDomain
 
         ! Group A variables
@@ -202,6 +226,12 @@ module twopnt_core
         character(len=:), allocatable :: NAME(:)
         integer :: names = 0
 
+        ! Variables that affect grid adaption [groupa+comps+groupb]
+        logical, allocatable :: ACTIVE(:)
+
+        ! Variable bounds
+        real(RK), allocatable :: BELOW(:), ABOVE(:)
+
         ! The computational domain
         real(RK), allocatable :: x(:)
 
@@ -219,6 +249,9 @@ module twopnt_core
            ! Max number of unknowns (storage size)
            procedure, non_overridable :: NMAX => TwoPntBVPDomain_max
 
+           ! Number of 1D grid unknowns
+           procedure, non_overridable :: NMAX1D => TwoPntBVPDomain_max1d
+
            ! Number of independent variables
            procedure, non_overridable :: NVAR => TwoPntBVPDomain_NVARS
 
@@ -233,6 +266,8 @@ module twopnt_core
            procedure, non_overridable, private :: set_name_1
            procedure, non_overridable, private :: set_names_all
            generic :: set_names => set_name_1,set_names_all
+
+           procedure, non_overridable :: set_active
 
            ! Set grid
            procedure :: set_uniform_grid
@@ -270,25 +305,34 @@ module twopnt_core
 
     end type TwoPntSolverStats
 
-    type, public :: TwoPntBVProblem
+    type, abstract, public :: TwoPntBVProblem
+
+        !> Solver behavior
+        type(TwoPntSolverSetup) :: setup
+
+        !> Variables and domain definition
+        type(TwoPntBVPDomain)   :: domain
+
+        !> Working arrays
+        type(TwoPntSolverStorage) :: work
 
         !> Counters for all functions
         type(TwoPntSolverStats) :: stats
 
-        ! These functions need to be implemented by the user
-        procedure(twopnt_save), nopass, pointer :: save_sol => null()
-        procedure(twopnt_residual), nopass, pointer :: fun => null()
-        procedure(twopnt_grid_update), nopass, pointer :: update_grid => null()
-
         contains
+
+           ! These functions need to be implemented by the user
+           procedure(twopnt_save),        deferred :: save_sol
+           procedure(twopnt_residual),    deferred :: fun
+           procedure(twopnt_grid_update), deferred :: update_grid
 
            ! Problem interface
            procedure :: run  => twopnt
 
            ! Problem wrappers
-           procedure :: f    => fun_wrapper
-           procedure :: save => save_wrapper
-           procedure :: grid => grid_wrapper
+           procedure :: fwrap => fun_wrapper
+           procedure :: save  => save_wrapper
+           procedure :: grid  => grid_wrapper
            procedure :: jac_solve
            procedure :: jac_prep => twprep
 
@@ -299,35 +343,20 @@ module twopnt_core
 
     end type TwoPntBVProblem
 
-    ! Jacobian matrix storage
-    type, public :: twjac
-
-        !> Jacobian condition number
-        real(RK) :: condit = zero
-
-        real(RK), allocatable :: A(:)
-        integer :: ASIZE = 0
-        integer, allocatable :: PIVOT(:)
-
-        contains
-
-           procedure :: init    => jac_init
-           procedure :: destroy => jac_destroy
-
-    end type twjac
-
     interface realloc
         module procedure realloc_int
         module procedure realloc_real
+        module procedure realloc_logical
     end interface realloc
 
     ! Procedure interfaces
     abstract interface
 
        ! Residual function calculation:
-       subroutine twopnt_residual(error,text,points,time,stride,x,buffer)
-          import RK
+       subroutine twopnt_residual(this, error,text,points,time,stride,x,buffer)
+          import RK, TwoPntBVProblem
           implicit none
+          class(TwoPntBVProblem), intent(inout) :: this
           logical, intent(out) :: error  ! .true. if something went wrong
           integer, intent(in)  :: text   ! output unit (0 for NONE)
           integer, intent(in)  :: points ! Number of 1D variables
@@ -339,18 +368,19 @@ module twopnt_core
        end subroutine twopnt_residual
 
        ! Pass solution at the beginning of the timestep to the solver
-       subroutine twopnt_save(vars,buffer)
-          import RK, TwoPntBVPDomain
+       subroutine twopnt_save(this,vars,buffer)
+          import RK, TwoPntBVPDomain, TwoPntBVProblem
           implicit none
-          ! Initial solution passed back to the user
+          class(TwoPntBVProblem), intent(inout) :: this
           type(TwoPntBVPDomain), intent(in) :: vars
           real(RK), intent(in) :: buffer(vars%N())
        end subroutine twopnt_save
 
        ! Pass control to the problem handler on a grid update
-       subroutine twopnt_grid_update(error,vars,u)
-          import RK, TwoPntBVPDomain
+       subroutine twopnt_grid_update(this,error,vars,u)
+          import RK, TwoPntBVPDomain, TwoPntBVProblem
           implicit none
+          class(TwoPntBVProblem), intent(inout) :: this
           logical, intent(out)     :: error
           type(TwoPntBVPDomain), intent(in) :: vars
           real(RK), intent(inout)  :: u(:)
@@ -366,7 +396,7 @@ module twopnt_core
           class(TwoPntBVProblem), intent(inout) :: this
           integer     , intent(in) :: text
           type(TwoPntBVPDomain), intent(in) :: vars
-          type(twjac) , intent(in) :: jac
+          type(TwoPntJacobian) , intent(in) :: jac
           real(RK)    , intent(inout) :: buffer(vars%N())
           logical     , intent(out) :: error
 
@@ -384,11 +414,11 @@ module twopnt_core
           type(TwoPntBVPDomain), intent(in) :: vars
           real(RK), intent(inout)  :: u(:)
 
-          if (associated(this%update_grid)) then
+          !if (associated(this%update_grid)) then
              call this%update_grid(error,vars,u)
-          else
-             error = .true.
-          endif
+          !else
+          !   error = .true.
+          !endif
 
        end subroutine grid_wrapper
 
@@ -399,11 +429,12 @@ module twopnt_core
           type(TwoPntBVPDomain), intent(in) :: vars
           real(RK), intent(in) :: buffer(vars%N())
 
-          if (associated(this%save_sol)) then
+          !if (associated(this%save_sol)) then
              call this%save_sol(vars,buffer)
-          else
-             error = .true.
-          endif
+             error = .false.
+          !else
+          !   error = .true.
+          !endif
 
        end subroutine save_wrapper
 
@@ -417,18 +448,18 @@ module twopnt_core
           real(RK), intent(in) :: stride !
           real(RK), intent(in) :: x(:)   ! dimensioned >=PMAX, contains the grid
           real(RK), intent(inout) :: buffer(:) ! on input: contains the approximate solution; on output, the residuals
-          if (associated(this%fun)) then
+          !if (associated(this%fun)) then
               call this%stats%tick(qfunct)
               call this%fun(error,text,points,time,stride,x,buffer)
               call this%stats%tock(qfunct,event=.true.)
-          else
-              error = .true.
-          endif
+          !else
+          !    error = .true.
+          !endif
        end subroutine fun_wrapper
 
        ! Clean Jacobian storage
        elemental subroutine jac_destroy(this)
-          class(twjac), intent(inout) :: this
+          class(TwoPntJacobian), intent(inout) :: this
 
           this%ASIZE = 0
           if (allocated(this%A)) deallocate(this%A)
@@ -438,7 +469,7 @@ module twopnt_core
 
        ! Init Jacobian storage
        pure subroutine jac_init(this,vars)
-          class(twjac), intent(inout) :: this
+          class(TwoPntJacobian), intent(inout) :: this
           type(TwoPntBVPDomain), intent(in) :: vars
 
           call this%destroy()
@@ -473,12 +504,19 @@ module twopnt_core
        end function count_groups
 
        ! Set a uniform grid
-       pure subroutine set_uniform_grid(this,XRANGE)
+       pure subroutine set_uniform_grid(this,XRANGE,points)
           class(TwoPntBVPDomain), intent(inout) :: this
           real(RK), intent(in) :: XRANGE(2)
+          integer, optional, intent(in) :: points
 
           integer :: i
           real(RK) :: xstep
+
+          ! Override size, if requested
+          if (present(points)) then
+             this%points = points
+             this%pmax = max(this%pmax,points)
+          end if
 
           ! FORM THE INITIAL GRID.
           xstep = (XRANGE(2)-XRANGE(1))/real(this%points-1,RK)
@@ -487,64 +525,125 @@ module twopnt_core
        end subroutine set_uniform_grid
 
        ! Initialize problem variables
-       subroutine new_1name(this,error,GROUPA,COMPS,POINTS,PMAX,GROUPB,NAME,XRANGE)
+       subroutine new_base(this,error,text,GROUPA,COMPS,POINTS,PMAX,GROUPB,ABOVE,BELOW,XRANGE)
           class(TwoPntBVPDomain), intent(inout) :: this
           logical, intent(out) :: error
+          integer, intent(in) :: text
           integer, intent(in) :: GROUPA,COMPS,POINTS,PMAX,GROUPB
+          real(RK), intent(in) :: ABOVE(:),BELOW(:)
           real(RK), optional, intent(in) :: XRANGE(2)
-          character(*), intent(in) :: NAME
+
+          character(len=*), parameter :: id = 'DOMAIN:  '
 
           call this%destroy()
+          error = .false.
 
           this%groupa = GROUPA
-          this%comps = COMPS
+          this%comps  = COMPS
           this%groupb = GROUPB
           this%points = POINTS
-          this%pmax = PMAX
+          this%pmax   = PMAX
 
           ! Allocate grid
           allocate(this%x(PMAX),source=zero)
 
-          ! Initialize grid
-          if (this%POINTS>0 .and. .not.present(XRANGE)) then
+          ! Set variable bounds
+          this%ABOVE = ABOVE
+          this%BELOW = BELOW
+
+          if (.not.(size(ABOVE)==this%NVAR() .and. size(BELOW)==this%NVAR())) then
              error = .true.
+             if (text/=0) write (text, 1) id, this%NVAR(),this%comps,this%groupa,this%groupb,size(ABOVE),size(BELOW)
              return
           end if
 
-          call this%set_uniform_grid(XRANGE)
+          ! Initialize grid
+          if (this%POINTS>0) then
+             if (present(XRANGE)) then
+                 call this%set_uniform_grid(XRANGE)
+             else
+                 error = .true.
+                 if (text/=0) write(text, 2) id, this%points
+                 return
+             end if
+          end if
 
-          call this%set_names(error,name)
+          1 format(/1X, a9, 'ERROR.  THE NUMBER OF VARIABLE BOUNDS IS WRONG.' &
+                 //10X, i10, '  VARIABLES ' &
+                 //10X, i10, '  COMPS, COMPONENTS' &
+                  /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                  /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                  /10X, i10, '  UPPER BOUNDS (ABOVE) ' &
+                  /10X, i10, '  LOWER BOUNDS (BELOW) ')
+
+          2 format(/1X, a9, 'ERROR.  NO DOMAIN BOUNDS (XRANGE) SPECIFIED FOR 1D GRID WITH ' &
+                 //10X, i10, '  POINTS ')
+
+       end subroutine new_base
+
+       ! Initialize problem variables
+       subroutine new_1name(this,error,text,GROUPA,COMPS,POINTS,PMAX,GROUPB,ABOVE,BELOW,NAME,XRANGE,ACTIVE)
+          class(TwoPntBVPDomain), intent(inout) :: this
+          logical, intent(out) :: error
+          integer, intent(in) :: text
+          integer, intent(in) :: GROUPA,COMPS,POINTS,PMAX,GROUPB
+          real(RK), intent(in) :: ABOVE(:),BELOW(:)
+          real(RK), optional, intent(in) :: XRANGE(2)
+          logical , optional, intent(in) :: ACTIVE(:)
+          character(*), intent(in) :: NAME
+
+          character(len=*), parameter :: id = 'DOMAIN:  '
+
+          call new_base(this,error,text,GROUPA,COMPS,POINTS,PMAX,GROUPB,ABOVE,BELOW,XRANGE)
+          if (error) return
+
+          call this%set_names(name)
+
+          ! Set list of active components for grid adaption
+          if (present(ACTIVE)) then
+              call this%set_active(error, text, ACTIVE)
+              if (error) return
+          end if
 
        end subroutine new_1name
 
        ! Initialize problem variables
-       subroutine new_allnames(this,error,GROUPA,COMPS,POINTS,PMAX,GROUPB,NAMES,XRANGE)
+       subroutine new_allnames(this,error,text,GROUPA,COMPS,POINTS,PMAX,GROUPB,ABOVE,BELOW,NAMES,XRANGE,ACTIVE)
           class(TwoPntBVPDomain), intent(inout) :: this
           logical, intent(out) :: error
+          integer, intent(in) :: text
           integer, intent(in) :: GROUPA,COMPS,POINTS,PMAX,GROUPB
+          real(RK), intent(in) :: ABOVE(:),BELOW(:)
           real(RK), optional, intent(in) :: XRANGE(2)
-          character(*), intent(in) :: NAMES(GROUPA+COMPS+GROUPB)
+          logical , optional, intent(in) :: ACTIVE(:)
+          character(*), intent(in) :: NAMES(:)
 
-          call this%destroy()
+          character(len=*), parameter :: id = 'DOMAIN:  '
 
-          this%groupa = GROUPA
-          this%comps = COMPS
-          this%groupb = GROUPB
-          this%points = POINTS
-          this%pmax = PMAX
+          call new_base(this,error,text,GROUPA,COMPS,POINTS,PMAX,GROUPB,ABOVE,BELOW,XRANGE)
+          if (error) return
 
-          ! Allocate grid
-          allocate(this%x(PMAX),source=zero)
+          call this%set_names(NAMES)
 
-          ! Initialize grid
-          if (this%POINTS>0 .and. .not.present(XRANGE)) then
-             error = .true.
-             return
+          ! Check variable names: either 1 only, or 1 per variable
+          error = .not. (this%names== 1 .or. this%names == this%NVAR())
+          number_of_names: if (error) then
+              if (text>0) write (text,1) id,this%names,this%comps,this%groupa,this%groupb,this%NVAR()
+              return
+          end if number_of_names
+
+          ! Set list of active components for grid adaption
+          if (present(ACTIVE)) then
+              call this%set_active(error, text, ACTIVE)
+              if (error) return
           end if
 
-          call this%set_uniform_grid(XRANGE)
-
-          call this%set_names(error,NAMES)
+          1 format(/1X, a9, 'ERROR.  THE NUMBER OF NAMES IS WRONG.' &
+                 //10X, i10, '  NAMES' &
+                 //10X, i10, '  COMPS, COMPONENTS' &
+                  /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                  /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                  /10X, i10, '  TOTAL NUMBER')
 
        end subroutine new_allnames
 
@@ -557,12 +656,14 @@ module twopnt_core
           this%groupb = 0
           this%pmax = 0
           if (allocated(this%x))deallocate(this%x)
+          if (allocated(this%ACTIVE)) deallocate(this%ACTIVE)
+          if (allocated(this%ABOVE)) deallocate(this%ABOVE)
+          if (allocated(this%BELOW)) deallocate(this%BELOW)
        end subroutine domain_destroy
 
        ! Set a single name for all variables
-       subroutine set_name_1(this,error,name)
+       subroutine set_name_1(this,name)
           class(TwoPntBVPDomain), intent(inout) :: this
-          logical, intent(out) :: error
           character(len=*), intent(in) :: name
 
           if (allocated(this%NAME)) deallocate(this%NAME)
@@ -570,18 +671,18 @@ module twopnt_core
           this%NAME(1) = trim(name)
           this%names = 1
 
-          ! We can always have a unique name
-          error = .false.
        end subroutine set_name_1
 
        ! Set names for each variable: size should be [GROUPA + GROUPB + COMPS]
-       subroutine set_names_all(this,error,names)
+       subroutine set_names_all(this, names)
           class(TwoPntBVPDomain), intent(inout) :: this
-          logical, intent(out) :: error
           character(len=*), intent(in) :: names(:)
           integer :: lmax,j
-          if (allocated(this%NAME)) deallocate(this%NAME)
 
+          character(len=*), parameter :: id = 'DOMAIN:  '
+
+
+          if (allocated(this%NAME)) deallocate(this%NAME)
           lmax = 0
           do j=1,size(names)
              lmax = max(lmax,len_trim(names(j)))
@@ -592,10 +693,35 @@ module twopnt_core
           end do
           this%names = size(names)
 
-          ! The number of names must match GROUPA + GROUPB + COMPS size (one name per variable)
-          error = .not. this%names == this%groupa+this%groupb+this%comps
-
        end subroutine set_names_all
+
+       ! Set list of active variables for grid adaption
+       subroutine set_active(this, error, text, ACTIVE)
+          class(TwoPntBVPDomain), intent(inout) :: this
+          logical,          intent(out) :: error
+          integer,          intent(in)  :: text  ! output unit
+          logical,          intent(in)  :: ACTIVE(:)
+
+          character(len=*), parameter :: id = 'DOMAIN:  '
+
+          ! Local variables
+          if (size(ACTIVE)/=this%comps) then
+             error = .true.
+             if (text>0) write (text, 1) id, size(ACTIVE),this%comps
+             return
+          end if
+
+          ! Copy list
+          error = .false.
+          this%ACTIVE = ACTIVE
+
+          return
+
+          ! Error messages.
+          1 format(/1X, a9, 'ERROR.  USER LIST OF ACTIVE VARIABLES HAS INVALID SIZE=',i0,', COMPS=',i0)
+
+      end subroutine set_active
+
 
        ! Indices of all grid variables of component comp (one per grid point)
        elemental integer function TwoPntBVPDomain_idx_comp_one(this,comp,point) result(icomp)
@@ -662,6 +788,13 @@ module twopnt_core
               if (text>0) write (text,5) id,this%names,this%comps,this%groupa,this%groupb,this%NVAR()
               return
           end if number_of_names
+
+          ! Check variable bounds
+          error = any(.not.this%BELOW<this%ABOVE)
+          if (error) then
+              call print_invalid_bounds(id,text,this)
+              return
+          end if
 
           1 format(/1X, a9, 'ERROR.  NUMBERS OF ALL TYPES OF UNKNOWNS MUST BE AT' &
                   /10X, 'LEAST ZERO.' &
@@ -747,6 +880,12 @@ module twopnt_core
           class(TwoPntBVPDomain), intent(in) :: this
           N = this%GROUPA + this%COMPS * this%PMAX + this%GROUPB
        end function TwoPntBVPDomain_max
+
+       ! Return variable size on the 1D grid
+       elemental integer function TwoPntBVPDomain_max1D(this) result(N)
+          class(TwoPntBVPDomain), intent(in) :: this
+          N = this%COMPS * this%PMAX
+       end function TwoPntBVPDomain_max1D
 
        ! Initialize the control structure
        elemental subroutine twinit (this)
@@ -1234,9 +1373,20 @@ module twopnt_core
                     do comp = first, last
                         count = count + 1
                         title(count) = ' '
-                        write (string, '(A5, I5)') 'COMP ', comp
+
+                        ! Use variable name, if available
+                        if (vars%names==vars%NVAR()) then
+                            write (string, '(A) ') vars%NAME(vars%groupa+comp)
+                            call twsqez (length, string)
+
+                            ! Fallback
+                            if (length>10) write (string, '(A5, I5)') 'COMP ',comp
+                        else
+                            write (string, '(A5, I5)') 'COMP ',comp
+                        end if
+
                         call twsqez (length, string)
-                        title(count) (11 - length : 10) = string
+                        title(count) (11-length:10) = string
                     end do
 
                     if (grid) then
@@ -1301,7 +1451,7 @@ module twopnt_core
 
           integer     , intent(in) :: text
           type(TwoPntBVPDomain), intent(in) :: vars
-          type(twjac) , intent(in) :: jac
+          type(TwoPntJacobian) , intent(in) :: jac
           real(RK)    , intent(inout) :: buffer(vars%N())
           logical     , intent(out) :: error
 
@@ -1662,7 +1812,7 @@ module twopnt_core
           class(TwoPntBVProblem), intent(inout) :: this
           logical,      intent(out)   :: error
           integer,      intent(in)    :: text ! output unit
-          type(twjac),  intent(inout) :: jac
+          type(TwoPntJacobian),  intent(inout) :: jac
           type(TwoPntBVPDomain), intent(in)    :: vars
           real(RK),     intent(inout) :: buffer(vars%N())
           logical ,     intent(in)    :: time
@@ -1678,11 +1828,11 @@ module twopnt_core
           character(len=*), parameter :: id = 'TWPREP:  '
 
           ! Check that the residual function is present.
-          if (.not.associated(this%fun)) then
-             error = .true.
-             if (text>0) write (text, 1) id
-             return
-          end if
+          !if (.not.associated(this%fun)) then
+          !   error = .true.
+          !   if (text>0) write (text, 1) id
+          !   return
+          !end if
 
           call this%stats%tick(qjacob)
 
@@ -1734,7 +1884,7 @@ module twopnt_core
           jac%a(n+1:n+lda*n) = zero
 
           ! EVALUATE THE FUNCTION AT THE UNPERTURBED X.
-          call this%f(error,text,vars%points,time,stride,vars%x,buffer)
+          call this%fwrap(error,text,vars%points,time,stride,vars%x,buffer)
           if (error) return
 
           ! Place function values into the matrix.
@@ -1801,7 +1951,7 @@ module twopnt_core
               if (.not. found) exit column_groups
 
               ! EVALUATE THE FUNCTION AT THE PERTURBED VALUES.
-              call this%f(error,text,vars%points,time,stride,vars%x,buffer)
+              call this%fwrap(error,text,vars%points,time,stride,vars%x,buffer)
               if (error) return
 
               ! DIFFERENCE TO FORM THE COLUMNS OF THE JACOBIAN MATRIX.
@@ -1896,7 +2046,7 @@ module twopnt_core
           return
 
           ! Formats section
-          1 format(/1X, a9, 'ERROR.  THE PROBLEM FUNCTION IS UNDEFINED.')
+!          1 format(/1X, a9, 'ERROR.  THE PROBLEM FUNCTION IS UNDEFINED.')
           2 format(/1X, a9, 'ERROR.  THE MATRIX SPACE IS TOO SMALL.' &
                  //10X, i10, '  COMPS, COMPONENTS' &
                   /10X, i10, '  POINTS' &
@@ -2059,7 +2209,7 @@ module twopnt_core
       ! Perform time evolution
       subroutine evolve(this, setup, error, text, above, below, buffer, vars, desire, report, s0, s1, &
                         stride, success, time, v0, v1, vsave, y0, y1, ynorm, jac)
-      type(TwoPntBVProblem), intent(inout) :: this
+      class(TwoPntBVProblem), intent(inout) :: this
       type(TwoPntSolverSetup),      intent(in)    :: setup
       integer,          intent(in)    :: text
       type(TwoPntBVPDomain),     intent(in)    :: vars
@@ -2071,7 +2221,7 @@ module twopnt_core
       real(RK), dimension(vars%N()), intent(in)    :: above,below
       real(RK), dimension(vars%N()), intent(inout) :: buffer,s0,s1,v0,v1,y0,y1,vsave
 
-      type(twjac)      , intent(inout) :: jac
+      type(TwoPntJacobian)      , intent(inout) :: jac
 
       real(RK)  :: change,csave,dummy,high,low
       integer   :: count,first,last,number,xrepor
@@ -2119,7 +2269,7 @@ module twopnt_core
       if (levelm>0 .and. text>0) then
          buffer = v0
          time   = .false.
-         call this%f(error,text,vars%points,time,stride,vars%x,buffer)
+         call this%fwrap(error,text,vars%points,time,stride,vars%x,buffer)
          if (error) then
             if (levelm>1.and.text>0) write (text, 21) id, 'RESIDUAL'
             return
@@ -2215,7 +2365,7 @@ module twopnt_core
 
           buffer = v0
           time = .false.
-          call this%f(error,text,vars%points,time,stride,vars%x,buffer)
+          call this%fwrap(error,text,vars%points,time,stride,vars%x,buffer)
           if (error) then
              if (levelm>1.and.text>0) write (text, 21) id, 'RESIDUAL'
              return
@@ -2370,7 +2520,7 @@ module twopnt_core
 
           logical          , intent(in)    :: time
           real(RK)         , intent(in)    :: stride
-          type(twjac)      , intent(inout) :: jac
+          type(TwoPntJacobian)      , intent(inout) :: jac
           integer          , intent(out)   :: jcount,steps
           real(RK)         , intent(out)   :: csave
           character(len=80), intent(out)   :: jword
@@ -2399,17 +2549,10 @@ module twopnt_core
           call vars%check(error,id,text)
           if (error) return
 
-          ! Check variable bounds
-          error = any(.not.below<above)
-          if (error) then
-             call print_invalid_bounds(id,text,vars,below,above)
-             return
-          end if
-
           ! Check the unknowns are valid
           error = any(.not.(below<=v0 .and. v0<=above))
           if (error) then
-             call print_invalid_ranges(id,text,vars,below,above,v0)
+             call print_invalid_ranges(id,text,vars,v0)
              return
           end if
 
@@ -2475,7 +2618,7 @@ module twopnt_core
 
                   ! EVALUATE Y0 := F(V0).
                   buffer = v0
-                  call this%f(error,text,vars%points,time,stride,vars%x,buffer)
+                  call this%fwrap(error,text,vars%points,time,stride,vars%x,buffer)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'RESIDUAL'
                       return
@@ -2519,7 +2662,7 @@ module twopnt_core
 
                  if (levelm>0 .and. text>0) then
                     call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,jac%condit)
-                    call print_invalid_ranges(id,text,vars,below,above,v0,s0)
+                    call print_invalid_ranges(id,text,vars,v0,s0)
                  end if
 
                  report  = qbnds
@@ -2544,7 +2687,7 @@ module twopnt_core
 
                   ! EVALUATE Y1 := F(V1)
                   buffer = v1
-                  call this%f(error,text,vars%points,time,stride,vars%x,buffer)
+                  call this%fwrap(error,text,vars%points,time,stride,vars%x,buffer)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'RESIDUAL'
                       return
@@ -2817,319 +2960,306 @@ module twopnt_core
       end subroutine print_search_header
 
       ! TWOPNT driver.
-      subroutine twopnt(this, setup, error, text, vars, above, active, below, buffer, &
-                        work, mark, report, stride, time, u, jac)
+      subroutine twopnt(this, error, text, report, u)
+          class(TwoPntBVProblem), intent(inout) :: this
+          logical     , intent(out)   :: error
+          integer     , intent(in)    :: text
+          character(*), intent(out)   :: report
+          real(RK)    , intent(inout) :: u(this%domain%NMAX())
 
-         class(TwoPntBVProblem), intent(inout) :: this
-      type(TwoPntSolverSetup) , intent(inout) :: setup
-      logical     , intent(out)   :: error
-      integer     , intent(in)    :: text
-      type(TwoPntBVPDomain), intent(inout) :: vars
-      character(*), intent(out)   :: report
-      real(RK)    , intent(inout), dimension(vars%NVAR()) :: above,below
-      logical     , intent(inout) :: active(*),mark(*)
-      real(RK)    , intent(inout) :: buffer(vars%NMAX())
-      type(TwoPntSolverStorage), intent(inout) :: work
-      real(RK)    , intent(inout) :: u(vars%NMAX())
-      type(twjac) , intent(inout) :: jac
+          ! Local variables
+          character(*), parameter :: id = 'TWOPNT:  '
 
-      ! Local variables
-      character(*), parameter :: id = 'TWOPNT:  '
+          real(RK) ::  ratio(2), ynorm, csave, stride
+          integer :: desire, nsteps, qtask, steps, xrepor, jcount
+          intrinsic :: max
+          logical :: allow, exist, found, satisf, time
 
-      real(RK) ::  ratio(2), stride, ynorm, csave
-      integer :: desire, nsteps, qtask, steps, xrepor, jcount
-      intrinsic :: max
-      logical :: allow, exist, found, satisf, time
+          character(len=80) :: string,jword
 
-      character(len=80) :: string,jword
+          associate(setup=>this%setup,vars=>this%domain,work=>this%work)
 
-      !***** ENTRY BLOCK.  INITIALIZE A NEW PROBLEM. *****
+          !***** ENTRY BLOCK.  INITIALIZE A NEW PROBLEM. *****
 
-      ! Turn off all status reports.
-      time   = .false.
-      error  = .false.
-      report = ' '
-      stride = zero
-      ratio  = zero
-      xrepor = qnull
+          ! Turn off all status reports.
+          time   = .false.
+          error  = .false.
+          report = ' '
+          ratio  = zero
+          xrepor = qnull
 
-      ! Additional settings initialization
-      if (.not.setup%padd) setup%ipadd = vars%pmax
+          ! Additional settings initialization
+          if (.not.setup%padd) setup%ipadd = vars%pmax
 
-      ! Print entry banner
-      string = vnmbr(vnmbrs)
-      if (setup%levelm>0 .and. text>0) write (text, 9) id, precision_flag(), trim(string)
+          ! Print entry banner
+          string = vnmbr(vnmbrs)
+          if (setup%levelm>0 .and. text>0) write (text, 9) id, precision_flag(), trim(string)
 
-      ! CHECK THE ARGUMENTS.
-      error = .not. (setup%leveld <= setup%levelm)
-      printing_levels: if (error) then
-          if (text>0) write (text, 1) id, setup%leveld, setup%levelm
-          return
-      end if printing_levels
+          ! CHECK THE ARGUMENTS.
+          error = .not. (setup%leveld <= setup%levelm)
+          printing_levels: if (error) then
+              if (text>0) write (text, 1) id, setup%leveld, setup%levelm
+              return
+          end if printing_levels
 
-      ! Check variable sizes
-      call vars%check(error,id,text); if (error) return
+          ! Check variable sizes
+          call vars%check(error,id,text); if (error) return
 
-      ! Check variable bounds
-      error = any(.not.below<above)
-      if (error) then
-          call print_invalid_bounds(id,text,vars,below,above)
-          return
-      end if
+          ! Initialize the working space
+          call work%init(text,vars,error)
+          if (error) return
 
-      ! PARTITION THE INTEGER WORK SPACE.
-      call work%init(text,vars,error)
-      if (error) return
+          ! ONE-TIME INITIALIZATION.
+          allow  = .true.  ! Allow further time evolution
+          qtask  = qentry  ! Present task: ENTRY
+          found  = .true.  ! SOLUTION FLAG
+          stride = setup%strid0
 
-      ! ONE-TIME INITIALIZATION.
-      allow = .true.  ! Allow further time evolution
-      qtask = qentry  ! Present task: ENTRY
-      found = .true.  ! SOLUTION FLAG
+          ! Init solver statistics
+          call this%stats%new(vars%points)
 
-      ! Init solver statistics
-      call this%stats%new(vars%points)
+          ! EXPAND THE BOUNDS.
+          call work%load_bounds(vars)
 
-      ! EXPAND THE BOUNDS.
-      call work%load_bounds(above,below,vars)
+          ! SAVE THE INITIAL SOLUTION.
+          call work%store_solution(u,vars,setup%adapt)
 
-      ! SAVE THE INITIAL SOLUTION.
-      call work%store_solution(u,vars,setup%adapt)
+          ! Save the last solution
+          call twcopy (vars%N(), from=u, to=work%buffer)
+          call this%save(error,vars,work%buffer)
 
-      ! Save the last solution
-      call twcopy (vars%N(), from=u, to=buffer)
-      call this%save(error,vars,buffer)
-
-      ! PRINT LEVELS 11, 21, AND 22.
-      if (setup%leveld>0 .and. text>0) then
-         write (text, 10) id, 'INITIAL GUESS:'
-         call this%show(error,text,u,vars,.true.)
-      end if
-
-      ! PRINT LEVEL 10 AND 11.
-      call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,jac%condit,nsteps,steps,ratio)
-
-      !///////////////////////////////////////////////////////////////////////
-      !
-      !     DECISION BLOCK.  THE PREVIOUS TASK DETERMINES THE NEXT.
-      !
-      !///////////////////////////////////////////////////////////////////////
-
-      new_task: do
-
-          ! ENTRY WAS THE PREVIOUS TASK.
-          qtask = twopnt_next_task(setup,this%stats,qtask,found,satisf,allow,report,desire,error)
-          if (error) then
-              if (text>0) write (text, 2) id
-              exit new_task
+          ! PRINT LEVELS 11, 21, AND 22.
+          if (setup%leveld>0 .and. text>0) then
+             write (text, 10) id, 'INITIAL GUESS:'
+             call this%show(error,text,u,vars,.true.)
           end if
 
-          ! Branch to the next task.
-          select case (qtask)
-              case (qexit) ! *** EXIT BLOCK. ***
+          ! PRINT LEVEL 10 AND 11.
+          call twopnt_print_step(this,setup,vars,text,qtask,xrepor,found,u,stride,work%jac%condit,nsteps,steps,ratio)
 
-                  ! Complete statistics for the last grid
-                  call this%stats%tock(qgrid)
+          !///////////////////////////////////////////////////////////////////////
+          !
+          !     DECISION BLOCK.  THE PREVIOUS TASK DETERMINES THE NEXT.
+          !
+          !///////////////////////////////////////////////////////////////////////
 
-                  ! Restore the solution.
-                  if (report /= ' ') call work%restore_solution(u,vars,setup%adapt)
+          new_task: do
 
-                  ! Complete the total time statistics
-                  call this%stats%tock(qtotal)
-
-                  ! TOP OF THE REPORT BLOCK.
-                  call twopnt_final_report(setup,this%stats,vars,this,text,u,report,ratio,error)
+              ! ENTRY WAS THE PREVIOUS TASK.
+              qtask = twopnt_next_task(setup,this%stats,qtask,found,satisf,allow,report,desire,error)
+              if (error) then
+                  if (text>0) write (text, 2) id
                   exit new_task
+              end if
 
-              case (qsearc) ! *** SEARCH BLOCK. ***
+              ! Branch to the next task.
+              select case (qtask)
+                  case (qexit) ! *** EXIT BLOCK. ***
 
-                  ! INITIALIZE STATISTICS ON ENTRY TO THE SEARCH BLOCK.
-                  call this%stats%tick(qsearc)
+                      ! Complete statistics for the last grid
+                      call this%stats%tock(qgrid)
 
-                  ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE SEARCH BLOCK.
-                  if (setup%levelm>1 .and. text>0) write (text, 11) id
+                      ! Restore the solution.
+                      if (report /= ' ') call work%restore_solution(u,vars,setup%adapt)
 
-                  ! PREPARE TO CALL SEARCH.
+                      ! Complete the total time statistics
+                      call this%stats%tock(qtotal)
 
-                  ! Save the solution should the search fail
-                  call twcopy (vars%N(), u, work%vsave)
-                  exist = .false.
-
-                  ! CALL SEARCH.
-                  call search(this, error, text, work%above, work%below, buffer, vars, &
-                             exist, setup%leveld - 1, setup%levelm - 1, &
-                             xrepor, work%s0, work%s1, nsteps, found, &
-                             u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
-                             work%y1, time, stride, jac, jcount, csave, jword)
-                  if (error) then
-                      if (text>0) write (text, 4) id
+                      ! TOP OF THE REPORT BLOCK.
+                      call twopnt_final_report(this,setup,this%stats,vars,text,u,report,ratio,error)
                       exit new_task
-                  end if
 
-                  ! REACT TO THE COMPLETION OF SEARCH.
-                  save_or_restore: if (found) then
+                  case (qsearc) ! *** SEARCH BLOCK. ***
 
-                     ! Save the last solution
-                     call work%store_solution(u,vars,setup%adapt)
+                      ! INITIALIZE STATISTICS ON ENTRY TO THE SEARCH BLOCK.
+                      call this%stats%tick(qsearc)
 
-                     ! Let user save last valid solution
-                     call twcopy(vars%N(), from=u, to=buffer)
-                     call this%save(error,vars,buffer)
+                      ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE SEARCH BLOCK.
+                      if (setup%levelm>1 .and. text>0) write (text, 11) id
 
-                  else save_or_restore
-                     ! RESTORE THE SOLUTION
-                     call twcopy(vars%N(), work%vsave, u)
-                  end if save_or_restore
+                      ! PREPARE TO CALL SEARCH.
 
-                  ! COMPLETE STATISTICS FOR THE SEARCH BLOCK.
-                  call this%stats%tock(qsearc)
+                      ! Save the solution should the search fail
+                      call twcopy (vars%N(), u, work%vsave)
+                      exist = .false.
 
-                  ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE SEARCH BLOCK.
-                  call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,jac%condit,nsteps,steps,ratio)
+                      ! CALL SEARCH.
+                      call search(this, error, text, work%above, work%below, work%buffer, vars, &
+                                 exist, setup%leveld - 1, setup%levelm - 1, &
+                                 xrepor, work%s0, work%s1, nsteps, found, &
+                                 u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
+                                 work%y1, time, stride, work%jac, jcount, csave, jword)
+                      if (error) then
+                          if (text>0) write (text, 4) id
+                          exit new_task
+                      end if
 
-              case (qrefin) ! *** REFINE BLOCK. ***
+                      ! REACT TO THE COMPLETION OF SEARCH.
+                      save_or_restore: if (found) then
 
-                  ! INITIALIZE STATISTICS ON ENTRY TO THE REFINE BLOCK.
-                  call this%stats%tick(qrefin)
+                         ! Save the last solution
+                         call work%store_solution(u,vars,setup%adapt)
 
-                  ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE REFINE BLOCK.
-                  if (setup%levelm>1 .and. text>0) write (text, 12) id
+                         ! Let user save last valid solution
+                         call twcopy(vars%N(), from=u, to=work%buffer)
+                         call this%save(error,vars,work%buffer)
 
-                  ! PREPARE TO CALL REFINE.
+                      else save_or_restore
+                         ! RESTORE THE SOLUTION
+                         call twcopy(vars%N(), work%vsave, u)
+                      end if save_or_restore
 
-                  ! Save group B values (will be shifted by the new grid size)
-                  if (vars%groupb>0) work%vsave(:vars%groupb) = u(vars%idx_B())
-                  exist = .false.
+                      ! COMPLETE STATISTICS FOR THE SEARCH BLOCK.
+                      call this%stats%tock(qsearc)
 
-                  ! CALL REFINE.
-                  call refine(this, error, setup, text, active, buffer(vars%groupa+1), vars, mark, &
-                              found, ratio, work%ratio1, work%ratio2, satisf, u(vars%groupa + 1), &
-                              work%vary1, work%vary2, work%vary)
-                  if (error) then
-                      if (text>0) write (text, 5) id
+                      ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE SEARCH BLOCK.
+                      call twopnt_print_step(this,setup,vars,text,qtask,xrepor,found,u,stride,work%jac%condit,nsteps,steps,ratio)
+
+                  case (qrefin) ! *** REFINE BLOCK. ***
+
+                      ! INITIALIZE STATISTICS ON ENTRY TO THE REFINE BLOCK.
+                      call this%stats%tick(qrefin)
+
+                      ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE REFINE BLOCK.
+                      if (setup%levelm>1 .and. text>0) write (text, 12) id
+
+                      ! PREPARE TO CALL REFINE.
+
+                      ! Save group B values (will be shifted by the new grid size)
+                      if (vars%groupb>0) work%vsave(:vars%groupb) = u(vars%idx_B())
+                      exist = .false.
+
+                      ! CALL REFINE.
+                      call refine(this, error, setup, text, work%buffer(vars%groupa+1), vars, work%mark, &
+                                  found, ratio, work%ratio1, work%ratio2, satisf, u(vars%groupa + 1), &
+                                  work%vary1, work%vary2, work%vary)
+                      if (error) then
+                          if (text>0) write (text, 5) id
+                          exit new_task
+                      end if
+
+                      ! REACT TO THE COMPLETION OF REFINE.
+                      refine_found: if (found) then
+
+                         ! Initialize statistics for the new grid
+                         call this%stats%new_grid(vars%points)
+
+                         ! Insert the group B values
+                         if (vars%groupb>0) u(vars%idx_B()) = work%vsave(:vars%groupb)
+
+                         ! Expand bounds to new grid size
+                         call work%load_bounds(vars)
+
+                         ! SAVE THE LATEST SOLUTION
+                         call twcopy (vars%N(),u,work%buffer)
+                         call this%save(error,vars,work%buffer)
+
+                      endif refine_found
+
+                      ! COMPLETE STATISTICS FOR THE REFINE BLOCK.
+                      call this%stats%tock(qrefin)
+
+                      ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE REFINE BLOCK.
+                      call twopnt_print_step(this,setup,vars,text,qtask,xrepor,found,u,stride,work%jac%condit,nsteps,steps,ratio)
+
+                      ! PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE REFINE BLOCK.
+                      if (setup%levelm>1) then
+                         if (found) then
+                            if (text>0) write (text, 13) id
+                         else
+                            if (text>0) write (text, 14) id
+                         end if
+                      end if
+
+                  case (qtimst) ! *** EVOLVE BLOCK. ***
+
+                      ! INITIALIZE STATISTICS ON ENTRY TO THE EVOLVE BLOCK.
+                      call this%stats%tick(qtimst)
+                      steps = this%stats%step
+
+                      ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE EVOLVE BLOCK.
+                      if (setup%levelm>1 .and. text>0) write (text, 15) id
+
+                      ! CALL EVOLVE.
+                      call evolve(this, setup, error, text, work%above, work%below, work%buffer, vars, &
+                                  desire, xrepor, work%s0, work%s1, stride, found, time, u, work%v1, &
+                                  work%vsave, work%y0, work%y1, ynorm, work%jac)
+                      if (error) then
+                          if (text>0) write (text, 6) id
+                          exit new_task
+                      end if
+
+                      ! REACT TO THE COMPLETION OF EVOLVE.
+                      if (found) then
+                         ! Save the last solution
+                         call twcopy (vars%N(), from=u, to=work%buffer)
+                         call this%save(error,vars,work%buffer)
+                      end if
+
+                      ! ALLOW FURTHER TIME EVOLUTION.
+                      allow = xrepor == qnull
+
+                      ! COMPLETE STATISTICS FOR THE EVOLVE BLOCK.
+                      call this%stats%tock(qtimst)
+
+                      steps = this%stats%step - steps
+
+                      ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE EVOLVE BLOCK.
+                      call twopnt_print_step(this,setup,vars,text,qtask,xrepor,found,u,stride,work%jac%condit,nsteps,steps,ratio)
+
+                  case default
+                      error = .true.
+                      if (text>0) write (text, 3) id
                       exit new_task
-                  end if
+              end select
 
-                  ! REACT TO THE COMPLETION OF REFINE.
-                  refine_found: if (found) then
+          end do new_task
 
-                     ! Initialize statistics for the new grid
-                     call this%stats%new_grid(vars%points)
+          if (error) then
+              if (text>0) write (text, 7) ID
+              return
+          endif
 
-                     ! Insert the group B values
-                     if (vars%groupb>0) u(vars%idx_B()) = work%vsave(:vars%groupb)
+          ! CHECK FOR SUCCESS.
+          error = REPORT == 'NONE FOUND'
+          if (error) then
+             if (text>0) write (TEXT, 8) ID, trim(report)
+             return
+          endif
 
-                     ! Expand bounds to new grid size
-                     call work%load_bounds(above,below,vars)
-
-                     ! SAVE THE LATEST SOLUTION
-                     call twcopy (vars%N(),u,buffer)
-                     call this%save(error,vars,buffer)
-
-                  endif refine_found
-
-                  ! COMPLETE STATISTICS FOR THE REFINE BLOCK.
-                  call this%stats%tock(qrefin)
-
-                  ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE REFINE BLOCK.
-                  call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,jac%condit,nsteps,steps,ratio)
-
-                  ! PRINT LEVEL 20, 21, OR 22 ON EXIT FROM THE REFINE BLOCK.
-                  if (setup%levelm>1) then
-                     if (found) then
-                        if (text>0) write (text, 13) id
-                     else
-                        if (text>0) write (text, 14) id
-                     end if
-                  end if
-
-              case (qtimst) ! *** EVOLVE BLOCK. ***
-
-                  ! INITIALIZE STATISTICS ON ENTRY TO THE EVOLVE BLOCK.
-                  call this%stats%tick(qtimst)
-                  steps = this%stats%step
-
-                  ! PRINT LEVEL 20, 21, OR 22 ON ENTRY TO THE EVOLVE BLOCK.
-                  if (setup%levelm>1 .and. text>0) write (text, 15) id
-
-                  ! CALL EVOLVE.
-                  call evolve(this, setup, error, text, work%above, work%below, buffer, vars, &
-                              desire, xrepor, work%s0, work%s1, stride, found, time, u, work%v1, &
-                              work%vsave, work%y0, work%y1, ynorm, jac)
-                  if (error) then
-                      if (text>0) write (text, 6) id
-                      exit new_task
-                  end if
-
-                  ! REACT TO THE COMPLETION OF EVOLVE.
-                  if (found) then
-                     ! Save the last solution
-                     call twcopy (vars%N(), from=u, to=buffer)
-                     call this%save(error,vars,buffer)
-                  end if
-
-                  ! ALLOW FURTHER TIME EVOLUTION.
-                  allow = xrepor == qnull
-
-                  ! COMPLETE STATISTICS FOR THE EVOLVE BLOCK.
-                  call this%stats%tock(qtimst)
-
-                  steps = this%stats%step - steps
-
-                  ! PRINT LEVEL 10 OR 11 ON EXIT FROM THE EVOLVE BLOCK.
-                  call twopnt_print_step(setup,vars,this,text,qtask,xrepor,found,u,stride,jac%condit,nsteps,steps,ratio)
-
-              case default
-                  error = .true.
-                  if (text>0) write (text, 3) id
-                  exit new_task
-          end select
-
-      end do new_task
-
-      if (error) then
-          if (text>0) write (text, 7) ID
           return
-      endif
+          endassociate
 
-      ! CHECK FOR SUCCESS.
-      error = REPORT == 'NONE FOUND'
-      if (error) then
-         if (text>0) write (TEXT, 8) ID, trim(report)
-         return
-      endif
+          ! Error messages
+          1 format(/1X, a9, 'ERROR.  THE PRINTING LEVELS ARE OUT OF ORDER.' &
+                  /10X, 'LEVELD CANNOT EXCEED LEVELM.' &
+                 //10X, i10, '  LEVELD, FOR SOLUTIONS' &
+                  /10X, i10, '  LEVELM, FOR MESSAGES')
+          2 format(/1X, a9, 'ERROR.  NEITHER THE INITIAL TIME EVOLUTION NOR THE' &
+                  /10X, 'SEARCH FOR THE STEADY STATE IS ALLOWED.')
+          3 format(/1X, a9, 'ERROR.  UNKNOWN TASK.')
+          4 format(/1X, a9, 'ERROR.  SEARCH FAILS.')
+          5 format(/1X, a9, 'ERROR.  REFINE FAILS.')
+          6 format(/1X, a9, 'ERROR.  EVOLVE FAILS.')
+          7 format(/1X, A9, 'ERROR.  TWOPNT FAILS.')
+          8 format(/1X, A9, 'ERROR.  TWOPNT DOES NOT SOLVE THE PROBLEM.'//10X, '   REPORT:  ', A)
 
-      return
-
-      ! Error messages
-      1 format(/1X, a9, 'ERROR.  THE PRINTING LEVELS ARE OUT OF ORDER.' &
-              /10X, 'LEVELD CANNOT EXCEED LEVELM.' &
-             //10X, i10, '  LEVELD, FOR SOLUTIONS' &
-              /10X, i10, '  LEVELM, FOR MESSAGES')
-      2 format(/1X, a9, 'ERROR.  NEITHER THE INITIAL TIME EVOLUTION NOR THE' &
-              /10X, 'SEARCH FOR THE STEADY STATE IS ALLOWED.')
-      3 format(/1X, a9, 'ERROR.  UNKNOWN TASK.')
-      4 format(/1X, a9, 'ERROR.  SEARCH FAILS.')
-      5 format(/1X, a9, 'ERROR.  REFINE FAILS.')
-      6 format(/1X, a9, 'ERROR.  EVOLVE FAILS.')
-      7 format(/1X, A9, 'ERROR.  TWOPNT FAILS.')
-      8 format(/1X, A9, 'ERROR.  TWOPNT DOES NOT SOLVE THE PROBLEM.'//10X, '   REPORT:  ', A)
-
-      ! Informative messages
-      9 format(/1X, a9, a, ' (TWO POINT BOUNDARY VALUE PROBLEM) SOLVER,' &
-                    /10X, 'VERSION ', a,' OF APRIL 1998 BY DR. JOSEPH F. GRCAR.')
-      10 format(/1X, a9, a)
-      11 format(/1X, a9, 'CALLING SEARCH TO SOLVE THE STEADY STATE PROBLEM.')
-      12 format(/1X, a9, 'CALLING REFINE TO PRODUCE A NEW GRID.')
-      13 format(/1X, a9, 'REFINE SELECTED A NEW GRID.')
-      14 format(/1X, a9, 'REFINE DID NOT SELECT A NEW GRID.')
-      15 format(/1X, a9, 'CALLING EVOLVE TO PERFORM TIME EVOLUTION.')
+          ! Informative messages
+          9 format(/1X, a9, a, ' (TWO POINT BOUNDARY VALUE PROBLEM) SOLVER,' &
+                        /10X, 'VERSION ', a,' OF APRIL 1998 BY DR. JOSEPH F. GRCAR.')
+          10 format(/1X, a9, a)
+          11 format(/1X, a9, 'CALLING SEARCH TO SOLVE THE STEADY STATE PROBLEM.')
+          12 format(/1X, a9, 'CALLING REFINE TO PRODUCE A NEW GRID.')
+          13 format(/1X, a9, 'REFINE SELECTED A NEW GRID.')
+          14 format(/1X, a9, 'REFINE DID NOT SELECT A NEW GRID.')
+          15 format(/1X, a9, 'CALLING EVOLVE TO PERFORM TIME EVOLUTION.')
 
       end subroutine twopnt
 
-      subroutine twopnt_print_step(setup,vars,funs,text,qtask,xrepor,found,u,stride,maxcon,search_steps,time_steps,ratio)
+      subroutine twopnt_print_step(this,setup,vars,text,qtask,xrepor,found,u,stride,maxcon,search_steps,time_steps,ratio)
+          class(TwoPntBVProblem), intent(inout) :: this
           type(TwoPntSolverSetup), intent(in) :: setup
           type(TwoPntBVPDomain), intent(in) :: vars
-          type(TwoPntBVProblem), intent(inout) :: funs
           integer, intent(in) :: text,qtask,xrepor
           logical, intent(in) :: found
           real(RK), intent(in) :: u(:),stride,maxcon,ratio(2)
@@ -3153,7 +3283,7 @@ module twopnt_core
           if (found) then
              ! EVALUATE THE STEADY STATE FUNCTION.
              call twcopy(vars%N(),from=u,to=buffer)
-             call funs%fun(error,text,vars%points,.false.,stride,vars%x,buffer)
+             call this%fun(error,text,vars%points,.false.,stride,vars%x,buffer)
              call twlogr(column(2),twnorm(vars%N(),buffer))
           endif
 
@@ -3224,11 +3354,12 @@ module twopnt_core
 
       end subroutine twopnt_print_step
 
-      subroutine twopnt_final_report(setup,stats,vars,funs,text,u,report,ratio,error)
+      subroutine twopnt_final_report(this,setup,stats,vars,text,u,report,ratio,error)
+         class(TwoPntBVProblem), intent(inout) :: this
          type(TwoPntSolverSetup), intent(in) :: setup
          type(TwoPntSolverStats), intent(in) :: stats
          type(TwoPntBVPDomain), intent(in) :: vars
-         type(TwoPntBVProblem), intent(inout) :: funs
+
          logical, intent(out) :: error
          character(*), intent(in) :: report
          real(RK), intent(in) :: ratio(2),u(:)
@@ -3243,7 +3374,7 @@ module twopnt_core
          ! Print the last solution
          if (setup%leveld==1) then
              write (text, 6) id, 'FINAL SOLUTION:'
-             call funs%show(error,text,u,vars,.true.)
+             call this%show(error,text,u,vars,.true.)
          endif
 
          call stats%print_stats(text,setup%adapt)
@@ -3333,14 +3464,13 @@ module twopnt_core
       end function evolve_task_summary
 
       ! Perform automatic grid selection
-      subroutine refine(this, error, setup, text, active, buffer, vars, mark, newx, &
+      subroutine refine(this, error, setup, text, buffer, vars, mark, newx, &
                         ratio, ratio1, ratio2, success, u, vary1, vary2, weight)
-          class(TwoPntBVProblem), intent(in) :: this
+          class(TwoPntBVProblem), intent(inout) :: this
           type(TwoPntSolverSetup),  intent(in)     :: setup
           integer,      intent(in)     :: text
           type(TwoPntBVPDomain), intent(inout)  :: vars
           logical,      intent(inout)  :: error, newx, success
-          logical,      intent(inout)  :: active(vars%comps)
           logical,      intent(inout)  :: mark(vars%pmax)
           real(RK),     intent(inout)  :: ratio1(vars%pmax),ratio2(vars%pmax),ratio(2)
           real(RK),     intent(inout)  :: buffer(vars%comps*vars%pmax),u(vars%comps,vars%pmax)
@@ -3369,7 +3499,7 @@ module twopnt_core
           if (error) return
 
           ! Check there is at least one variable that affects grid adaption
-          counted = count(active)
+          counted = count(vars%active)
           error = .not. (counted>=1)
           if (error) then
                if (text>0) write (text, 105) id
@@ -3410,7 +3540,7 @@ module twopnt_core
           ! top of the loop over the components.
           active_components: do j = 1, vars%comps
 
-             if (.not.active(j)) cycle active_components
+             if (.not.vars%active(j)) cycle active_components
 
              act = act + 1
 
@@ -3756,6 +3886,7 @@ module twopnt_core
           call realloc(this%vary,vars%pmax,error);    if (error) goto 1
           call realloc(this%vary1,vars%pmax,error);   if (error) goto 1
           call realloc(this%vary2,vars%pmax,error);   if (error) goto 1
+          call realloc(this%mark,vars%pmax,error);    if (error) goto 1
           call realloc(this%above,N,error);           if (error) goto 1
           call realloc(this%below,N,error);           if (error) goto 1
           call realloc(this%ratio1,vars%pmax,error);  if (error) goto 1
@@ -3768,6 +3899,10 @@ module twopnt_core
           call realloc(this%xsave,vars%pmax,error);   if (error) goto 1
           call realloc(this%y0,N,error);              if (error) goto 1
           call realloc(this%y1,N,error);              if (error) goto 1
+          call realloc(this%buffer,vars%NMAX1D(),error); if (error) goto 1
+
+          ! Initialize Jacobian
+          call this%jac%init(vars)
 
           ! Success!
           return
@@ -3779,9 +3914,8 @@ module twopnt_core
 
       end subroutine partition_working_space
 
-      pure subroutine expand_bounds(this,above,below,vars)
+      pure subroutine expand_bounds(this,vars)
          class(TwoPntSolverStorage), intent(inout) :: this
-         real(RK),      intent(in)    :: above(:),below(:)
          type(TwoPntBVPDomain),  intent(in)    :: vars
 
          integer :: ptr,j,k
@@ -3801,22 +3935,22 @@ module twopnt_core
          ! EXPAND THE BOUNDS.
          ptr = 1
          do j = 1, vars%groupa
-             this%above(ptr) = above(j)
-             this%below(ptr) = below(j)
+             this%above(ptr) = vars%above(j)
+             this%below(ptr) = vars%below(j)
              ptr = ptr + 1
          end do
 
          do k = 1, vars%points
              do j = 1, vars%comps
-                this%above(ptr) = above(vars%groupa + j)
-                this%below(ptr) = below(vars%groupa + j)
+                this%above(ptr) = vars%above(vars%groupa + j)
+                this%below(ptr) = vars%below(vars%groupa + j)
                 ptr = ptr + 1
              end do
          end do
 
          do j = 1, vars%groupb
-             this%above(ptr) = above(vars%groupa + vars%comps + j)
-             this%below(ptr) = below(vars%groupa + vars%comps + j)
+             this%above(ptr) = vars%above(vars%groupa + vars%comps + j)
+             this%below(ptr) = vars%below(vars%groupa + vars%comps + j)
              ptr = ptr + 1
          end do
 
@@ -3891,6 +4025,28 @@ module twopnt_core
          error = stat/=0
 
       end subroutine realloc_int
+
+      pure subroutine realloc_logical(array,min_size,error)
+         logical , allocatable, intent(inout) :: array(:)
+         integer , intent(in)  :: min_size
+         logical , allocatable :: tmp(:)
+         logical , intent(out) :: error
+         integer :: stat
+
+         if (allocated(array)) then
+             if (size(array)<min_size) then
+                allocate(tmp(min_size),stat=stat)
+                call move_alloc(from=tmp,to=array)
+             else
+                stat = 0
+             end if
+         else
+             allocate(array(min_size),stat=stat)
+         end if
+
+         error = stat/=0
+
+      end subroutine realloc_logical
 
       subroutine init_stats(this,points)
          class(TwoPntSolverStats), intent(inout) :: this
@@ -4009,11 +4165,9 @@ module twopnt_core
       end function unknown_class_name
 
       ! Detailed error message for a case with invalid variable bounds
-      subroutine print_invalid_bounds(id,text,vars,below,above)
+      subroutine print_invalid_bounds(id,text,vars)
          integer     , intent(in) :: text
          type(TwoPntBVPDomain), intent(in) :: vars
-         real(RK),     intent(in) :: below(vars%N())
-         real(RK),     intent(in) :: above(vars%N())
          character(len=*), intent(in) :: id
 
          integer :: j,counter,len1,len2,local,length
@@ -4023,7 +4177,7 @@ module twopnt_core
 
          if (text==0) return
 
-         counter = count(.not.below<above)
+         counter = count(.not.vars%below<vars%above)
 
          ! Header
          write (text,1) id, vars%groupa, vars%groupb, vars%comps, vars%NVAR(), counter
@@ -4031,7 +4185,7 @@ module twopnt_core
          counter = 0
          loop_bounds: do j = 1, vars%NVAR()
 
-            if (below(j) < above(j)) cycle loop_bounds
+            if (vars%below(j) < vars%above(j)) cycle loop_bounds
 
             counter = counter + 1
             if (counter > MAX_ERROR_LINES) exit loop_bounds
@@ -4064,7 +4218,7 @@ module twopnt_core
                length = CONTRL_MAX_LEN
             end if
 
-            write (text, 3) below(j), above(j), string(1:length)
+            write (text, 3) vars%below(j), vars%above(j), string(1:length)
 
          end do loop_bounds
 
@@ -4087,11 +4241,9 @@ module twopnt_core
 
       end subroutine print_invalid_bounds
 
-      subroutine print_invalid_ranges(id,text,vars,below,above,v0,s0)
+      subroutine print_invalid_ranges(id,text,vars,v0,s0)
          integer     , intent(in) :: text
          type(TwoPntBVPDomain), intent(in) :: vars
-         real(RK),     intent(in) :: below (vars%N())
-         real(RK),     intent(in) :: above (vars%N())
          real(RK),     intent(in) :: v0    (vars%N())
          real(RK),     intent(in), optional :: s0(vars%N())
          character(len=*), intent(in) :: id
@@ -4105,9 +4257,9 @@ module twopnt_core
          search = present(s0)
 
          if (search) then
-             verified = (below==v0.and.s0>zero).or.(above==v0.and.s0<zero)
+             verified = (vars%below==v0.and.s0>zero).or.(vars%above==v0.and.s0<zero)
          else
-             verified = (below<=v0.and.v0<=above)
+             verified = (vars%below<=v0.and.v0<=vars%above)
          end if
 
          counter = count(.not.verified)
@@ -4168,9 +4320,9 @@ module twopnt_core
             end if
 
             if (search) then
-                write (text, 6) merge('LOWER','UPPER',below(j)==v0(j)),v0(j),string(1:length)
+                write (text, 6) merge('LOWER','UPPER',vars%below(j)==v0(j)),v0(j),string(1:length)
             else
-                write (text, 5) below(j), v0(j), above(j), string(1:length)
+                write (text, 5) vars%below(j), v0(j), vars%above(j), string(1:length)
             end if
 
          end do loop_bounds
