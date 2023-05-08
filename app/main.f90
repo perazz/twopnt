@@ -78,10 +78,17 @@ program TWMAIN
     ACTIVE(4) = .FALSE.
     ACTIVE(5) = .TRUE.
 
+    ! ASSIGN LIMITS FOR THE UNKNOWNS.
+    BELOW(1) = - 4.0;            ABOVE(1) = 4.0
+    BELOW(2) = - 1.0E4;          ABOVE(2) = 1.0E4
+    BELOW(3) = - 1.0E4;          ABOVE(3) = 1.0E4
+    BELOW(4) = - 1.0E4;          ABOVE(4) = 1.0E4
+    BELOW(5) = 0.5 * TZERO;      ABOVE(5) = 2.0 * TMAX
+
     ! *** SET TWOPNT CONTROLS. ***
 
     ! ASSIGN INITIAL PROBLEM SIZES AND NAMES FOR THE UNKNOWNS.
-    call sizes%new(ERROR, TEXT, GROUPA,COMPS,6,PMAX,GROUPB, &
+    call sizes%new(ERROR, TEXT, GROUPA,COMPS,6,PMAX,GROUPB,ABOVE,BELOW, &
                    [character(6) :: 'F','G','H','LAMBDA','T'], &
                    XRANGE=[zero,ZMAX], ACTIVE=ACTIVE)
 
@@ -128,12 +135,7 @@ program TWMAIN
 
     end do init_unknowns
 
-    ! ASSIGN LIMITS FOR THE UNKNOWNS.
-    BELOW(1) = - 4.0;            ABOVE(1) = 4.0
-    BELOW(2) = - 1.0E4;          ABOVE(2) = 1.0E4
-    BELOW(3) = - 1.0E4;          ABOVE(3) = 1.0E4
-    BELOW(4) = - 1.0E4;          ABOVE(4) = 1.0E4
-    BELOW(5) = 0.5 * TZERO;      ABOVE(5) = 2.0 * TMAX
+
 
 
 
@@ -143,8 +145,7 @@ program TWMAIN
     problem%update_grid => on_grid_update
 
     ! Call driver
-    call problem%run(settings, ERROR, TEXT, sizes, ABOVE, BELOW, BUFFER, &
-                     WORK, MARK, REPORT, TIME, U, jac)
+    call problem%run(settings, ERROR, TEXT, sizes, BUFFER, WORK, MARK, REPORT, TIME, U, jac)
 
     ! WRITE A SUMMARY.
     WRITE (TEXT, 10001) ID, U(4, 1), OMEGA, TZERO, TMAX, WMAX

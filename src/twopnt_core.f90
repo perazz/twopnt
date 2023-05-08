@@ -205,6 +205,9 @@ module twopnt_core
         ! Variables that affect grid adaption [groupa+comps+groupb]
         logical, allocatable :: ACTIVE(:)
 
+        ! Variable bounds
+        real(RK), allocatable :: BELOW(:), ABOVE(:)
+
         ! The computational domain
         real(RK), allocatable :: x(:)
 
@@ -492,55 +495,13 @@ module twopnt_core
        end subroutine set_uniform_grid
 
        ! Initialize problem variables
-       subroutine new_1name(this,error,text,GROUPA,COMPS,POINTS,PMAX,GROUPB,NAME,XRANGE,ACTIVE)
+       subroutine new_base(this,error,text,GROUPA,COMPS,POINTS,PMAX,GROUPB,ABOVE,BELOW,XRANGE)
           class(TwoPntBVPDomain), intent(inout) :: this
           logical, intent(out) :: error
           integer, intent(in) :: text
           integer, intent(in) :: GROUPA,COMPS,POINTS,PMAX,GROUPB
+          real(RK), intent(in) :: ABOVE(:),BELOW(:)
           real(RK), optional, intent(in) :: XRANGE(2)
-          logical , optional, intent(in) :: ACTIVE(:)
-          character(*), intent(in) :: NAME
-
-          character(len=*), parameter :: id = 'DOMAIN:  '
-
-          call this%destroy()
-
-          this%groupa = GROUPA
-          this%comps  = COMPS
-          this%groupb = GROUPB
-          this%points = POINTS
-          this%pmax = PMAX
-
-          ! Allocate grid
-          allocate(this%x(PMAX),source=zero)
-
-          ! Initialize grid
-          if (this%POINTS>0 .and. .not.present(XRANGE)) then
-             error = .true.
-             return
-          end if
-
-          call this%set_uniform_grid(XRANGE)
-
-          call this%set_names(name)
-
-          ! Set list of active components for grid adaption
-          if (present(ACTIVE)) then
-              call this%set_active(error, text, ACTIVE)
-              if (error) return
-          end if
-
-       end subroutine new_1name
-
-       ! Initialize problem variables
-       subroutine new_allnames(this,error,text,GROUPA,COMPS,POINTS,PMAX,GROUPB,NAMES,XRANGE,ACTIVE)
-          class(TwoPntBVPDomain), intent(inout) :: this
-          logical, intent(out) :: error
-          integer, intent(in) :: text
-          integer, intent(in) :: GROUPA,COMPS,POINTS,PMAX,GROUPB
-          real(RK), optional, intent(in) :: XRANGE(2)
-          logical , optional, intent(in) :: ACTIVE(:)
-          character(*), intent(in) :: NAMES(GROUPA+COMPS+GROUPB)
 
           character(len=*), parameter :: id = 'DOMAIN:  '
 
@@ -555,13 +516,82 @@ module twopnt_core
           ! Allocate grid
           allocate(this%x(PMAX),source=zero)
 
-          ! Initialize grid
-          if (this%POINTS>0 .and. .not.present(XRANGE)) then
+          ! Set variable bounds
+          this%ABOVE = ABOVE
+          this%BELOW = BELOW
+
+          if (.not.(size(ABOVE)==this%NVAR() .and. size(BELOW)==this%NVAR())) then
              error = .true.
+             if (text/=0) write (text, 1) id, this%NVAR(),this%comps,this%groupa,this%groupb,size(ABOVE),size(BELOW)
              return
           end if
 
-          call this%set_uniform_grid(XRANGE)
+          ! Initialize grid
+          if (this%POINTS>0) then
+             if (present(XRANGE)) then
+                 call this%set_uniform_grid(XRANGE)
+             else
+                 error = .true.
+                 if (text/=0) write(text, 2) id, this%points
+                 return
+             end if
+          end if
+
+          1 format(/1X, a9, 'ERROR.  THE NUMBER OF VARIABLE BOUNDS IS WRONG.' &
+                 //10X, i10, '  VARIABLES ' &
+                 //10X, i10, '  COMPS, COMPONENTS' &
+                  /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                  /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                  /10X, i10, '  UPPER BOUNDS (ABOVE) ' &
+                  /10X, i10, '  LOWER BOUNDS (BELOW) ')
+
+          2 format(/1X, a9, 'ERROR.  NO DOMAIN BOUNDS (XRANGE) SPECIFIED FOR 1D GRID WITH ' &
+                 //10X, i10, '  POINTS ')
+
+       end subroutine new_base
+
+       ! Initialize problem variables
+       subroutine new_1name(this,error,text,GROUPA,COMPS,POINTS,PMAX,GROUPB,ABOVE,BELOW,NAME,XRANGE,ACTIVE)
+          class(TwoPntBVPDomain), intent(inout) :: this
+          logical, intent(out) :: error
+          integer, intent(in) :: text
+          integer, intent(in) :: GROUPA,COMPS,POINTS,PMAX,GROUPB
+          real(RK), intent(in) :: ABOVE(:),BELOW(:)
+          real(RK), optional, intent(in) :: XRANGE(2)
+          logical , optional, intent(in) :: ACTIVE(:)
+          character(*), intent(in) :: NAME
+
+          character(len=*), parameter :: id = 'DOMAIN:  '
+
+          call new_base(this,error,text,GROUPA,COMPS,POINTS,PMAX,GROUPB,ABOVE,BELOW,XRANGE)
+          if (error) return
+
+          call this%set_names(name)
+
+          ! Set list of active components for grid adaption
+          if (present(ACTIVE)) then
+              call this%set_active(error, text, ACTIVE)
+              if (error) return
+          end if
+
+       end subroutine new_1name
+
+       ! Initialize problem variables
+       subroutine new_allnames(this,error,text,GROUPA,COMPS,POINTS,PMAX,GROUPB,ABOVE,BELOW,NAMES,XRANGE,ACTIVE)
+          class(TwoPntBVPDomain), intent(inout) :: this
+          logical, intent(out) :: error
+          integer, intent(in) :: text
+          integer, intent(in) :: GROUPA,COMPS,POINTS,PMAX,GROUPB
+          real(RK), intent(in) :: ABOVE(:),BELOW(:)
+          real(RK), optional, intent(in) :: XRANGE(2)
+          logical , optional, intent(in) :: ACTIVE(:)
+          character(*), intent(in) :: NAMES(:)
+
+          character(len=*), parameter :: id = 'DOMAIN:  '
+
+          call new_base(this,error,text,GROUPA,COMPS,POINTS,PMAX,GROUPB,ABOVE,BELOW,XRANGE)
+          if (error) return
+
           call this%set_names(NAMES)
 
           ! Check variable names: either 1 only, or 1 per variable
@@ -595,6 +625,9 @@ module twopnt_core
           this%groupb = 0
           this%pmax = 0
           if (allocated(this%x))deallocate(this%x)
+          if (allocated(this%ACTIVE)) deallocate(this%ACTIVE)
+          if (allocated(this%ABOVE)) deallocate(this%ABOVE)
+          if (allocated(this%BELOW)) deallocate(this%BELOW)
        end subroutine domain_destroy
 
        ! Set a single name for all variables
@@ -724,6 +757,13 @@ module twopnt_core
               if (text>0) write (text,5) id,this%names,this%comps,this%groupa,this%groupb,this%NVAR()
               return
           end if number_of_names
+
+          ! Check variable bounds
+          error = any(.not.this%BELOW<this%ABOVE)
+          if (error) then
+              call print_invalid_bounds(id,text,this)
+              return
+          end if
 
           1 format(/1X, a9, 'ERROR.  NUMBERS OF ALL TYPES OF UNKNOWNS MUST BE AT' &
                   /10X, 'LEAST ZERO.' &
@@ -2461,17 +2501,10 @@ module twopnt_core
           call vars%check(error,id,text)
           if (error) return
 
-          ! Check variable bounds
-          error = any(.not.below<above)
-          if (error) then
-             call print_invalid_bounds(id,text,vars,below,above)
-             return
-          end if
-
           ! Check the unknowns are valid
           error = any(.not.(below<=v0 .and. v0<=above))
           if (error) then
-             call print_invalid_ranges(id,text,vars,below,above,v0)
+             call print_invalid_ranges(id,text,vars,v0)
              return
           end if
 
@@ -2581,7 +2614,7 @@ module twopnt_core
 
                  if (levelm>0 .and. text>0) then
                     call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,jac%condit)
-                    call print_invalid_ranges(id,text,vars,below,above,v0,s0)
+                    call print_invalid_ranges(id,text,vars,v0,s0)
                  end if
 
                  report  = qbnds
@@ -2879,8 +2912,7 @@ module twopnt_core
       end subroutine print_search_header
 
       ! TWOPNT driver.
-      subroutine twopnt(this, setup, error, text, vars, above, below, buffer, &
-                        work, mark, report, time, u, jac)
+      subroutine twopnt(this, setup, error, text, vars, buffer, work, mark, report, time, u, jac)
 
          class(TwoPntBVProblem), intent(inout) :: this
       type(TwoPntSolverSetup) , intent(inout) :: setup
@@ -2888,7 +2920,6 @@ module twopnt_core
       integer     , intent(in)    :: text
       type(TwoPntBVPDomain), intent(inout) :: vars
       character(*), intent(out)   :: report
-      real(RK)    , intent(inout), dimension(vars%NVAR()) :: above,below
       logical     , intent(inout) :: mark(*)
       real(RK)    , intent(inout) :: buffer(vars%NMAX())
       type(TwoPntSolverStorage), intent(inout) :: work
@@ -2931,13 +2962,6 @@ module twopnt_core
       ! Check variable sizes
       call vars%check(error,id,text); if (error) return
 
-      ! Check variable bounds
-      error = any(.not.below<above)
-      if (error) then
-          call print_invalid_bounds(id,text,vars,below,above)
-          return
-      end if
-
       ! PARTITION THE INTEGER WORK SPACE.
       call work%init(text,vars,error)
       if (error) return
@@ -2952,7 +2976,7 @@ module twopnt_core
       call this%stats%new(vars%points)
 
       ! EXPAND THE BOUNDS.
-      call work%load_bounds(above,below,vars)
+      call work%load_bounds(vars)
 
       ! SAVE THE INITIAL SOLUTION.
       call work%store_solution(u,vars,setup%adapt)
@@ -3081,7 +3105,7 @@ module twopnt_core
                      if (vars%groupb>0) u(vars%idx_B()) = work%vsave(:vars%groupb)
 
                      ! Expand bounds to new grid size
-                     call work%load_bounds(above,below,vars)
+                     call work%load_bounds(vars)
 
                      ! SAVE THE LATEST SOLUTION
                      call twcopy (vars%N(),u,buffer)
@@ -3840,9 +3864,8 @@ module twopnt_core
 
       end subroutine partition_working_space
 
-      pure subroutine expand_bounds(this,above,below,vars)
+      pure subroutine expand_bounds(this,vars)
          class(TwoPntSolverStorage), intent(inout) :: this
-         real(RK),      intent(in)    :: above(:),below(:)
          type(TwoPntBVPDomain),  intent(in)    :: vars
 
          integer :: ptr,j,k
@@ -3862,22 +3885,22 @@ module twopnt_core
          ! EXPAND THE BOUNDS.
          ptr = 1
          do j = 1, vars%groupa
-             this%above(ptr) = above(j)
-             this%below(ptr) = below(j)
+             this%above(ptr) = vars%above(j)
+             this%below(ptr) = vars%below(j)
              ptr = ptr + 1
          end do
 
          do k = 1, vars%points
              do j = 1, vars%comps
-                this%above(ptr) = above(vars%groupa + j)
-                this%below(ptr) = below(vars%groupa + j)
+                this%above(ptr) = vars%above(vars%groupa + j)
+                this%below(ptr) = vars%below(vars%groupa + j)
                 ptr = ptr + 1
              end do
          end do
 
          do j = 1, vars%groupb
-             this%above(ptr) = above(vars%groupa + vars%comps + j)
-             this%below(ptr) = below(vars%groupa + vars%comps + j)
+             this%above(ptr) = vars%above(vars%groupa + vars%comps + j)
+             this%below(ptr) = vars%below(vars%groupa + vars%comps + j)
              ptr = ptr + 1
          end do
 
@@ -4070,11 +4093,9 @@ module twopnt_core
       end function unknown_class_name
 
       ! Detailed error message for a case with invalid variable bounds
-      subroutine print_invalid_bounds(id,text,vars,below,above)
+      subroutine print_invalid_bounds(id,text,vars)
          integer     , intent(in) :: text
          type(TwoPntBVPDomain), intent(in) :: vars
-         real(RK),     intent(in) :: below(vars%N())
-         real(RK),     intent(in) :: above(vars%N())
          character(len=*), intent(in) :: id
 
          integer :: j,counter,len1,len2,local,length
@@ -4084,7 +4105,7 @@ module twopnt_core
 
          if (text==0) return
 
-         counter = count(.not.below<above)
+         counter = count(.not.vars%below<vars%above)
 
          ! Header
          write (text,1) id, vars%groupa, vars%groupb, vars%comps, vars%NVAR(), counter
@@ -4092,7 +4113,7 @@ module twopnt_core
          counter = 0
          loop_bounds: do j = 1, vars%NVAR()
 
-            if (below(j) < above(j)) cycle loop_bounds
+            if (vars%below(j) < vars%above(j)) cycle loop_bounds
 
             counter = counter + 1
             if (counter > MAX_ERROR_LINES) exit loop_bounds
@@ -4125,7 +4146,7 @@ module twopnt_core
                length = CONTRL_MAX_LEN
             end if
 
-            write (text, 3) below(j), above(j), string(1:length)
+            write (text, 3) vars%below(j), vars%above(j), string(1:length)
 
          end do loop_bounds
 
@@ -4148,11 +4169,9 @@ module twopnt_core
 
       end subroutine print_invalid_bounds
 
-      subroutine print_invalid_ranges(id,text,vars,below,above,v0,s0)
+      subroutine print_invalid_ranges(id,text,vars,v0,s0)
          integer     , intent(in) :: text
          type(TwoPntBVPDomain), intent(in) :: vars
-         real(RK),     intent(in) :: below (vars%N())
-         real(RK),     intent(in) :: above (vars%N())
          real(RK),     intent(in) :: v0    (vars%N())
          real(RK),     intent(in), optional :: s0(vars%N())
          character(len=*), intent(in) :: id
@@ -4166,9 +4185,9 @@ module twopnt_core
          search = present(s0)
 
          if (search) then
-             verified = (below==v0.and.s0>zero).or.(above==v0.and.s0<zero)
+             verified = (vars%below==v0.and.s0>zero).or.(vars%above==v0.and.s0<zero)
          else
-             verified = (below<=v0.and.v0<=above)
+             verified = (vars%below<=v0.and.v0<=vars%above)
          end if
 
          counter = count(.not.verified)
@@ -4229,9 +4248,9 @@ module twopnt_core
             end if
 
             if (search) then
-                write (text, 6) merge('LOWER','UPPER',below(j)==v0(j)),v0(j),string(1:length)
+                write (text, 6) merge('LOWER','UPPER',vars%below(j)==v0(j)),v0(j),string(1:length)
             else
-                write (text, 5) below(j), v0(j), above(j), string(1:length)
+                write (text, 5) vars%below(j), v0(j), vars%above(j), string(1:length)
             end if
 
          end do loop_bounds
