@@ -36,24 +36,24 @@ program TWMAIN
     integer, parameter :: TEXT = output_unit
     logical :: ERROR
 
+    !OPEN (FILE = 'twopnt.out', STATUS='UNKNOWN',FORM = 'FORMATTED', NEWUNIT = TEXT)
+
     ! Initialize problem object
     call problem%new(ERROR,TEXT)
-    print *, 'erro1r=',error
-    if (ERROR) return
-
-    !    ! PROLOGUE. OPEN FILES.
-    !    !OPEN (FILE = 'twopnt.out', STATUS='UNKNOWN',FORM = 'FORMATTED', UNIT = TEXT)
+    if (ERROR) then
+        write(text,1)
+        return
+    endif
 
     ! Call driver
     call problem%run(ERROR, TEXT, REPORT, problem%U)
-    print *, 'error2=',error
 
     ! Print a summary
     call problem%summary(TEXT)
 
-
     ! close(TEXT)
 
     return
+    1 format(/1X, a9, 'ERROR.  CANNOT INITIALIZE SWIRL FLOW PROBLEM.')
 
 end program TWMAIN
