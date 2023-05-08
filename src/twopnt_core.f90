@@ -153,6 +153,7 @@ module twopnt_core
         integer, allocatable :: vary (:)   ! (PMAX)
         integer, allocatable :: vary1(:)   ! (PMAX)
         integer, allocatable :: vary2(:)   ! (PMAX)
+        logical, allocatable :: mark (:)   ! (PMAX)
 
         real(RK), allocatable :: above(:)  ! (GROUPA + COMPS * PMAX + GROUPB)
         real(RK), allocatable :: below(:)  ! (GROUPA + COMPS * PMAX + GROUPB)
@@ -333,6 +334,7 @@ module twopnt_core
     interface realloc
         module procedure realloc_int
         module procedure realloc_real
+        module procedure realloc_logical
     end interface realloc
 
     ! Procedure interfaces
@@ -2924,7 +2926,7 @@ module twopnt_core
       end subroutine print_search_header
 
       ! TWOPNT driver.
-      subroutine twopnt(this, setup, error, text, vars,  work, mark, report, time, u, jac)
+      subroutine twopnt(this, setup, error, text, vars,  work, report, time, u, jac)
 
          class(TwoPntBVProblem), intent(inout) :: this
       type(TwoPntSolverSetup) , intent(inout) :: setup
@@ -2932,7 +2934,6 @@ module twopnt_core
       integer     , intent(in)    :: text
       type(TwoPntBVPDomain), intent(inout) :: vars
       character(*), intent(out)   :: report
-      logical     , intent(inout) :: mark(*)
       type(TwoPntSolverStorage), intent(inout) :: work
       real(RK)    , intent(inout) :: u(vars%NMAX())
       type(twjac) , intent(inout) :: jac
@@ -3098,7 +3099,7 @@ module twopnt_core
                   exist = .false.
 
                   ! CALL REFINE.
-                  call refine(this, error, setup, text, work%buffer(vars%groupa+1), vars, mark, &
+                  call refine(this, error, setup, text, work%buffer(vars%groupa+1), vars, work%mark, &
                               found, ratio, work%ratio1, work%ratio2, satisf, u(vars%groupa + 1), &
                               work%vary1, work%vary2, work%vary)
                   if (error) then
@@ -3852,6 +3853,7 @@ module twopnt_core
           call realloc(this%vary,vars%pmax,error);    if (error) goto 1
           call realloc(this%vary1,vars%pmax,error);   if (error) goto 1
           call realloc(this%vary2,vars%pmax,error);   if (error) goto 1
+          call realloc(this%mark,vars%pmax,error);    if (error) goto 1
           call realloc(this%above,N,error);           if (error) goto 1
           call realloc(this%below,N,error);           if (error) goto 1
           call realloc(this%ratio1,vars%pmax,error);  if (error) goto 1
@@ -3987,6 +3989,28 @@ module twopnt_core
          error = stat/=0
 
       end subroutine realloc_int
+
+      pure subroutine realloc_logical(array,min_size,error)
+         logical , allocatable, intent(inout) :: array(:)
+         integer , intent(in)  :: min_size
+         logical , allocatable :: tmp(:)
+         logical , intent(out) :: error
+         integer :: stat
+
+         if (allocated(array)) then
+             if (size(array)<min_size) then
+                allocate(tmp(min_size),stat=stat)
+                call move_alloc(from=tmp,to=array)
+             else
+                stat = 0
+             end if
+         else
+             allocate(array(min_size),stat=stat)
+         end if
+
+         error = stat/=0
+
+      end subroutine realloc_logical
 
       subroutine init_stats(this,points)
          class(TwoPntSolverStats), intent(inout) :: this

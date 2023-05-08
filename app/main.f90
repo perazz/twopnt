@@ -144,7 +144,7 @@ program TWMAIN
     problem%update_grid => on_grid_update
 
     ! Call driver
-    call problem%run(settings, ERROR, TEXT, sizes, WORK, MARK, REPORT, TIME, U, jac)
+    call problem%run(settings, ERROR, TEXT, sizes, WORK, REPORT, TIME, U, jac)
 
     ! WRITE A SUMMARY.
     WRITE (TEXT, 10001) ID, U(4, 1), OMEGA, TZERO, TMAX, WMAX
