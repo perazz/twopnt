@@ -44,7 +44,6 @@ program TWMAIN
     type(TwoPntBVProblem) :: problem
     type(twjac) :: jac
     real(RK) :: ABOVE(COMPS), BELOW(COMPS)
-    real(RK), dimension(COMPS*PMAX) :: BUFFER
     real(RK), dimension(COMPS,PMAX) :: U,U0
     real(RK), dimension(PMAX) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0
     logical  :: ACTIVE(COMPS), MARK(PMAX)
@@ -145,7 +144,7 @@ program TWMAIN
     problem%update_grid => on_grid_update
 
     ! Call driver
-    call problem%run(settings, ERROR, TEXT, sizes, BUFFER, WORK, MARK, REPORT, TIME, U, jac)
+    call problem%run(settings, ERROR, TEXT, sizes, WORK, MARK, REPORT, TIME, U, jac)
 
     ! WRITE A SUMMARY.
     WRITE (TEXT, 10001) ID, U(4, 1), OMEGA, TZERO, TMAX, WMAX

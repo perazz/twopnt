@@ -165,6 +165,9 @@ module twopnt_core
         real(RK), allocatable :: y0(:)     ! (GROUPA + COMPS * PMAX + GROUPB)
         real(RK), allocatable :: y1(:)     ! (GROUPA + COMPS * PMAX + GROUPB)
 
+        ! 1D Grid solution buffer
+        real(RK), allocatable :: buffer(:) ! (COMPS*PMAX)
+
         ! Saved solution
         integer :: psave
         real(RK), allocatable :: xsave(:)  ! PMAX
@@ -224,6 +227,9 @@ module twopnt_core
 
            ! Max number of unknowns (storage size)
            procedure, non_overridable :: NMAX => TwoPntBVPDomain_max
+
+           ! Number of 1D grid unknowns
+           procedure, non_overridable :: NMAX1D => TwoPntBVPDomain_max1d
 
            ! Number of independent variables
            procedure, non_overridable :: NVAR => TwoPntBVPDomain_NVARS
@@ -849,6 +855,12 @@ module twopnt_core
           class(TwoPntBVPDomain), intent(in) :: this
           N = this%GROUPA + this%COMPS * this%PMAX + this%GROUPB
        end function TwoPntBVPDomain_max
+
+       ! Return variable size on the 1D grid
+       elemental integer function TwoPntBVPDomain_max1D(this) result(N)
+          class(TwoPntBVPDomain), intent(in) :: this
+          N = this%COMPS * this%PMAX
+       end function TwoPntBVPDomain_max1D
 
        ! Initialize the control structure
        elemental subroutine twinit (this)
@@ -2912,7 +2924,7 @@ module twopnt_core
       end subroutine print_search_header
 
       ! TWOPNT driver.
-      subroutine twopnt(this, setup, error, text, vars, buffer, work, mark, report, time, u, jac)
+      subroutine twopnt(this, setup, error, text, vars,  work, mark, report, time, u, jac)
 
          class(TwoPntBVProblem), intent(inout) :: this
       type(TwoPntSolverSetup) , intent(inout) :: setup
@@ -2921,7 +2933,6 @@ module twopnt_core
       type(TwoPntBVPDomain), intent(inout) :: vars
       character(*), intent(out)   :: report
       logical     , intent(inout) :: mark(*)
-      real(RK)    , intent(inout) :: buffer(vars%NMAX())
       type(TwoPntSolverStorage), intent(inout) :: work
       real(RK)    , intent(inout) :: u(vars%NMAX())
       type(twjac) , intent(inout) :: jac
@@ -2982,8 +2993,8 @@ module twopnt_core
       call work%store_solution(u,vars,setup%adapt)
 
       ! Save the last solution
-      call twcopy (vars%N(), from=u, to=buffer)
-      call this%save(error,vars,buffer)
+      call twcopy (vars%N(), from=u, to=work%buffer)
+      call this%save(error,vars,work%buffer)
 
       ! PRINT LEVELS 11, 21, AND 22.
       if (setup%leveld>0 .and. text>0) then
@@ -3041,7 +3052,7 @@ module twopnt_core
                   exist = .false.
 
                   ! CALL SEARCH.
-                  call search(this, error, text, work%above, work%below, buffer, vars, &
+                  call search(this, error, text, work%above, work%below, work%buffer, vars, &
                              exist, setup%leveld - 1, setup%levelm - 1, &
                              xrepor, work%s0, work%s1, nsteps, found, &
                              u, work%v1, setup%ssabs, setup%ssage, setup%ssrel, work%y0, ynorm, &
@@ -3058,8 +3069,8 @@ module twopnt_core
                      call work%store_solution(u,vars,setup%adapt)
 
                      ! Let user save last valid solution
-                     call twcopy(vars%N(), from=u, to=buffer)
-                     call this%save(error,vars,buffer)
+                     call twcopy(vars%N(), from=u, to=work%buffer)
+                     call this%save(error,vars,work%buffer)
 
                   else save_or_restore
                      ! RESTORE THE SOLUTION
@@ -3087,7 +3098,7 @@ module twopnt_core
                   exist = .false.
 
                   ! CALL REFINE.
-                  call refine(this, error, setup, text, buffer(vars%groupa+1), vars, mark, &
+                  call refine(this, error, setup, text, work%buffer(vars%groupa+1), vars, mark, &
                               found, ratio, work%ratio1, work%ratio2, satisf, u(vars%groupa + 1), &
                               work%vary1, work%vary2, work%vary)
                   if (error) then
@@ -3108,8 +3119,8 @@ module twopnt_core
                      call work%load_bounds(vars)
 
                      ! SAVE THE LATEST SOLUTION
-                     call twcopy (vars%N(),u,buffer)
-                     call this%save(error,vars,buffer)
+                     call twcopy (vars%N(),u,work%buffer)
+                     call this%save(error,vars,work%buffer)
 
                   endif refine_found
 
@@ -3138,7 +3149,7 @@ module twopnt_core
                   if (setup%levelm>1 .and. text>0) write (text, 15) id
 
                   ! CALL EVOLVE.
-                  call evolve(this, setup, error, text, work%above, work%below, buffer, vars, &
+                  call evolve(this, setup, error, text, work%above, work%below, work%buffer, vars, &
                               desire, xrepor, work%s0, work%s1, stride, found, time, u, work%v1, &
                               work%vsave, work%y0, work%y1, ynorm, jac)
                   if (error) then
@@ -3149,8 +3160,8 @@ module twopnt_core
                   ! REACT TO THE COMPLETION OF EVOLVE.
                   if (found) then
                      ! Save the last solution
-                     call twcopy (vars%N(), from=u, to=buffer)
-                     call this%save(error,vars,buffer)
+                     call twcopy (vars%N(), from=u, to=work%buffer)
+                     call this%save(error,vars,work%buffer)
                   end if
 
                   ! ALLOW FURTHER TIME EVOLUTION.
@@ -3853,6 +3864,7 @@ module twopnt_core
           call realloc(this%xsave,vars%pmax,error);   if (error) goto 1
           call realloc(this%y0,N,error);              if (error) goto 1
           call realloc(this%y1,N,error);              if (error) goto 1
+          call realloc(this%buffer,vars%NMAX1D(),error); if (error) goto 1
 
           ! Success!
           return
