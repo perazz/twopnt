@@ -180,7 +180,7 @@ module twopnt_core
 
     end type TwoPntSolverStorage
 
-    ! TWOPNT variables
+    ! TWOPNT variable domain
     type, public :: TwoPntBVPDomain
 
         ! Group A variables
@@ -201,6 +201,9 @@ module twopnt_core
         ! Names of the variables
         character(len=:), allocatable :: NAME(:)
         integer :: names = 0
+
+        ! Variables that affect grid adaption [groupa+comps+groupb]
+        logical, allocatable :: ACTIVE(:)
 
         ! The computational domain
         real(RK), allocatable :: x(:)
@@ -233,6 +236,8 @@ module twopnt_core
            procedure, non_overridable, private :: set_name_1
            procedure, non_overridable, private :: set_names_all
            generic :: set_names => set_name_1,set_names_all
+
+           procedure, non_overridable :: set_active
 
            ! Set grid
            procedure :: set_uniform_grid
@@ -487,17 +492,21 @@ module twopnt_core
        end subroutine set_uniform_grid
 
        ! Initialize problem variables
-       subroutine new_1name(this,error,GROUPA,COMPS,POINTS,PMAX,GROUPB,NAME,XRANGE)
+       subroutine new_1name(this,error,text,GROUPA,COMPS,POINTS,PMAX,GROUPB,NAME,XRANGE,ACTIVE)
           class(TwoPntBVPDomain), intent(inout) :: this
           logical, intent(out) :: error
+          integer, intent(in) :: text
           integer, intent(in) :: GROUPA,COMPS,POINTS,PMAX,GROUPB
           real(RK), optional, intent(in) :: XRANGE(2)
+          logical , optional, intent(in) :: ACTIVE(:)
           character(*), intent(in) :: NAME
+
+          character(len=*), parameter :: id = 'DOMAIN:  '
 
           call this%destroy()
 
           this%groupa = GROUPA
-          this%comps = COMPS
+          this%comps  = COMPS
           this%groupb = GROUPB
           this%points = POINTS
           this%pmax = PMAX
@@ -513,25 +522,35 @@ module twopnt_core
 
           call this%set_uniform_grid(XRANGE)
 
-          call this%set_names(error,name)
+          call this%set_names(name)
+
+          ! Set list of active components for grid adaption
+          if (present(ACTIVE)) then
+              call this%set_active(error, text, ACTIVE)
+              if (error) return
+          end if
 
        end subroutine new_1name
 
        ! Initialize problem variables
-       subroutine new_allnames(this,error,GROUPA,COMPS,POINTS,PMAX,GROUPB,NAMES,XRANGE)
+       subroutine new_allnames(this,error,text,GROUPA,COMPS,POINTS,PMAX,GROUPB,NAMES,XRANGE,ACTIVE)
           class(TwoPntBVPDomain), intent(inout) :: this
           logical, intent(out) :: error
+          integer, intent(in) :: text
           integer, intent(in) :: GROUPA,COMPS,POINTS,PMAX,GROUPB
           real(RK), optional, intent(in) :: XRANGE(2)
+          logical , optional, intent(in) :: ACTIVE(:)
           character(*), intent(in) :: NAMES(GROUPA+COMPS+GROUPB)
+
+          character(len=*), parameter :: id = 'DOMAIN:  '
 
           call this%destroy()
 
           this%groupa = GROUPA
-          this%comps = COMPS
+          this%comps  = COMPS
           this%groupb = GROUPB
           this%points = POINTS
-          this%pmax = PMAX
+          this%pmax   = PMAX
 
           ! Allocate grid
           allocate(this%x(PMAX),source=zero)
@@ -543,8 +562,27 @@ module twopnt_core
           end if
 
           call this%set_uniform_grid(XRANGE)
+          call this%set_names(NAMES)
 
-          call this%set_names(error,NAMES)
+          ! Check variable names: either 1 only, or 1 per variable
+          error = .not. (this%names== 1 .or. this%names == this%NVAR())
+          number_of_names: if (error) then
+              if (text>0) write (text,1) id,this%names,this%comps,this%groupa,this%groupb,this%NVAR()
+              return
+          end if number_of_names
+
+          ! Set list of active components for grid adaption
+          if (present(ACTIVE)) then
+              call this%set_active(error, text, ACTIVE)
+              if (error) return
+          end if
+
+          1 format(/1X, a9, 'ERROR.  THE NUMBER OF NAMES IS WRONG.' &
+                 //10X, i10, '  NAMES' &
+                 //10X, i10, '  COMPS, COMPONENTS' &
+                  /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                  /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                  /10X, i10, '  TOTAL NUMBER')
 
        end subroutine new_allnames
 
@@ -560,9 +598,8 @@ module twopnt_core
        end subroutine domain_destroy
 
        ! Set a single name for all variables
-       subroutine set_name_1(this,error,name)
+       subroutine set_name_1(this,name)
           class(TwoPntBVPDomain), intent(inout) :: this
-          logical, intent(out) :: error
           character(len=*), intent(in) :: name
 
           if (allocated(this%NAME)) deallocate(this%NAME)
@@ -570,18 +607,18 @@ module twopnt_core
           this%NAME(1) = trim(name)
           this%names = 1
 
-          ! We can always have a unique name
-          error = .false.
        end subroutine set_name_1
 
        ! Set names for each variable: size should be [GROUPA + GROUPB + COMPS]
-       subroutine set_names_all(this,error,names)
+       subroutine set_names_all(this, names)
           class(TwoPntBVPDomain), intent(inout) :: this
-          logical, intent(out) :: error
           character(len=*), intent(in) :: names(:)
           integer :: lmax,j
-          if (allocated(this%NAME)) deallocate(this%NAME)
 
+          character(len=*), parameter :: id = 'DOMAIN:  '
+
+
+          if (allocated(this%NAME)) deallocate(this%NAME)
           lmax = 0
           do j=1,size(names)
              lmax = max(lmax,len_trim(names(j)))
@@ -592,10 +629,35 @@ module twopnt_core
           end do
           this%names = size(names)
 
-          ! The number of names must match GROUPA + GROUPB + COMPS size (one name per variable)
-          error = .not. this%names == this%groupa+this%groupb+this%comps
-
        end subroutine set_names_all
+
+       ! Set list of active variables for grid adaption
+       subroutine set_active(this, error, text, ACTIVE)
+          class(TwoPntBVPDomain), intent(inout) :: this
+          logical,          intent(out) :: error
+          integer,          intent(in)  :: text  ! output unit
+          logical,          intent(in)  :: ACTIVE(:)
+
+          character(len=*), parameter :: id = 'DOMAIN:  '
+
+          ! Local variables
+          if (size(ACTIVE)/=this%comps) then
+             error = .true.
+             if (text>0) write (text, 1) id, size(ACTIVE),this%comps
+             return
+          end if
+
+          ! Copy list
+          error = .false.
+          this%ACTIVE = ACTIVE
+
+          return
+
+          ! Error messages.
+          1 format(/1X, a9, 'ERROR.  USER LIST OF ACTIVE VARIABLES HAS INVALID SIZE=',i0,', COMPS=',i0)
+
+      end subroutine set_active
+
 
        ! Indices of all grid variables of component comp (one per grid point)
        elemental integer function TwoPntBVPDomain_idx_comp_one(this,comp,point) result(icomp)
@@ -2817,8 +2879,8 @@ module twopnt_core
       end subroutine print_search_header
 
       ! TWOPNT driver.
-      subroutine twopnt(this, setup, error, text, vars, above, active, below, buffer, &
-                        work, mark, report, stride, time, u, jac)
+      subroutine twopnt(this, setup, error, text, vars, above, below, buffer, &
+                        work, mark, report, time, u, jac)
 
          class(TwoPntBVProblem), intent(inout) :: this
       type(TwoPntSolverSetup) , intent(inout) :: setup
@@ -2827,7 +2889,7 @@ module twopnt_core
       type(TwoPntBVPDomain), intent(inout) :: vars
       character(*), intent(out)   :: report
       real(RK)    , intent(inout), dimension(vars%NVAR()) :: above,below
-      logical     , intent(inout) :: active(*),mark(*)
+      logical     , intent(inout) :: mark(*)
       real(RK)    , intent(inout) :: buffer(vars%NMAX())
       type(TwoPntSolverStorage), intent(inout) :: work
       real(RK)    , intent(inout) :: u(vars%NMAX())
@@ -2836,7 +2898,7 @@ module twopnt_core
       ! Local variables
       character(*), parameter :: id = 'TWOPNT:  '
 
-      real(RK) ::  ratio(2), stride, ynorm, csave
+      real(RK) ::  ratio(2), ynorm, csave, stride
       integer :: desire, nsteps, qtask, steps, xrepor, jcount
       intrinsic :: max
       logical :: allow, exist, found, satisf, time
@@ -2849,7 +2911,6 @@ module twopnt_core
       time   = .false.
       error  = .false.
       report = ' '
-      stride = zero
       ratio  = zero
       xrepor = qnull
 
@@ -2882,9 +2943,10 @@ module twopnt_core
       if (error) return
 
       ! ONE-TIME INITIALIZATION.
-      allow = .true.  ! Allow further time evolution
-      qtask = qentry  ! Present task: ENTRY
-      found = .true.  ! SOLUTION FLAG
+      allow  = .true.  ! Allow further time evolution
+      qtask  = qentry  ! Present task: ENTRY
+      found  = .true.  ! SOLUTION FLAG
+      stride = setup%strid0
 
       ! Init solver statistics
       call this%stats%new(vars%points)
@@ -3001,7 +3063,7 @@ module twopnt_core
                   exist = .false.
 
                   ! CALL REFINE.
-                  call refine(this, error, setup, text, active, buffer(vars%groupa+1), vars, mark, &
+                  call refine(this, error, setup, text, buffer(vars%groupa+1), vars, mark, &
                               found, ratio, work%ratio1, work%ratio2, satisf, u(vars%groupa + 1), &
                               work%vary1, work%vary2, work%vary)
                   if (error) then
@@ -3333,14 +3395,13 @@ module twopnt_core
       end function evolve_task_summary
 
       ! Perform automatic grid selection
-      subroutine refine(this, error, setup, text, active, buffer, vars, mark, newx, &
+      subroutine refine(this, error, setup, text, buffer, vars, mark, newx, &
                         ratio, ratio1, ratio2, success, u, vary1, vary2, weight)
           class(TwoPntBVProblem), intent(in) :: this
           type(TwoPntSolverSetup),  intent(in)     :: setup
           integer,      intent(in)     :: text
           type(TwoPntBVPDomain), intent(inout)  :: vars
           logical,      intent(inout)  :: error, newx, success
-          logical,      intent(inout)  :: active(vars%comps)
           logical,      intent(inout)  :: mark(vars%pmax)
           real(RK),     intent(inout)  :: ratio1(vars%pmax),ratio2(vars%pmax),ratio(2)
           real(RK),     intent(inout)  :: buffer(vars%comps*vars%pmax),u(vars%comps,vars%pmax)
@@ -3369,7 +3430,7 @@ module twopnt_core
           if (error) return
 
           ! Check there is at least one variable that affects grid adaption
-          counted = count(active)
+          counted = count(vars%active)
           error = .not. (counted>=1)
           if (error) then
                if (text>0) write (text, 105) id
@@ -3410,7 +3471,7 @@ module twopnt_core
           ! top of the loop over the components.
           active_components: do j = 1, vars%comps
 
-             if (.not.active(j)) cycle active_components
+             if (.not.vars%active(j)) cycle active_components
 
              act = act + 1
 

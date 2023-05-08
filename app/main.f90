@@ -47,7 +47,6 @@ program TWMAIN
     real(RK), dimension(COMPS*PMAX) :: BUFFER
     real(RK), dimension(COMPS,PMAX) :: U,U0
     real(RK), dimension(PMAX) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0
-    real(RK) :: STRIDE
     logical  :: ACTIVE(COMPS), MARK(PMAX)
     INTEGER :: J, N
     LOGICAL :: ERROR, TIME
@@ -72,11 +71,19 @@ program TWMAIN
     ! PROLOGUE. OPEN FILES.
     !OPEN (FILE = 'twopnt.out', STATUS='UNKNOWN',FORM = 'FORMATTED', UNIT = TEXT)
 
+    ! CHOOSE UNKNOWNS TO EXAMINE FOR GRID ADAPTION.
+    ACTIVE(1) = .TRUE.
+    ACTIVE(2) = .TRUE.
+    ACTIVE(3) = .TRUE.
+    ACTIVE(4) = .FALSE.
+    ACTIVE(5) = .TRUE.
+
     ! *** SET TWOPNT CONTROLS. ***
 
     ! ASSIGN INITIAL PROBLEM SIZES AND NAMES FOR THE UNKNOWNS.
-    call sizes%new(ERROR,GROUPA,COMPS,6,PMAX,GROUPB, &
-                   [character(6) :: 'F','G','H','LAMBDA','T'],[zero,ZMAX])
+    call sizes%new(ERROR, TEXT, GROUPA,COMPS,6,PMAX,GROUPB, &
+                   [character(6) :: 'F','G','H','LAMBDA','T'], &
+                   XRANGE=[zero,ZMAX], ACTIVE=ACTIVE)
 
     ! CHOOSE THE INITIAL GRID SIZE.
     N = sizes%N()
@@ -128,12 +135,7 @@ program TWMAIN
     BELOW(4) = - 1.0E4;          ABOVE(4) = 1.0E4
     BELOW(5) = 0.5 * TZERO;      ABOVE(5) = 2.0 * TMAX
 
-    ! CHOOSE UNKNOWNS TO EXAMINE FOR GRID ADAPTION.
-    ACTIVE(1) = .TRUE.
-    ACTIVE(2) = .TRUE.
-    ACTIVE(3) = .TRUE.
-    ACTIVE(4) = .FALSE.
-    ACTIVE(5) = .TRUE.
+
 
     ! Initialize functions
     problem%save_sol    => savesol
@@ -141,8 +143,8 @@ program TWMAIN
     problem%update_grid => on_grid_update
 
     ! Call driver
-    call problem%run(settings, ERROR, TEXT, sizes, ABOVE, ACTIVE, BELOW, BUFFER, &
-                     WORK, MARK, REPORT, STRIDE, TIME, U, jac)
+    call problem%run(settings, ERROR, TEXT, sizes, ABOVE, BELOW, BUFFER, &
+                     WORK, MARK, REPORT, TIME, U, jac)
 
     ! WRITE A SUMMARY.
     WRITE (TEXT, 10001) ID, U(4, 1), OMEGA, TZERO, TMAX, WMAX
