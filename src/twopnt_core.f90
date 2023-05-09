@@ -504,12 +504,19 @@ module twopnt_core
        end function count_groups
 
        ! Set a uniform grid
-       pure subroutine set_uniform_grid(this,XRANGE)
+       pure subroutine set_uniform_grid(this,XRANGE,points)
           class(TwoPntBVPDomain), intent(inout) :: this
           real(RK), intent(in) :: XRANGE(2)
+          integer, optional, intent(in) :: points
 
           integer :: i
           real(RK) :: xstep
+
+          ! Override size, if requested
+          if (present(points)) then
+             this%points = points
+             this%pmax = max(this%pmax,points)
+          end if
 
           ! FORM THE INITIAL GRID.
           xstep = (XRANGE(2)-XRANGE(1))/real(this%points-1,RK)
@@ -843,6 +850,18 @@ module twopnt_core
                 return
            end if
 
+           error = .not. allocated(this%ACTIVE)
+           if (error) then
+                if (text>0) write (text, 4) id, this%comps, 0, 0
+                return
+           end if
+
+           error = .not. (size(this%ACTIVE)==this%comps .and. any(this%ACTIVE))
+           if (error) then
+                if (text>0) write (text, 4) id, this%comps, size(this%ACTIVE), count(this%ACTIVE)
+                return
+           end if
+
            1 format(/1X, a9, 'ERROR.  THERE MUST BE AT LEAST ONE COMPONENT AND AT' &
                    /10X, 'LEAST TWO POINTS.' &
                   //10X, i10, '  COMPS, COMPONENTS' &
@@ -853,6 +872,10 @@ module twopnt_core
            3 format(/1X, a9, 'ERROR.  POINTS IS OUT OF RANGE.' &
                   //10X, i10, '  POINTS'&
                    /10X, i10, '  PMAX, LIMIT ON POINTS')
+           4 format(/1X, a9, 'ERROR.  THERE MUST BE AT LEAST ONE GRID REFINEMENT VARIABLE. ' &
+                  //10X, i10, '  COMPS, COMPONENTS' &
+                  //10X, i10, '  ARRAY SIZE ' &
+                   /10X, i10, '  NUMBER OF ACTIVE VARIABLES ')
 
        end subroutine TwoPntBVPDomain_check_grid
 
@@ -1366,9 +1389,20 @@ module twopnt_core
                     do comp = first, last
                         count = count + 1
                         title(count) = ' '
-                        write (string, '(A5, I5)') 'COMP ', comp
+
+                        ! Use variable name, if available
+                        if (vars%names==vars%NVAR()) then
+                            write (string, '(A) ') vars%NAME(vars%groupa+comp)
+                            call twsqez (length, string)
+
+                            ! Fallback
+                            if (length>10) write (string, '(A5, I5)') 'COMP ',comp
+                        else
+                            write (string, '(A5, I5)') 'COMP ',comp
+                        end if
+
                         call twsqez (length, string)
-                        title(count) (11 - length : 10) = string
+                        title(count) (11-length:10) = string
                     end do
 
                     if (grid) then
