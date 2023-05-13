@@ -850,6 +850,18 @@ module twopnt_core
                 return
            end if
 
+           error = .not. allocated(this%ACTIVE)
+           if (error) then
+                if (text>0) write (text, 4) id, this%comps, 0, 0
+                return
+           end if
+
+           error = .not. (size(this%ACTIVE)==this%comps .and. any(this%ACTIVE))
+           if (error) then
+                if (text>0) write (text, 4) id, this%comps, size(this%ACTIVE), count(this%ACTIVE)
+                return
+           end if
+
            1 format(/1X, a9, 'ERROR.  THERE MUST BE AT LEAST ONE COMPONENT AND AT' &
                    /10X, 'LEAST TWO POINTS.' &
                   //10X, i10, '  COMPS, COMPONENTS' &
@@ -860,6 +872,10 @@ module twopnt_core
            3 format(/1X, a9, 'ERROR.  POINTS IS OUT OF RANGE.' &
                   //10X, i10, '  POINTS'&
                    /10X, i10, '  PMAX, LIMIT ON POINTS')
+           4 format(/1X, a9, 'ERROR.  THERE MUST BE AT LEAST ONE GRID REFINEMENT VARIABLE. ' &
+                  //10X, i10, '  COMPS, COMPONENTS' &
+                  //10X, i10, '  ARRAY SIZE ' &
+                   /10X, i10, '  NUMBER OF ACTIVE VARIABLES ')
 
        end subroutine TwoPntBVPDomain_check_grid
 
