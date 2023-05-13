@@ -29,40 +29,39 @@ module twopnt_test
     implicit none
     private
 
-    ! *** PROBLEM PARAMETERS. ***
-
-    ! ROTATION RATE AT POROUS DISK
-    real(RK), parameter :: OMEGA = 4.0_RK * pi
-
-    ! GAS TEMPERATURE AT POROUS DISK
-    real(RK), parameter :: TMAX = 1000.0_RK
-
-    ! GAS TEMPERATURE AT SOLID DISK
-    real(RK), parameter :: TZERO = 300.0_RK
-
-    ! FLOW AT POROUS DISK
-    real(RK), parameter :: WMAX = - 2.0_RK
-
-    ! DISTANCE BETWEEN DISKS
-    real(RK), parameter :: ZMAX = 5.0_RK
-
-    integer, parameter :: COMPS  = 5
-    integer, parameter :: GROUPA = 0
-    integer, parameter :: GROUPB = 0
-    integer, parameter :: PMAX   = 200
-    logical, parameter :: RELAXED_TOLERANCES = .false.
-
+    !> Derive a BVP class for this problem
     type, public, extends(TwoPntBVProblem) :: SwirlingFlow
 
+        ! ROTATION RATE AT POROUS DISK
+        real(RK) :: OMEGA = 4.0_RK * pi
 
-         ! Problem fixed variables and buffers
-         integer :: N
-         real(RK) :: ABOVE(COMPS), BELOW(COMPS)
-         real(RK), dimension(COMPS,PMAX) :: U,U0
-         real(RK), dimension(PMAX) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0
-         logical  :: ACTIVE(COMPS), MARK(PMAX)
+        ! GAS TEMPERATURE AT POROUS DISK
+        real(RK) :: TMAX = 1000.0_RK
 
-         contains
+        ! GAS TEMPERATURE AT SOLID DISK
+        real(RK) :: TZERO = 300.0_RK
+
+        ! FLOW AT POROUS DISK
+        real(RK) :: WMAX = - 2.0_RK
+
+        ! DISTANCE BETWEEN DISKS
+        real(RK) :: ZMAX = 5.0_RK
+
+        integer  :: COMPS  = 5
+        integer  :: GROUPA = 0
+        integer  :: GROUPB = 0
+        integer  :: PMAX   = 200
+        logical  :: RELAXED_TOLERANCES = .false.
+
+        ! Problem fixed variables and buffers
+        integer :: N
+        real(RK), allocatable :: ABOVE(:)
+        real(RK), allocatable :: BELOW(:)
+        real(RK), allocatable :: U(:,:),U0(:,:)
+        real(RK), allocatable, dimension(:) :: F,F0,G,G0,H,K,LAMBDA,MU,RHO,T,T0
+        logical , allocatable, dimension(:) :: ACTIVE, MARK
+
+        contains
 
             ! Initialize problem
             procedure :: new => swirling_new
@@ -88,17 +87,30 @@ module twopnt_test
 
          integer :: J
 
-         associate(ACTIVE=>this%ACTIVE,BELOW=>this%BELOW,ABOVE=>this%ABOVE,settings=>this%setup,domain=>this%domain, &
-                   U=>this%U)
+         allocate(this%F(this%PMAX))
+         allocate(this%F0(this%PMAX))
+         allocate(this%G(this%PMAX))
+         allocate(this%G0(this%PMAX))
+         allocate(this%H(this%PMAX))
+         allocate(this%K(this%PMAX))
+         allocate(this%LAMBDA(this%PMAX))
+         allocate(this%MU(this%PMAX))
+         allocate(this%RHO(this%PMAX))
+         allocate(this%T(this%PMAX))
+         allocate(this%T0(this%PMAX))
+         allocate(this%MARK(this%PMAX))
+         allocate(this%U(this%COMPS,this%PMAX),this%U0(this%COMPS,this%PMAX))
+         allocate(this%ACTIVE(this%COMPS),source=.true.)
+         allocate(this%BELOW(this%COMPS),this%ABOVE(this%COMPS))
+
+         associate(ACTIVE=>this%ACTIVE,BELOW=>this%BELOW,ABOVE=>this%ABOVE,settings=>this%setup,&
+                   domain=>this%domain,U=>this%U,TZERO=>this%TZERO,TMAX=>this%TMAX,OMEGA=>this%OMEGA,&
+                   WMAX=>this%WMAX,ZMAX=>this%ZMAX)
 
          ERROR = .false.
 
          ! CHOOSE UNKNOWNS TO EXAMINE FOR GRID ADAPTION.
-         ACTIVE(1) = .TRUE.
-         ACTIVE(2) = .TRUE.
-         ACTIVE(3) = .TRUE.
          ACTIVE(4) = .FALSE.
-         ACTIVE(5) = .TRUE.
 
          ! ASSIGN LIMITS FOR THE UNKNOWNS.
          BELOW(1) = - 4.0;            ABOVE(1) = 4.0
@@ -110,9 +122,9 @@ module twopnt_test
          ! *** SET TWOPNT CONTROLS. ***
 
          ! ASSIGN INITIAL PROBLEM SIZES AND NAMES FOR THE UNKNOWNS.
-         call domain%new(ERROR, TEXT,GROUPA,COMPS,6,PMAX,GROUPB,ABOVE,BELOW, &
+         call domain%new(ERROR, TEXT,this%GROUPA,this%COMPS,6,this%PMAX,this%GROUPB,ABOVE,BELOW, &
                         [character(6) :: 'F','G','H','LAMBDA','T'], &
-                        XRANGE=[zero,ZMAX], ACTIVE=ACTIVE)
+                        XRANGE=[zero,this%ZMAX], ACTIVE=ACTIVE)
          if (error) return
 
          ! CHOOSE THE INITIAL GRID SIZE.
@@ -128,7 +140,7 @@ module twopnt_test
          call settings%set(ERROR, TEXT, 'TINC', 3.16_RK)
          call settings%set(ERROR, TEXT, 'TOLER1', 0.1_RK)
          call settings%set(ERROR, TEXT, 'TOLER2', 0.1_RK)
-         if (RELAXED_TOLERANCES) then
+         if (this%RELAXED_TOLERANCES) then
              call settings%set(ERROR, TEXT, 'SSABS', 1.0e-9_RK)
              call settings%set(ERROR, TEXT, 'TDABS', 1.0e-9_RK)
              call settings%set(ERROR, TEXT, 'SSREL', 1.0e-4_RK)
@@ -177,8 +189,9 @@ module twopnt_test
          real(RK), intent(inout) :: buffer(*) ! on input: contains the approximate solution
 
          CALL TWFUNC(ERROR, TEXT, &
-                     BUFFER, this%F, this%F0, this%G, this%G0, this%H, this%K, this%LAMBDA, this%MU, OMEGA, &
-                     POINTS, this%RHO, STRIDE, this%T, this%T0, TIME, TMAX, TZERO, this%U0, WMAX, X)
+                     BUFFER, this%F, this%F0, this%G, this%G0, this%H, this%K, this%LAMBDA, this%MU, &
+                     this%OMEGA, points, this%RHO, STRIDE, this%T, this%T0, TIME, this%TMAX, this%TZERO, &
+                     this%U0, this%WMAX, X)
 
       end subroutine residual
 
@@ -358,7 +371,7 @@ module twopnt_test
 
           character(len=*), parameter :: ID = 'TWMAIN:  '
 
-          WRITE (TEXT, 1) ID, this%U(4, 1), OMEGA, TZERO, TMAX, WMAX
+          WRITE (TEXT, 1) ID, this%U(4, 1), this%OMEGA, this%TZERO, this%TMAX, this%WMAX
 
           ! INFORMATIVE MESSAGES.
           1 FORMAT(/1X, A9, 1P, E10.2, 0P, '  LAMBDA' &

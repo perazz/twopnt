@@ -31,29 +31,23 @@ program TWMAIN
     type(SwirlingFlow) :: problem
 
     ! Parameters
-
-    character(len=16) :: REPORT
-    integer, parameter :: TEXT = output_unit
-    logical :: ERROR
-
-    !OPEN (FILE = 'twopnt.out', STATUS='UNKNOWN',FORM = 'FORMATTED', NEWUNIT = TEXT)
+    character(len=16) :: reason
+    integer, parameter :: text = output_unit
+    logical :: error
 
     ! Initialize problem object
-    call problem%new(ERROR,TEXT)
-    if (ERROR) then
+    call problem%new(error,text)
+    if (error) then
         write(text,1)
         return
     endif
 
     ! Call driver
-    call problem%run(ERROR, TEXT, REPORT, problem%U)
+    call problem%run(error, text, reason, problem%U)
 
     ! Print a summary
-    call problem%summary(TEXT)
+    call problem%summary(text)
 
-    ! close(TEXT)
-
-    return
     1 format(/1X, a9, 'ERROR.  CANNOT INITIALIZE SWIRL FLOW PROBLEM.')
 
 end program TWMAIN

@@ -1,6 +1,6 @@
 name = "twopnt"
 version = "0.1.0"
-license = "license"
+license = "MIT"
 author = "Federico Perini"
 maintainer = "federico.perini@gmail.com"
 copyright = "Copyright 2023, Federico Perini"
