@@ -71,10 +71,11 @@ module twopnt_core
     integer,  parameter, public :: gmax = 100
 
     logical, parameter :: DEBUG = .true.
-    integer, parameter :: CONTRL_MAX_LEN       = 40
-    integer, parameter :: MAX_ERROR_LINES      = 20
-    integer, parameter :: MAX_DECAY_ITERATIONS = 5
-    integer, parameter :: DEFAULT_MAX_POINTS   = 200
+    integer, parameter :: CONTRL_MAX_LEN        = 40
+    integer, parameter :: MAX_ERROR_LINES       = 20
+    integer, parameter :: MAX_DECAY_ITERATIONS  = 5
+    integer, parameter :: MAX_NEWTON_ITERATIONS = 50
+    integer, parameter :: DEFAULT_MAX_POINTS    = 200
 
     ! Supported versions
     character(len=8), parameter :: vnmbr(*) = [character(len=8) :: '3.18', '3.19', '3.20', '3.21', &
@@ -127,9 +128,10 @@ module twopnt_core
         !> Max number of timesteps between stride increases
         integer  :: steps2 = 10
 
-        real(RK) :: toler0 = 1.0e-9_RK
-        real(RK) :: toler1 = 0.2_RK
-        real(RK) :: toler2 = 0.2_RK
+        !> Grid adaptation criteria.
+        real(RK) :: toler0 = 1.0e-9_RK   ! Component Threshold: insignificant if (xmax-xmin)<toler0*max(|xmax|,|xmin|)
+        real(RK) :: toler1 = 0.2_RK      ! Gradient threshold
+        real(RK) :: toler2 = 0.2_RK      ! Curvature threshold
 
         contains
 
@@ -476,7 +478,8 @@ module twopnt_core
 
           ! Allocate banded space
           this%ASIZE = (6*vars%comps-1)*vars%comps*vars%pmax
-          allocate(this%A(this%ASIZE),this%PIVOT(vars%comps*vars%pmax))
+          allocate(this%A(this%ASIZE),source=zero)
+          allocate(this%PIVOT(vars%comps*vars%pmax),source=0)
 
        end subroutine jac_init
 
@@ -966,7 +969,7 @@ module twopnt_core
 
           ! Set the controls.
           select case (contrl)
-             case ('SSSABS')
+             case ('SSABS')
                  found = .true.
                  this%ssabs = value
              case ('SSREL')
@@ -1537,7 +1540,7 @@ module twopnt_core
       subroutine twgbsl (abd, lda, n, lower, upper, pivot, b)
           real(RK), intent(in) :: abd(lda,*)
           real(RK), intent(inout) :: b(*)
-          integer , intent(in) :: pivot(*)
+          integer , intent(in) :: pivot(:)
 
           real(RK)  :: t
           integer   :: j, jdiag, k, l, la, lb, lda, lm, lower, n, upper
@@ -1548,6 +1551,7 @@ module twopnt_core
           if (0 < lower) then
              do k = 1, n - 1
                   l = pivot(k)
+                  if (pivot(k)==0) cycle
                   t = b(l)
                   if (l /= k) then
                      b(l) = b(k)
@@ -1843,13 +1847,6 @@ module twopnt_core
           ! Parameters
           character(len=*), parameter :: id = 'TWPREP:  '
 
-          ! Check that the residual function is present.
-          !if (.not.associated(this%fun)) then
-          !   error = .true.
-          !   if (text>0) write (text, 1) id
-          !   return
-          !end if
-
           call this%stats%tick(qjacob)
 
           ! CHECK THE ARGUMENTS.
@@ -1945,7 +1942,13 @@ module twopnt_core
                    if (0 < jac%pivot(block)) then
                        found = .true.
                        col = cfirst - 1 + jac%pivot(block)
-                       delta = relat * jac%a(col) + sign(absol,jac%a(col))
+
+                       if (time) then
+                          delta = this%setup%tdrel * abs(jac%A(col)) + this%setup%tdabs
+                       else
+                          delta = this%setup%ssrel * abs(jac%A(col)) + this%setup%ssabs
+                       end if
+
                        buffer(col) = buffer(col) + delta
                        count = 3
                    else
@@ -1978,7 +1981,12 @@ module twopnt_core
                     col = cfirst - 1 + jac%pivot(block)
                     jac%pivot(block) = jac%pivot(block) - 1
 
-                    delta  = relat * jac%a(col) + sign(absol,jac%a(col))
+                    if (time) then
+                       delta = this%setup%tdrel * abs(jac%A(col)) + this%setup%tdabs
+                    else
+                       delta = this%setup%ssrel * abs(jac%A(col)) + this%setup%ssabs
+                    end if
+
                     temp   = one / delta
                     offset = n + diag - col + lda * (col - 1)
 
@@ -2010,7 +2018,9 @@ module twopnt_core
                        rlast = clast
                     end if
 
-                    forall(row=rfirst:rlast) jac%a(offset+row) = (buffer(row) - jac%a(offset+row))*temp
+                    do row=rfirst,rlast
+                        jac%a(offset+row) = (buffer(row) - jac%a(offset+row))*temp
+                    end do
 
                     count = 3
                  else
@@ -2568,7 +2578,7 @@ module twopnt_core
           ! Check the unknowns are valid
           error = any(.not.(below<=v0 .and. v0<=above))
           if (error) then
-             call print_invalid_ranges(id,text,vars,v0)
+             call print_invalid_ranges(id,text,vars,above,below,v0)
              return
           end if
 
@@ -2601,7 +2611,7 @@ module twopnt_core
           update_jac = .false.
           converged  = .false.
 
-          newton_iterations: do while (.not.converged)
+          newton_iterations: do while (steps<MAX_NEWTON_ITERATIONS .and. .not.converged)
 
               ! Evaluate Jacobian at v0. Re-evaluate y0=F(v0) in case F changes when the Jacobian does.
               ! Solve J*s0 = v0; Evaluate relative and absolute errors
@@ -2616,7 +2626,7 @@ module twopnt_core
 
                   ! Update condition number
                   jcount = jcount + 1
-                  csave = max(jac%condit, csave)
+                  csave = jac%condit
                   if (csave == zero) then
                      write (jword, '(I3, 3X, A6)') jcount, '    NA'
                   else
@@ -2668,6 +2678,11 @@ module twopnt_core
                   return
               end if
 
+              ! Exponential decay of the damping parameter.
+              deltad = one ! Current
+              expone = 0   ! Number of exponential decay iterations
+              s1norm = huge(zero)
+
               !///  0 < DELTAB?
               if (.not. deltab>zero) then
 
@@ -2678,7 +2693,7 @@ module twopnt_core
 
                  if (levelm>0 .and. text>0) then
                     call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,jac%condit)
-                    call print_invalid_ranges(id,text,vars,v0,s0)
+                    call print_invalid_ranges(id,text,vars,above,below,v0,s0)
                  end if
 
                  report  = qbnds
@@ -2686,13 +2701,8 @@ module twopnt_core
                  return
               end if
 
-              ! Exponential decay of the damping parameter.
-              deltad = one ! Current
-              expone = 0   ! Number of exponential decay iterations
-              s1norm = huge(zero)
-
               ! Perform a simple backtracking iteration
-              decay_iterations: do while (expone<=MAX_DECAY_ITERATIONS .and. .not.s1norm<=s0norm)
+              decay_iterations: do while (expone<=MAX_DECAY_ITERATIONS .and. .not.s1norm<s0norm)
 
                   ! V1 := V0 - DELTAB DELTAD S0.
                   v1 = v0 - (deltab*deltad)*s0
@@ -2730,7 +2740,7 @@ module twopnt_core
 
               end do decay_iterations
 
-              is_diverging: if (expone>MAX_DECAY_ITERATIONS) then
+              is_diverging: if (steps>50 .or. expone>MAX_DECAY_ITERATIONS) then
 
                  ! Check if we can try restarting this iteration with an updated Jacobian
                  update_jac = age>0
@@ -2754,7 +2764,7 @@ module twopnt_core
 
               ! Advance step
               steps  = steps + 1
-              age    = age + 1
+              age    = age   + 1
               s0     = s1; s0norm = s1norm
               v0     = v1; y0norm = y1norm
               y0     = y1
@@ -2764,6 +2774,7 @@ module twopnt_core
           end do newton_iterations
 
           ! SUCCESS!
+          success = steps<MAX_NEWTON_ITERATIONS
 
           ! Print summary.
           if (levelm>0 .and. text>0) then
@@ -2782,7 +2793,6 @@ module twopnt_core
              end if
           end if
 
-          success = .true.
           return
           endassociate
 
@@ -2832,7 +2842,7 @@ module twopnt_core
       ! Deltab is the largest damping coefficient in [0,1] that keeps v1 within bounds.
       ! If v1 belongs on the boundary, then provisions are made to force it there despite
       ! rounding error.
-      pure subroutine newton_damping(v0,s0,above,below,deltab,force,entry,value)
+      subroutine newton_damping(v0,s0,above,below,deltab,force,entry,value)
          real(RK), intent(out) :: deltab !> Damped Newton parameter
          logical , intent(out) :: force  !>
          integer , intent(out) :: entry
@@ -4257,10 +4267,10 @@ module twopnt_core
 
       end subroutine print_invalid_bounds
 
-      subroutine print_invalid_ranges(id,text,vars,v0,s0)
+      subroutine print_invalid_ranges(id,text,vars,above,below,v0,s0)
          integer     , intent(in) :: text
          type(TwoPntBVPDomain), intent(in) :: vars
-         real(RK),     intent(in) :: v0    (vars%N())
+         real(RK),     intent(in) :: v0(vars%N()),above(vars%N()),below(vars%N())
          real(RK),     intent(in), optional :: s0(vars%N())
          character(len=*), intent(in) :: id
 
@@ -4273,9 +4283,9 @@ module twopnt_core
          search = present(s0)
 
          if (search) then
-             verified = (vars%below==v0.and.s0>zero).or.(vars%above==v0.and.s0<zero)
+             verified = .not.((below==v0.and.s0>zero).or.(above==v0.and.s0<zero))
          else
-             verified = (vars%below<=v0.and.v0<=vars%above)
+             verified = (below<=v0.and.v0<=above)
          end if
 
          counter = count(.not.verified)
@@ -4336,9 +4346,9 @@ module twopnt_core
             end if
 
             if (search) then
-                write (text, 6) merge('LOWER','UPPER',vars%below(j)==v0(j)),v0(j),string(1:length)
+                write (text, 6) merge('LOWER','UPPER',below(j)==v0(j)),v0(j),string(1:length)
             else
-                write (text, 5) vars%below(j), v0(j), vars%above(j), string(1:length)
+                write (text, 5) below(j), v0(j), above(j), string(1:length)
             end if
 
          end do loop_bounds
