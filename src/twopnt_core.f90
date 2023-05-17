@@ -47,9 +47,9 @@ module twopnt_core
     real(RK), parameter, public :: relat = sqrt(eps)
 
     ! Error codes
-    integer,  parameter, public :: qnull = 0
-    integer,  parameter, public :: qbnds = 1
-    integer,  parameter, public :: qdvrg = 2
+    integer,  parameter, public :: TWOPNT_SUCCESS       = 0
+    integer,  parameter, public :: TWOPNT_OUT_OF_BOUNDS = 1
+    integer,  parameter, public :: TWOPNT_DIVERGING     = 2
 
     ! Task codes
     integer,  parameter, public :: qgrid  =  1
@@ -2302,7 +2302,7 @@ module twopnt_core
       ! Initialization.
       time    = .false. ! Turn off reverse communication flags.
       error   = .false. ! Turn off all completion status flags.
-      report  = qnull
+      report  = TWOPNT_SUCCESS
       success = .false.
       new_dt  = .false.
       call twlogr(yword,ynorm)
@@ -2379,9 +2379,9 @@ module twopnt_core
               ! Newton search unsuccessful
               if (.not. xsucce) then
                  if (levelm==1 .and. text>0) then
-                    if (xrepor == qbnds) then
+                    if (xrepor == TWOPNT_OUT_OF_BOUNDS) then
                        remark = 'BOUNDS'
-                    else if (xrepor == qdvrg) then
+                    else if (xrepor == TWOPNT_DIVERGING) then
                        remark = 'DIVERGE'
                     else
                        remark = ' '
@@ -2602,7 +2602,7 @@ module twopnt_core
 
           ! Turn off all completion flags
           error   = .false.
-          report  = qnull
+          report  = TWOPNT_SUCCESS
           success = .false.
 
           ! Initialize Jacobian counters
@@ -2735,7 +2735,7 @@ module twopnt_core
                     call print_invalid_ranges(id,text,vars,above,below,v0,s0)
                  end if
 
-                 report  = qbnds
+                 report  = TWOPNT_OUT_OF_BOUNDS
                  success = .false.
                  return
               end if
@@ -2791,7 +2791,7 @@ module twopnt_core
                     write (text, 1) id
                  end if
 
-                 report  = qdvrg
+                 report  = TWOPNT_DIVERGING
                  success = .false.
                  return
 
@@ -3052,7 +3052,7 @@ module twopnt_core
           error  = .false.
           report = ' '
           ratio  = zero
-          xrepor = qnull
+          xrepor = TWOPNT_SUCCESS
 
           ! Additional settings initialization
           if (.not.setup%padd) setup%ipadd = vars%pmax
@@ -3262,7 +3262,7 @@ module twopnt_core
                       end if
 
                       ! ALLOW FURTHER TIME EVOLUTION.
-                      allow = xrepor == qnull
+                      allow = xrepor == TWOPNT_SUCCESS
 
                       ! COMPLETE STATISTICS FOR THE EVOLVE BLOCK.
                       call this%stats%tock(qtimst)
@@ -3511,11 +3511,12 @@ module twopnt_core
       character(len=80) function search_task_summary(xrepor,nsteps) result(string)
          integer, intent(in) :: xrepor,nsteps
          select case (xrepor)
-            case (qdvrg); string = 'DIVERGING'
-            case (qnull); write (string, '(I10, A)') nsteps, ' SEARCH '//merge('STEP ','STEPS',nsteps==1)
-            case (qbnds); string = 'GOING OUT OF BOUNDS'
+            case (TWOPNT_DIVERGING);     string = 'DIVERGING'
+            case (TWOPNT_SUCCESS); write (string, 1) nsteps, merge('STEP ','STEPS',nsteps==1)
+            case (TWOPNT_OUT_OF_BOUNDS); string = 'GOING OUT OF BOUNDS'
             case default; string = '?'
          end select
+         1 format(i10,' SEARCH ',a)
       end function search_task_summary
 
       ! Print summary of an evolve step
@@ -3523,8 +3524,10 @@ module twopnt_core
          integer, intent(in) :: xrepor,steps
          real(RK), intent(in) :: stride
          select case (xrepor)
-            case (qbnds,qdvrg,qnull); write (string, '(I10, A, 1P, E10.1, A)') steps,' TIME STEPS, ',stride, ' LAST STRIDE'
-            case default; string = '?'
+            case (TWOPNT_OUT_OF_BOUNDS,TWOPNT_DIVERGING,TWOPNT_SUCCESS)
+                write (string, '(I10, A, 1P, E10.1, A)') steps,' TIME STEPS, ',stride, ' LAST STRIDE'
+            case default
+                string = '?'
          end select
       end function evolve_task_summary
 
