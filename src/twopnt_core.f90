@@ -2024,11 +2024,7 @@ module twopnt_core
                     col = cfirst - 1 + jac%pivot(block)
                     jac%pivot(block) = jac%pivot(block) - 1
 
-                    if (time) then
-                       delta = this%setup%tdrel * abs(jac%A(col)) + this%setup%tdabs
-                    else
-                       delta = this%setup%ssrel * abs(jac%A(col)) + this%setup%ssabs
-                    end if
+                    delta = relat * abs(jac%a(col)) + absol
 
                     temp   = one / delta
                     offset = n + diag - col + lda * (col - 1)
