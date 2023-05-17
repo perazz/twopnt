@@ -28,6 +28,7 @@ module twopnt_core
 
     public :: twlast,twcopy,TwoPntSolverSetup,twsolv,twshow,twopnt
 
+    ! Version and precision
     integer, parameter, public :: RK = real64
 
     ! Numeric constants
@@ -41,7 +42,7 @@ module twopnt_core
     real(RK), parameter, public :: smallnum04 = 1.0e-4_RK
 
     ! Machine epsilon and the absolute and relative perturbations.
-    real(RK), parameter, public :: eps   = epsilon(0.0_RK)
+    real(RK), parameter, public :: eps   = epsilon(zero)
     real(RK), parameter, public :: absol = sqrt(eps)
     real(RK), parameter, public :: relat = sqrt(eps)
 
@@ -67,6 +68,9 @@ module twopnt_core
                                                         'FUNCTION','JACOBIAN','   SOLVE','   OTHER',&
                                                         '   TOTAL','   START','    EXIT']
 
+    character(*), parameter, public :: TWOPNT_VERSION = "4.0.0"
+    character(*), parameter, public :: TWOPNT_DATE    = "APRIL 2023"
+
     ! Maximum number of grids attempted
     integer,  parameter, public :: gmax = 100
 
@@ -76,12 +80,6 @@ module twopnt_core
     integer, parameter :: MAX_DECAY_ITERATIONS  = 5
     integer, parameter :: MAX_NEWTON_ITERATIONS = 50
     integer, parameter :: DEFAULT_MAX_POINTS    = 200
-
-    ! Supported versions
-    character(len=8), parameter :: vnmbr(*) = [character(len=8) :: '3.18', '3.19', '3.20', '3.21', &
-                                                                   '3.22', '3.23', '3.24', '3.25', &
-                                                                   '3.26', '3.27', '3.28', '3.29']
-    integer, parameter :: vnmbrs = size(vnmbr)
 
     ! TWOPNT settings
     type, public :: TwoPntSolverSetup
@@ -450,13 +448,11 @@ module twopnt_core
           real(RK), intent(in) :: stride !
           real(RK), intent(in) :: x(:)   ! dimensioned >=PMAX, contains the grid
           real(RK), intent(inout) :: buffer(:) ! on input: contains the approximate solution; on output, the residuals
-          !if (associated(this%fun)) then
-              call this%stats%tick(qfunct)
-              call this%fun(error,text,points,time,stride,x,buffer)
-              call this%stats%tock(qfunct,event=.true.)
-          !else
-          !    error = .true.
-          !endif
+
+          call this%stats%tick(qfunct)
+          call this%fun(error,text,points,time,stride,x,buffer)
+          call this%stats%tock(qfunct,event=.true.)
+
        end subroutine fun_wrapper
 
        ! Clean Jacobian storage
@@ -723,7 +719,7 @@ module twopnt_core
           ! Error messages.
           1 format(/1X, a9, 'ERROR.  USER LIST OF ACTIVE VARIABLES HAS INVALID SIZE=',i0,', COMPS=',i0)
 
-      end subroutine set_active
+       end subroutine set_active
 
 
        ! Indices of all grid variables of component comp (one per grid point)
@@ -3066,8 +3062,7 @@ module twopnt_core
           if (.not.setup%padd) setup%ipadd = vars%pmax
 
           ! Print entry banner
-          string = vnmbr(vnmbrs)
-          if (setup%levelm>0 .and. text>0) write (text, 9) id, precision_flag(), trim(string)
+          if (setup%levelm>0 .and. text>0) write (text, 9) id, precision_flag(), TWOPNT_VERSION, TWOPNT_DATE
 
           ! CHECK THE ARGUMENTS.
           error = .not. (setup%leveld <= setup%levelm)
@@ -3320,7 +3315,7 @@ module twopnt_core
 
           ! Informative messages
           9 format(/1X, a9, a, ' (TWO POINT BOUNDARY VALUE PROBLEM) SOLVER,' &
-                        /10X, 'VERSION ', a,' OF APRIL 1998 BY DR. JOSEPH F. GRCAR.')
+                  /10X, 'VERSION ', a,' OF ',a,'.')
           10 format(/1X, a9, a)
           11 format(/1X, a9, 'CALLING SEARCH TO SOLVE THE STEADY STATE PROBLEM.')
           12 format(/1X, a9, 'CALLING REFINE TO PRODUCE A NEW GRID.')
