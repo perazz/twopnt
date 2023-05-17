@@ -77,9 +77,9 @@ module twopnt_core
     logical, parameter :: DEBUG = .true.
     integer, parameter :: CONTRL_MAX_LEN        = 40
     integer, parameter :: MAX_ERROR_LINES       = 20
-    integer, parameter :: MAX_DECAY_ITERATIONS  = 5
-    integer, parameter :: MAX_NEWTON_ITERATIONS = 50
-    integer, parameter :: DEFAULT_MAX_POINTS    = 200
+    integer, parameter :: DEFAULT_BACKTRACK_ITS     = 5
+    integer, parameter :: DEFAULT_NEWTON_ITERATIONS = 50
+    integer, parameter :: DEFAULT_MAX_POINTS        = 200
 
     ! TWOPNT settings
     type, public :: TwoPntSolverSetup
@@ -99,6 +99,10 @@ module twopnt_core
         real(RK) :: ssabs  = 1.0e-9_RK
         real(RK) :: ssrel  = 1.0e-6_RK
         integer  :: ssage  = 10
+
+        !> Steady-state: max number of Newton and backtracking iterations
+        integer  :: newton_its    = DEFAULT_NEWTON_ITERATIONS
+        integer  :: backtrack_its = DEFAULT_BACKTRACK_ITS
 
         !> Transient:  absolute, relative error; Jacobian retirement age
         real(RK) :: tdabs  = 1.0e-9_RK
@@ -932,6 +936,8 @@ module twopnt_core
           this%toler0 = 1.0e-9_RK
           this%toler1 = 0.2_RK
           this%toler2 = 0.2_RK
+          this%newton_its    = DEFAULT_NEWTON_ITERATIONS
+          this%backtrack_its = DEFAULT_BACKTRACK_ITS
 
           return
       end subroutine twinit
@@ -1055,7 +1061,7 @@ module twopnt_core
                  error = .true.
                  if (text>0) write (text, 2) id, twtrim(contrl,CONTRL_MAX_LEN)
                  return
-             case ('LEVELD','LEVELM','PADD','SSAGE','STEPS0','STEPS1','STEPS2','TDAGE')
+             case ('LEVELD','LEVELM','PADD','SSAGE','STEPS0','STEPS1','STEPS2','TDAGE','NEWTON','BACKTRACK')
                  error = .true.
                  if (text>0) write (text, 3) id, twtrim(contrl,CONTRL_MAX_LEN)
                  return
@@ -1134,6 +1140,12 @@ module twopnt_core
              case ('TDAGE')
                  found = .true.
                  this%tdage = value
+             case ('NEWTON')
+                 found = .true.
+                 this%newton_its = value
+             case ('BACKTRACK')
+                 found = .true.
+                 this%backtrack_its = value
              case ('ADAPT','STEADY')
                  error = .true.
                  if (text>0) write (text, 2) id, twtrim(contrl,CONTRL_MAX_LEN)
@@ -1204,7 +1216,7 @@ module twopnt_core
                  if (text>0) write (text, 2) id, twtrim(contrl,CONTRL_MAX_LEN)
                  return
              case ('SSABS','SSREL','STRID0','TDABS','TDEC','TDREL','TINC','TMAX','TMIN',&
-                   'TOLER0','TOLER1','TOLER2')
+                   'TOLER0','TOLER1','TOLER2','NEWTON','BACKTRACK')
                  error = .true.
                  if (text>0) write (text, 3) id, twtrim(contrl,CONTRL_MAX_LEN)
                  return
@@ -2589,12 +2601,13 @@ module twopnt_core
           integer          , intent(out)   :: jcount,steps
           real(RK)         , intent(out)   :: csave
           character(len=80), intent(out)   :: jword
+          logical          , intent(out)   :: success
 
           real(RK) :: abs0,abs1, deltab, deltad, rel0, rel1, s0norm, s1norm, &
                       value, y0norm, y1norm
           integer  :: entry, expone, leveld, levelm
           intrinsic :: abs, int, log10, max, min, mod
-          logical   :: force,success,converged,update_jac
+          logical   :: force,converged,update_jac
           character(len=*), parameter :: id = 'SEARCH:  '
 
           ! *** Initialization. ***
@@ -2650,7 +2663,7 @@ module twopnt_core
           update_jac = .false.
           converged  = .false.
 
-          newton_iterations: do while (steps<MAX_NEWTON_ITERATIONS .and. .not.converged)
+          newton_iterations: do while (steps<this%setup%newton_its .and. .not.converged)
 
               ! Evaluate Jacobian at v0. Re-evaluate y0=F(v0) in case F changes when the Jacobian does.
               ! Solve J*s0 = v0; Evaluate relative and absolute errors
@@ -2741,7 +2754,7 @@ module twopnt_core
               end if
 
               ! Perform a simple backtracking iteration
-              decay_iterations: do while (expone<=MAX_DECAY_ITERATIONS .and. .not.s1norm<s0norm)
+              decay_iterations: do while (expone<=this%setup%backtrack_its .and. .not.s1norm<s0norm)
 
                   ! V1 := V0 - DELTAB DELTAD S0.
                   v1 = v0 - (deltab*deltad)*s0
@@ -2779,7 +2792,7 @@ module twopnt_core
 
               end do decay_iterations
 
-              is_diverging: if (steps>=MAX_NEWTON_ITERATIONS .or. expone>MAX_DECAY_ITERATIONS) then
+              is_diverging: if (steps>=this%setup%newton_its .or. expone>this%setup%backtrack_its) then
 
                  ! Check if we can try restarting this iteration with an updated Jacobian
                  update_jac = age>0
@@ -2813,7 +2826,7 @@ module twopnt_core
           end do newton_iterations
 
           ! SUCCESS!
-          success = steps<MAX_NEWTON_ITERATIONS
+          success = steps<this%setup%newton_its
 
           ! Print summary.
           if (levelm>0 .and. text>0) then
