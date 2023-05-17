@@ -973,8 +973,18 @@ module twopnt_core
                  found = .true.
                  this%ssabs = value
              case ('SSREL')
-                 found = .true.
-                 this%ssrel = value
+
+                 ! Relative tolerance should not go below machine precision
+                 found = value>=epsilon(0.0_RK)
+
+                 if (found) then
+                    this%ssrel = value
+                 else
+                    error = .true.
+                    if (text>0) write (text, 4) id, twtrim(contrl,CONTRL_MAX_LEN)
+                    return
+                 end if
+
              case ('STRID0')
                  found = .true.
                  this%strid0 = value
@@ -985,8 +995,18 @@ module twopnt_core
                  found = .true.
                  this%tdec = value
              case ('TDREL')
-                 found = .true.
-                 this%tdrel = value
+
+                 ! Relative tolerance should not go below machine precision
+                 found = value>=epsilon(0.0_RK)
+
+                 if (found) then
+                    this%tdrel = value
+                 else
+                    error = .true.
+                    if (text>0) write (text, 4) id, twtrim(contrl,CONTRL_MAX_LEN)
+                    return
+                 end if
+
              case ('TINC')
                  found = .true.
                  this%tinc = value
@@ -997,14 +1017,44 @@ module twopnt_core
                  found = .true.
                  this%tmin = value
              case ('TOLER0')
-                 found = .true.
-                 this%toler0 = value
+
+                 ! Relative tolerance should not go below machine precision
+                 found = value>=epsilon(0.0_RK)
+
+                 if (found) then
+                    this%toler0 = value
+                 else
+                    error = .true.
+                    if (text>0) write (text, 4) id, twtrim(contrl,CONTRL_MAX_LEN)
+                    return
+                 end if
+
              case ('TOLER1')
-                 found = .true.
-                 this%toler1 = value
+
+                 ! Relative tolerance should not go below machine precision
+                 found = value>=epsilon(0.0_RK)
+
+                 if (found) then
+                    this%toler1 = value
+                 else
+                    error = .true.
+                    if (text>0) write (text, 4) id, twtrim(contrl,CONTRL_MAX_LEN)
+                    return
+                 end if
+
              case ('TOLER2')
-                 found = .true.
-                 this%toler2 = value
+
+                 ! Relative tolerance should not go below machine precision
+                 found = value>=epsilon(0.0_RK)
+
+                 if (found) then
+                    this%toler2 = value
+                 else
+                    error = .true.
+                    if (text>0) write (text, 4) id, twtrim(contrl,CONTRL_MAX_LEN)
+                    return
+                 end if
+
              case ('ADAPT','STEADY')
                  error = .true.
                  if (text>0) write (text, 2) id, twtrim(contrl,CONTRL_MAX_LEN)
@@ -1028,6 +1078,7 @@ module twopnt_core
           3 format(/1X, a9, 'ERROR.  THE CONTROL TAKES AN INTEGER VALUE WHICH' &
                   /10X, 'MUST BE SET USING TWSETI.' &
                  //10X, '     CONTROL:  ', a)
+          4 format(/1X, a9, 'ERROR.  SETTING ', a,' BELOW MACHINE PRECISION. ')
           5 format(/1X, a9, 'ERROR.  THE CONTROL IS NOT RECOGNIZED.' &
                  //10X, '     CONTROL:  ', a)
 
@@ -1943,11 +1994,7 @@ module twopnt_core
                        found = .true.
                        col = cfirst - 1 + jac%pivot(block)
 
-                       if (time) then
-                          delta = this%setup%tdrel * abs(jac%A(col)) + this%setup%tdabs
-                       else
-                          delta = this%setup%ssrel * abs(jac%A(col)) + this%setup%ssabs
-                       end if
+                       delta = relat * abs(jac%a(col)) + absol
 
                        buffer(col) = buffer(col) + delta
                        count = 3
@@ -2740,7 +2787,7 @@ module twopnt_core
 
               end do decay_iterations
 
-              is_diverging: if (steps>50 .or. expone>MAX_DECAY_ITERATIONS) then
+              is_diverging: if (steps>=MAX_NEWTON_ITERATIONS .or. expone>MAX_DECAY_ITERATIONS) then
 
                  ! Check if we can try restarting this iteration with an updated Jacobian
                  update_jac = age>0
@@ -2793,6 +2840,7 @@ module twopnt_core
              end if
           end if
 
+          success = .true.
           return
           endassociate
 
