@@ -28,6 +28,7 @@ module twopnt_core
 
     public :: twlast,twcopy,TwoPntSolverSetup,twsolv,twshow,twopnt
 
+    ! Version and precision
     integer, parameter, public :: RK = real64
 
     ! Numeric constants
@@ -41,14 +42,14 @@ module twopnt_core
     real(RK), parameter, public :: smallnum04 = 1.0e-4_RK
 
     ! Machine epsilon and the absolute and relative perturbations.
-    real(RK), parameter, public :: eps   = epsilon(0.0_RK)
+    real(RK), parameter, public :: eps   = epsilon(zero)
     real(RK), parameter, public :: absol = sqrt(eps)
     real(RK), parameter, public :: relat = sqrt(eps)
 
     ! Error codes
-    integer,  parameter, public :: qnull = 0
-    integer,  parameter, public :: qbnds = 1
-    integer,  parameter, public :: qdvrg = 2
+    integer,  parameter, public :: TWOPNT_SUCCESS       = 0
+    integer,  parameter, public :: TWOPNT_OUT_OF_BOUNDS = 1
+    integer,  parameter, public :: TWOPNT_DIVERGING     = 2
 
     ! Task codes
     integer,  parameter, public :: qgrid  =  1
@@ -67,21 +68,18 @@ module twopnt_core
                                                         'FUNCTION','JACOBIAN','   SOLVE','   OTHER',&
                                                         '   TOTAL','   START','    EXIT']
 
+    character(*), parameter, public :: TWOPNT_VERSION = "4.0.0"
+    character(*), parameter, public :: TWOPNT_DATE    = "APRIL 2023"
+
     ! Maximum number of grids attempted
     integer,  parameter, public :: gmax = 100
 
     logical, parameter :: DEBUG = .true.
     integer, parameter :: CONTRL_MAX_LEN        = 40
     integer, parameter :: MAX_ERROR_LINES       = 20
-    integer, parameter :: MAX_DECAY_ITERATIONS  = 5
-    integer, parameter :: MAX_NEWTON_ITERATIONS = 50
-    integer, parameter :: DEFAULT_MAX_POINTS    = 200
-
-    ! Supported versions
-    character(len=8), parameter :: vnmbr(*) = [character(len=8) :: '3.18', '3.19', '3.20', '3.21', &
-                                                                   '3.22', '3.23', '3.24', '3.25', &
-                                                                   '3.26', '3.27', '3.28', '3.29']
-    integer, parameter :: vnmbrs = size(vnmbr)
+    integer, parameter :: DEFAULT_BACKTRACK_ITS     = 5
+    integer, parameter :: DEFAULT_NEWTON_ITERATIONS = 50
+    integer, parameter :: DEFAULT_MAX_POINTS        = 200
 
     ! TWOPNT settings
     type, public :: TwoPntSolverSetup
@@ -101,6 +99,10 @@ module twopnt_core
         real(RK) :: ssabs  = 1.0e-9_RK
         real(RK) :: ssrel  = 1.0e-6_RK
         integer  :: ssage  = 10
+
+        !> Steady-state: max number of Newton and backtracking iterations
+        integer  :: newton_its    = DEFAULT_NEWTON_ITERATIONS
+        integer  :: backtrack_its = DEFAULT_BACKTRACK_ITS
 
         !> Transient:  absolute, relative error; Jacobian retirement age
         real(RK) :: tdabs  = 1.0e-9_RK
@@ -454,13 +456,11 @@ module twopnt_core
           real(RK), intent(in) :: stride !
           real(RK), intent(in) :: x(:)   ! dimensioned >=PMAX, contains the grid
           real(RK), intent(inout) :: buffer(:) ! on input: contains the approximate solution; on output, the residuals
-          !if (associated(this%fun)) then
-              call this%stats%tick(qfunct)
-              call this%fun(error,text,points,time,stride,x,buffer)
-              call this%stats%tock(qfunct,event=.true.)
-          !else
-          !    error = .true.
-          !endif
+
+          call this%stats%tick(qfunct)
+          call this%fun(error,text,points,time,stride,x,buffer)
+          call this%stats%tock(qfunct,event=.true.)
+
        end subroutine fun_wrapper
 
        ! Clean Jacobian storage
@@ -729,7 +729,7 @@ module twopnt_core
           ! Error messages.
           1 format(/1X, a9, 'ERROR.  USER LIST OF ACTIVE VARIABLES HAS INVALID SIZE=',i0,', COMPS=',i0)
 
-      end subroutine set_active
+       end subroutine set_active
 
 
        ! Indices of all grid variables of component comp (one per grid point)
@@ -942,6 +942,8 @@ module twopnt_core
           this%toler0 = 1.0e-9_RK
           this%toler1 = 0.2_RK
           this%toler2 = 0.2_RK
+          this%newton_its    = DEFAULT_NEWTON_ITERATIONS
+          this%backtrack_its = DEFAULT_BACKTRACK_ITS
 
           return
       end subroutine twinit
@@ -1065,7 +1067,7 @@ module twopnt_core
                  error = .true.
                  if (text>0) write (text, 2) id, twtrim(contrl,CONTRL_MAX_LEN)
                  return
-             case ('LEVELD','LEVELM','PADD','SSAGE','STEPS0','STEPS1','STEPS2','TDAGE')
+             case ('LEVELD','LEVELM','PADD','SSAGE','STEPS0','STEPS1','STEPS2','TDAGE','NEWTON','BACKTRACK')
                  error = .true.
                  if (text>0) write (text, 3) id, twtrim(contrl,CONTRL_MAX_LEN)
                  return
@@ -1144,6 +1146,12 @@ module twopnt_core
              case ('TDAGE')
                  found = .true.
                  this%tdage = value
+             case ('NEWTON')
+                 found = .true.
+                 this%newton_its = value
+             case ('BACKTRACK')
+                 found = .true.
+                 this%backtrack_its = value
              case ('ADAPT','STEADY')
                  error = .true.
                  if (text>0) write (text, 2) id, twtrim(contrl,CONTRL_MAX_LEN)
@@ -1214,7 +1222,7 @@ module twopnt_core
                  if (text>0) write (text, 2) id, twtrim(contrl,CONTRL_MAX_LEN)
                  return
              case ('SSABS','SSREL','STRID0','TDABS','TDEC','TDREL','TINC','TMAX','TMIN',&
-                   'TOLER0','TOLER1','TOLER2')
+                   'TOLER0','TOLER1','TOLER2','NEWTON','BACKTRACK')
                  error = .true.
                  if (text>0) write (text, 3) id, twtrim(contrl,CONTRL_MAX_LEN)
                  return
@@ -2315,7 +2323,7 @@ module twopnt_core
       ! Initialization.
       time    = .false. ! Turn off reverse communication flags.
       error   = .false. ! Turn off all completion status flags.
-      report  = qnull
+      report  = TWOPNT_SUCCESS
       success = .false.
       new_dt  = .false.
       call twlogr(yword,ynorm)
@@ -2392,9 +2400,9 @@ module twopnt_core
               ! Newton search unsuccessful
               if (.not. xsucce) then
                  if (levelm==1 .and. text>0) then
-                    if (xrepor == qbnds) then
+                    if (xrepor == TWOPNT_OUT_OF_BOUNDS) then
                        remark = 'BOUNDS'
-                    else if (xrepor == qdvrg) then
+                    else if (xrepor == TWOPNT_DIVERGING) then
                        remark = 'DIVERGE'
                     else
                        remark = ' '
@@ -2602,12 +2610,13 @@ module twopnt_core
           integer          , intent(out)   :: jcount,steps
           real(RK)         , intent(out)   :: csave
           character(len=80), intent(out)   :: jword
+          logical          , intent(out)   :: success
 
           real(RK) :: abs0,abs1, deltab, deltad, rel0, rel1, s0norm, s1norm, &
                       value, y0norm, y1norm
           integer  :: entry, expone, leveld, levelm
           intrinsic :: abs, int, log10, max, min, mod
-          logical   :: force,success,converged,update_jac
+          logical   :: force,converged,update_jac
           character(len=*), parameter :: id = 'SEARCH:  '
 
           ! *** Initialization. ***
@@ -2615,7 +2624,7 @@ module twopnt_core
 
           ! Turn off all completion flags
           error   = .false.
-          report  = qnull
+          report  = TWOPNT_SUCCESS
           success = .false.
 
           ! Initialize Jacobian counters
@@ -2663,7 +2672,7 @@ module twopnt_core
           update_jac = .false.
           converged  = .false.
 
-          newton_iterations: do while (steps<MAX_NEWTON_ITERATIONS .and. .not.converged)
+          newton_iterations: do while (steps<this%setup%newton_its .and. .not.converged)
 
               ! Evaluate Jacobian at v0. Re-evaluate y0=F(v0) in case F changes when the Jacobian does.
               ! Solve J*s0 = v0; Evaluate relative and absolute errors
@@ -2748,13 +2757,13 @@ module twopnt_core
                     call print_invalid_ranges(id,text,vars,above,below,v0,s0)
                  end if
 
-                 report  = qbnds
+                 report  = TWOPNT_OUT_OF_BOUNDS
                  success = .false.
                  return
               end if
 
               ! Perform a simple backtracking iteration
-              decay_iterations: do while (expone<=MAX_DECAY_ITERATIONS .and. .not.s1norm<s0norm)
+              decay_iterations: do while (expone<=this%setup%backtrack_its .and. .not.s1norm<s0norm)
 
                   ! V1 := V0 - DELTAB DELTAD S0.
                   v1 = v0 - (deltab*deltad)*s0
@@ -2792,7 +2801,7 @@ module twopnt_core
 
               end do decay_iterations
 
-              is_diverging: if (steps>=MAX_NEWTON_ITERATIONS .or. expone>MAX_DECAY_ITERATIONS) then
+              is_diverging: if (steps>=this%setup%newton_its .or. expone>this%setup%backtrack_its) then
 
                  ! Check if we can try restarting this iteration with an updated Jacobian
                  update_jac = age>0
@@ -2804,7 +2813,7 @@ module twopnt_core
                     write (text, 1) id
                  end if
 
-                 report  = qdvrg
+                 report  = TWOPNT_DIVERGING
                  success = .false.
                  return
 
@@ -2826,7 +2835,7 @@ module twopnt_core
           end do newton_iterations
 
           ! SUCCESS!
-          success = steps<MAX_NEWTON_ITERATIONS
+          success = steps<this%setup%newton_its
 
           ! Print summary.
           if (levelm>0 .and. text>0) then
@@ -3065,14 +3074,13 @@ module twopnt_core
           error  = .false.
           report = ' '
           ratio  = zero
-          xrepor = qnull
+          xrepor = TWOPNT_SUCCESS
 
           ! Additional settings initialization
           if (.not.setup%padd) setup%ipadd = vars%pmax
 
           ! Print entry banner
-          string = vnmbr(vnmbrs)
-          if (setup%levelm>0 .and. text>0) write (text, 9) id, precision_flag(), trim(string)
+          if (setup%levelm>0 .and. text>0) write (text, 9) id, precision_flag(), TWOPNT_VERSION, TWOPNT_DATE
 
           ! CHECK THE ARGUMENTS.
           error = .not. (setup%leveld <= setup%levelm)
@@ -3276,7 +3284,7 @@ module twopnt_core
                       end if
 
                       ! ALLOW FURTHER TIME EVOLUTION.
-                      allow = xrepor == qnull
+                      allow = xrepor == TWOPNT_SUCCESS
 
                       ! COMPLETE STATISTICS FOR THE EVOLVE BLOCK.
                       call this%stats%tock(qtimst)
@@ -3325,7 +3333,7 @@ module twopnt_core
 
           ! Informative messages
           9 format(/1X, a9, a, ' (TWO POINT BOUNDARY VALUE PROBLEM) SOLVER,' &
-                        /10X, 'VERSION ', a,' OF APRIL 1998 BY DR. JOSEPH F. GRCAR.')
+                  /10X, 'VERSION ', a,' OF ',a,'.')
           10 format(/1X, a9, a)
           11 format(/1X, a9, 'CALLING SEARCH TO SOLVE THE STEADY STATE PROBLEM.')
           12 format(/1X, a9, 'CALLING REFINE TO PRODUCE A NEW GRID.')
@@ -3525,11 +3533,12 @@ module twopnt_core
       character(len=80) function search_task_summary(xrepor,nsteps) result(string)
          integer, intent(in) :: xrepor,nsteps
          select case (xrepor)
-            case (qdvrg); string = 'DIVERGING'
-            case (qnull); write (string, '(I10, A)') nsteps, ' SEARCH '//merge('STEP ','STEPS',nsteps==1)
-            case (qbnds); string = 'GOING OUT OF BOUNDS'
+            case (TWOPNT_DIVERGING);     string = 'DIVERGING'
+            case (TWOPNT_SUCCESS); write (string, 1) nsteps, merge('STEP ','STEPS',nsteps==1)
+            case (TWOPNT_OUT_OF_BOUNDS); string = 'GOING OUT OF BOUNDS'
             case default; string = '?'
          end select
+         1 format(i10,' SEARCH ',a)
       end function search_task_summary
 
       ! Print summary of an evolve step
@@ -3537,8 +3546,10 @@ module twopnt_core
          integer, intent(in) :: xrepor,steps
          real(RK), intent(in) :: stride
          select case (xrepor)
-            case (qbnds,qdvrg,qnull); write (string, '(I10, A, 1P, E10.1, A)') steps,' TIME STEPS, ',stride, ' LAST STRIDE'
-            case default; string = '?'
+            case (TWOPNT_OUT_OF_BOUNDS,TWOPNT_DIVERGING,TWOPNT_SUCCESS)
+                write (string, '(I10, A, 1P, E10.1, A)') steps,' TIME STEPS, ',stride, ' LAST STRIDE'
+            case default
+                string = '?'
          end select
       end function evolve_task_summary
 
