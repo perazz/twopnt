@@ -327,6 +327,9 @@ module twopnt_core
         !> Counters for all functions
         type(TwoPntSolverStats) :: stats
 
+        !> A Projedure pointer for the Jacobian
+        procedure(twopnt_jacobian), pointer :: jacobian => null()
+
         contains
 
            ! These functions need to be implemented by the user
@@ -393,6 +396,19 @@ module twopnt_core
           type(TwoPntBVPDomain), intent(in) :: vars
           real(RK), intent(inout)  :: u(:)
        end subroutine twopnt_grid_update
+
+       ! Analytical Jacobian subroutine
+       subroutine twopnt_jacobian(this,jac,error,text,buffer,time,stride)
+          import TwoPntBVProblem,TwoPntJacobian,RK
+          implicit none
+          class(TwoPntBVProblem), intent(inout) :: this
+          type (TwoPntJacobian), intent(inout) :: jac
+          logical, intent(out) :: error
+          integer, intent(in)  :: text
+          real(RK), intent(inout) :: buffer(:)
+          logical, intent(in) :: time
+          real(RK), intent(in) :: stride
+       end subroutine twopnt_jacobian
 
     end interface
 
@@ -1931,7 +1947,15 @@ module twopnt_core
              return
           end if
 
-          call finite_diff_jacobian(this,error,text,buffer,time,stride)
+          if (associated(this%jacobian)) then
+             call this%jacobian(this%work%jac,error,text,buffer,time,stride)
+          else
+             call finite_diff_jacobian(this,error,text,buffer,time,stride)
+          end if
+          if (error) then
+            if (text>0) write (text, 1) merge('ANALYTICAL ','FINITE-DIFF',associated(this%jacobian))
+            return
+          endif
 
           call this%stats%tock(qjacob,event=.true.)
 
@@ -1963,7 +1987,7 @@ module twopnt_core
           return
 
           ! Formats section
-!          1 format(/1X, a9, 'ERROR.  THE PROBLEM FUNCTION IS UNDEFINED.')
+          1 format(/1X, a9, 'ERROR RETURNED EVALUATING ',a,' JACOBIAN.')
           2 format(/1X, a9, 'ERROR.  THE MATRIX SPACE IS TOO SMALL.' &
                  //10X, i10, '  COMPS, COMPONENTS' &
                   /10X, i10, '  POINTS' &
