@@ -1903,15 +1903,13 @@ module twopnt_core
           logical ,     intent(in)    :: time
           real(RK),     intent(in)    :: stride
 
-          real(RK) :: delta, temp
-          integer :: block, blocks, cfirst, clast, col, count, diag, j, lda, n, offset, &
-                     rfirst, rlast, row, skip, width
-          intrinsic :: abs, int, max, min, mod, sqrt
-          logical :: found
+          integer :: nzero, diag, lda, n, width
+          intrinsic :: max
 
           ! Parameters
           character(len=*), parameter :: id = 'TWPREP:  '
 
+          ! ***** (1) EVALUATE FINITE-DIFFERENCE JACOBIAN ****
           call this%stats%tick(qjacob)
 
           ! CHECK THE ARGUMENTS.
@@ -1920,20 +1918,90 @@ module twopnt_core
           if (error) return
 
           width = vars%comps + max(vars%comps,vars%groupa,vars%groupb) - 1
-          error = .not. ((3 * width + 2) * n <= jac%asize)
-          if (error) then
-             if (text>0) write (text, 2) id, vars%comps,vars%points,vars%groupa,vars%groupb,n,width,(3*width+2)*n,jac%asize
-             return
-          end if
-
-          ! Initialize counters and pointers
 
           ! Main diagonal row in the packing which places diagonals in rows
           diag = 2 * width + 1
 
           ! Packed row dimension
           lda  = 3 * width + 1
-          skip = 2 * width + 1
+
+          error = .not. ((3 * width + 2) * n <= jac%asize)
+          if (error) then
+             if (text>0) write (text, 2) id, vars%comps,vars%points,vars%groupa,vars%groupb,n,width,(3*width+2)*n,jac%asize
+             return
+          end if
+
+          call finite_diff_jacobian(this,error,text,buffer,time,stride)
+
+          call this%stats%tock(qjacob,event=.true.)
+
+          ! ***** (2) CHECK FOR ZERO COLUMNS. *****
+          nzero = count_zero_columns(jac%a,jac%U,n,diag,lda,width)
+          error = .not. (nzero == 0)
+          if (error) then
+              call print_invalid_rowscols(id,text,vars,jac%U,nzero,.false.)
+              return
+          endif
+
+          ! ***** (3) SCALE THE ROWS. *****
+          nzero = scale_rows(jac%a,jac%U,n,diag,lda,width)
+          error = .not. (nzero == 0)
+          if (error) then
+             call print_invalid_rowscols(id,text,vars,jac%U,nzero,.true.)
+             return
+          end if
+
+          ! ***** (4) FACTOR THE MATRIX.
+          call twgbco(jac%a, lda, n, width, width, jac%pivot, jac%condit, buffer)
+          error = jac%condit == zero
+          if (error) then
+              if (text>0) write (text, 3) id
+              return
+          end if
+          jac%condit = one/jac%condit
+
+          return
+
+          ! Formats section
+!          1 format(/1X, a9, 'ERROR.  THE PROBLEM FUNCTION IS UNDEFINED.')
+          2 format(/1X, a9, 'ERROR.  THE MATRIX SPACE IS TOO SMALL.' &
+                 //10X, i10, '  COMPS, COMPONENTS' &
+                  /10X, i10, '  POINTS' &
+                  /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                  /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                  /10X, i10, '  MATRIX ORDER' &
+                  /10X, i10, '  STRICT HALF BANDWIDTH' &
+                 //10X, i10, '  SPACE REQUIRED' &
+                  /10X, i10, '  ASIZE, PROVIDED')
+          3 format(/1X, a9, 'ERROR.  THE JACOBIAN MATRIX IS SINGULAR.')
+
+      end subroutine twprep
+
+      !> Compute Jacobian using finite differences
+      subroutine finite_diff_jacobian(this,error,text,buffer,time,stride)
+          class(TwoPntBVProblem), intent(inout) :: this
+          logical, intent(out) :: error
+          integer, intent(in)  :: text
+          real(RK), intent(inout) :: buffer(:)
+          logical, intent(in) :: time
+          real(RK), intent(in) :: stride
+
+          integer :: block, blocks, cfirst, clast, col, j, diag, lda, width, n
+          integer :: offset, rfirst, rlast, row, count
+          real(RK) :: delta, temp
+          logical :: found
+
+          associate(vars=>this%domain, jac=>this%work%jac)
+
+          ! Initialize counters and pointers
+          n     = vars%N()
+          width = vars%comps + max(vars%comps,vars%groupa,vars%groupb) - 1
+
+          ! Main diagonal row in the packing which places diagonals in rows
+          diag = 2 * width + 1
+
+          ! Packed row dimension
+          lda  = 3 * width + 1
 
           ! BLOCKS AND BLOCK SIZES
           ! Temporarily store block sizes and pointers in array "pivot"
@@ -2100,61 +2168,20 @@ module twopnt_core
 
           end do column_groups
 
-          call this%stats%tock(qjacob,event=.true.)
+          endassociate
 
-          ! ***** (4) CHECK FOR ZERO COLUMNS. *****
-          call count_zero_columns(jac%a,jac%U,n,diag,lda,width,count)
-          error = .not. (count == 0)
-          if (error) then
-              call print_invalid_rowscols(id,text,vars,jac%U,count,.false.)
-              return
-          endif
-
-          ! ***** (5) SCALE THE ROWS. *****
-          call scale_rows(jac%a,jac%U,n,diag,lda,width,count)
-          error = .not. (count == 0)
-          if (error) then
-             call print_invalid_rowscols(id,text,vars,jac%U,count,.true.)
-             return
-          end if
-
-          ! ***** (6) FACTOR THE MATRIX.
-          call twgbco(jac%a, lda, n, width, width, jac%pivot, jac%condit, buffer)
-          error = jac%condit == zero
-          if (error) then
-              if (text>0) write (text, 3) id
-              return
-          end if
-          jac%condit = one/jac%condit
-
-          return
-
-          ! Formats section
-!          1 format(/1X, a9, 'ERROR.  THE PROBLEM FUNCTION IS UNDEFINED.')
-          2 format(/1X, a9, 'ERROR.  THE MATRIX SPACE IS TOO SMALL.' &
-                 //10X, i10, '  COMPS, COMPONENTS' &
-                  /10X, i10, '  POINTS' &
-                  /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-                  /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-                  /10X, i10, '  MATRIX ORDER' &
-                  /10X, i10, '  STRICT HALF BANDWIDTH' &
-                 //10X, i10, '  SPACE REQUIRED' &
-                  /10X, i10, '  ASIZE, PROVIDED')
-          3 format(/1X, a9, 'ERROR.  THE JACOBIAN MATRIX IS SINGULAR.')
-
-      end subroutine twprep
+      end subroutine finite_diff_jacobian
 
       !> Sum columns, put result in u(1:n), return count of zero columns
-      pure subroutine count_zero_columns(a,u,n,diag,lda,width,count)
+      integer function count_zero_columns(a,u,n,diag,lda,width) result(nzero)
           real(RK), intent(in)    :: a(*)
           real(RK), intent(inout) :: u(*)
           integer , intent(in)    :: n,diag,lda,width
-          integer, intent(out)    :: count
 
           integer :: col,row,offset
           real(RK) :: col_sum
 
-          count = 0
+          nzero = 0
           do col = 1, n
              offset = diag - col + lda * (col - 1)
              col_sum = zero
@@ -2162,23 +2189,22 @@ module twopnt_core
                 col_sum = col_sum + abs (a(offset + row))
              end do
              u(col) = col_sum
-             if (col_sum == zero) count = count + 1
+             if (col_sum == zero) nzero = nzero + 1
           end do
 
-      end subroutine count_zero_columns
+      end function count_zero_columns
 
       !>
-      pure subroutine scale_rows(a,u,n,diag,lda,width,count)
+      integer function scale_rows(a,u,n,diag,lda,width) result(nzero)
           real(RK), intent(inout) :: a(*)
           integer , intent(in)    :: n,diag,lda,width
           real(RK), intent(out)   :: u(n)
-          integer, intent(out)    :: count
 
           integer :: col,row,offset
           real(RK) :: col_sum,temp
           intrinsic :: min, abs, max
 
-          count = 0
+          nzero = 0
           rows: do row = 1, n
              offset = diag + row
              col_sum = zero
@@ -2187,7 +2213,7 @@ module twopnt_core
              end do
 
              if (col_sum == zero) then
-                count = count + 1
+                nzero = nzero + 1
                 u(row) = col_sum
              else
                 temp = one / col_sum
@@ -2200,7 +2226,7 @@ module twopnt_core
              endif
           end do rows
 
-      end subroutine scale_rows
+      end function scale_rows
 
       subroutine print_invalid_rowscols(id,text,vars,a,invalid,rows)
          character(*), intent(in) :: id
