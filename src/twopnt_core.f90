@@ -155,6 +155,10 @@ module twopnt_core
         !> Jacobian condition number
         real(RK) :: condit = zero
 
+        !> Unperturbed solution vector
+        real(RK), allocatable :: U(:)
+
+        ! Jacobian matrix
         real(RK), allocatable :: A(:)
         integer :: ASIZE = 0
         integer, allocatable :: PIVOT(:)
@@ -466,6 +470,7 @@ module twopnt_core
           this%ASIZE = 0
           if (allocated(this%A)) deallocate(this%A)
           if (allocated(this%PIVOT)) deallocate(this%PIVOT)
+          if (allocated(this%U)) deallocate(this%U)
 
        end subroutine jac_destroy
 
@@ -480,6 +485,7 @@ module twopnt_core
           this%ASIZE = (6*vars%comps-1)*vars%comps*vars%pmax
           allocate(this%A(this%ASIZE),source=zero)
           allocate(this%PIVOT(vars%comps*vars%pmax),source=0)
+          allocate(this%U    (vars%comps*vars%pmax),source=zero)
 
        end subroutine jac_init
 
@@ -1556,8 +1562,8 @@ module twopnt_core
           end if
 
           !***** (2) SCALE AND SOLVE THE EQUATIONS. *****
-          buffer(1:n) = buffer(1:n) * jac%a(1:n)
-          call twgbsl(jac%a(n + 1), 3 * width + 1, n, width, width, jac%PIVOT, buffer)
+          buffer(1:n) = buffer(1:n) * jac%U(1:n)
+          call twgbsl(jac%a, 3 * width + 1, n, width, width, jac%PIVOT, buffer)
 
           return
 
@@ -1942,10 +1948,10 @@ module twopnt_core
           ! ***** (2) INITIALIZE THE COLUMNS OF THE MATRIX *****
 
           ! Store evaluation vector
-          jac%a(:n) = buffer(:n)
+          jac%u(:n) = buffer(:n)
 
           ! Clear matrix
-          jac%a(n+1:n+lda*n) = zero
+          jac%a(1:lda*n) = zero
 
           ! EVALUATE THE FUNCTION AT THE UNPERTURBED X.
           call this%fwrap(error,text,vars%points,time,stride,vars%x,buffer)
@@ -1970,7 +1976,7 @@ module twopnt_core
              end if
 
              do col = cfirst, clast
-                offset = n + diag - col + lda * (col - 1)
+                offset = diag - col + lda * (col - 1)
                 do row = rfirst, rlast
                    jac%a(offset + row) = buffer(row)
                 end do
@@ -1984,7 +1990,7 @@ module twopnt_core
               found = .false.
 
               ! Restore the evaluation vector
-              buffer(:n) = jac%a(:n)
+              buffer(:n) = jac%u(:n)
 
               ! Perturb vector at independent positions.
               block = 1
@@ -1994,7 +2000,7 @@ module twopnt_core
                        found = .true.
                        col = cfirst - 1 + jac%pivot(block)
 
-                       delta = relat * abs(jac%a(col)) + absol
+                       delta = relat * abs(jac%u(col)) + absol
 
                        buffer(col) = buffer(col) + delta
                        count = 3
@@ -2028,14 +2034,10 @@ module twopnt_core
                     col = cfirst - 1 + jac%pivot(block)
                     jac%pivot(block) = jac%pivot(block) - 1
 
-                    if (time) then
-                       delta = this%setup%tdrel * abs(jac%A(col)) + this%setup%tdabs
-                    else
-                       delta = this%setup%ssrel * abs(jac%A(col)) + this%setup%ssabs
-                    end if
+                    delta = relat * abs(jac%u(col)) + absol
 
                     temp   = one / delta
-                    offset = n + diag - col + lda * (col - 1)
+                    offset = diag - col + lda * (col - 1)
 
                     if (block == 1 .and. 0 < vars%groupa) then
                        clast = cfirst + vars%groupa - 1
@@ -2065,6 +2067,7 @@ module twopnt_core
                        rlast = clast
                     end if
 
+                    ! Get dF/dS for the row
                     do row=rfirst,rlast
                         jac%a(offset+row) = (buffer(row) - jac%a(offset+row))*temp
                     end do
@@ -2092,23 +2095,23 @@ module twopnt_core
           call this%stats%tock(qjacob,event=.true.)
 
           ! ***** (4) CHECK FOR ZERO COLUMNS. *****
-          call count_zero_columns(jac%a,n,diag,lda,width,count)
+          call count_zero_columns(jac%a,jac%U,n,diag,lda,width,count)
           error = .not. (count == 0)
           if (error) then
-              call print_invalid_rowscols(id,text,vars,jac%a,count,.false.)
+              call print_invalid_rowscols(id,text,vars,jac%U,count,.false.)
               return
           endif
 
           ! ***** (5) SCALE THE ROWS. *****
-          call scale_rows(jac%a,n,diag,lda,width,count)
+          call scale_rows(jac%a,jac%U,n,diag,lda,width,count)
           error = .not. (count == 0)
           if (error) then
-             call print_invalid_rowscols(id,text,vars,jac%a,count,.true.)
+             call print_invalid_rowscols(id,text,vars,jac%U,count,.true.)
              return
           end if
 
           ! ***** (6) FACTOR THE MATRIX.
-          call twgbco(jac%a(n+1), lda, n, width, width, jac%pivot, jac%condit, buffer)
+          call twgbco(jac%a, lda, n, width, width, jac%pivot, jac%condit, buffer)
           error = jac%condit == zero
           if (error) then
               if (text>0) write (text, 3) id
@@ -2133,9 +2136,10 @@ module twopnt_core
 
       end subroutine twprep
 
-      !> Sum columns, put result in a(1:n), return count of zero columns
-      pure subroutine count_zero_columns(a,n,diag,lda,width,count)
-          real(RK), intent(inout) :: a(*)
+      !> Sum columns, put result in u(1:n), return count of zero columns
+      pure subroutine count_zero_columns(a,u,n,diag,lda,width,count)
+          real(RK), intent(in)    :: a(*)
+          real(RK), intent(inout) :: u(*)
           integer , intent(in)    :: n,diag,lda,width
           integer, intent(out)    :: count
 
@@ -2144,21 +2148,22 @@ module twopnt_core
 
           count = 0
           do col = 1, n
-             offset = n + diag - col + lda * (col - 1)
+             offset = diag - col + lda * (col - 1)
              col_sum = zero
              do row = max (col - width, 1), min (col + width, n)
                 col_sum = col_sum + abs (a(offset + row))
              end do
-             a(col) = col_sum
+             u(col) = col_sum
              if (col_sum == zero) count = count + 1
           end do
 
       end subroutine count_zero_columns
 
       !>
-      pure subroutine scale_rows(a,n,diag,lda,width,count)
+      pure subroutine scale_rows(a,u,n,diag,lda,width,count)
           real(RK), intent(inout) :: a(*)
           integer , intent(in)    :: n,diag,lda,width
+          real(RK), intent(out)   :: u(n)
           integer, intent(out)    :: count
 
           integer :: col,row,offset
@@ -2167,7 +2172,7 @@ module twopnt_core
 
           count = 0
           rows: do row = 1, n
-             offset = n + diag + row
+             offset = diag + row
              col_sum = zero
              do col = max (row - width, 1), min (row + width, n)
                 col_sum = col_sum + abs (a(offset - col + lda * (col - 1)))
@@ -2175,10 +2180,10 @@ module twopnt_core
 
              if (col_sum == zero) then
                 count = count + 1
-                a(row) = col_sum
+                u(row) = col_sum
              else
                 temp = one / col_sum
-                a(row) = temp
+                u(row) = temp
 
                 do col = max (row - width, 1), min (row + width, n)
                      a(offset - col + lda * (col - 1)) = &
