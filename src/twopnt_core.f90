@@ -22,7 +22,7 @@
 !
 ! *************************************************************************************************
 module twopnt_core
-    use iso_fortran_env, only: real64
+    use iso_fortran_env, only: real64,output_unit
     implicit none
     private
 
@@ -157,6 +157,9 @@ module twopnt_core
         !> Jacobian condition number
         real(RK) :: condit = zero
 
+        !> A matrix norm
+        real(RK) :: anorm = zero
+
         !> Unperturbed solution vector
         real(RK), allocatable :: U(:)
 
@@ -169,6 +172,15 @@ module twopnt_core
 
            procedure :: init    => jac_init
            procedure :: destroy => jac_destroy
+           procedure :: write   => write_jacobian
+
+           ! Check size
+           procedure :: check_size => jac_check
+
+           ! Conversion
+           procedure :: to_dense => banded_to_dense
+           procedure :: from_dense
+
 
     end type TwoPntJacobian
 
@@ -266,6 +278,9 @@ module twopnt_core
            ! Number of variable groups
            procedure, non_overridable :: groups => count_groups
 
+           ! Get number and sizes of the Jacobian matrix blocks
+           procedure, non_overridable :: blocks => domain_block_sizes
+
            ! Check variable sizes
            procedure, non_overridable :: check => TwoPntBVPDomain_checks
            procedure, non_overridable :: check_onGridUpdate => TwoPntBVPDomain_check_grid
@@ -344,12 +359,14 @@ module twopnt_core
            procedure :: fwrap => fun_wrapper
            procedure :: save  => save_wrapper
            procedure :: grid  => grid_wrapper
-           procedure :: jac_solve
-           procedure :: jac_prep => twprep
+
+           ! Overridable procedure
+           procedure :: jac_finitediff => finite_diff_jacobian
+           procedure :: jac_eval       => finite_diff_jacobian
 
            ! Provide dense algebra implementation of Jacobian handling
            procedure, pass(this) :: prep  => twprep
-           procedure, nopass     :: solve => twsolv
+           procedure, pass(this) :: solve => jac_solve
            procedure, nopass     :: show  => twshow
 
     end type TwoPntBVProblem
@@ -495,15 +512,53 @@ module twopnt_core
           class(TwoPntJacobian), intent(inout) :: this
           type(TwoPntBVPDomain), intent(in) :: vars
 
+          integer :: N
+
           call this%destroy()
 
+          N = vars%comps*vars%pmax
+
           ! Allocate banded space
-          this%ASIZE = (6*vars%comps-1)*vars%comps*vars%pmax
+          this%ASIZE = (6*vars%comps-1)*N
           allocate(this%A(this%ASIZE),source=zero)
-          allocate(this%PIVOT(vars%comps*vars%pmax),source=0)
-          allocate(this%U    (vars%comps*vars%pmax),source=zero)
+          allocate(this%PIVOT(N),source=0)
+          allocate(this%U    (N),source=zero)
 
        end subroutine jac_init
+
+       ! Check Jacobian size
+       subroutine jac_check(this,id,error,text,vars)
+          class(TwoPntJacobian), intent(in) :: this
+          character(*), intent(in) :: id
+          logical, intent(out) :: error
+          integer, intent(in)  :: text
+          type(TwoPntBVPDomain), intent(in) :: vars
+
+          integer :: width,n
+
+          n     = vars%N()
+          width = vars%comps+max(vars%comps,vars%groupa,vars%groupb) - 1
+          error = .not. ((3 * width + 1) * n <= this%ASIZE)
+          if (error) then
+              if (text>0) write (text,1) id, vars%comps,vars%points,vars%groupa,vars%groupb, n, width, &
+                                         (3*width+1)*n, this%ASIZE
+              return
+          end if
+
+          return
+
+          ! Error messages.
+          1 format (/1X, a9, 'ERROR.  THE MATRIX SPACE IS TOO SMALL.' &
+                  //10X, i10, '  COMPS, COMPONENTS' &
+                   /10X, i10, '  POINTS' &
+                   /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
+                   /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
+                   /10X, i10, '  MATRIX ORDER' &
+                   /10X, i10, '  STRICT HALF BANDWIDTH' &
+                  //10X, i10, '  SPACE EXPECTED' &
+                   /10X, i10, '  ASIZE, PROVIDED')
+
+       end subroutine jac_check
 
        ! Indices of groupb variables
        pure function TwoPntBVPDomain_idx_B(this) result(igroupb)
@@ -927,6 +982,33 @@ module twopnt_core
           class(TwoPntBVPDomain), intent(in) :: this
           N = this%COMPS * this%PMAX
        end function TwoPntBVPDomain_max1D
+
+       ! Return number of blocks and their sizes in the jacobian matrix
+       pure subroutine domain_block_sizes(this,nblocks,block_size)
+          class(TwoPntBVPDomain), intent(in) :: this
+          integer, intent(out) :: nblocks
+          integer, intent(out) :: block_size(:)
+
+          integer :: j
+
+          ! BLOCKS AND BLOCK SIZES
+          nblocks = 0
+          if (0 < this%groupa) then
+             nblocks = nblocks + 1
+             block_size(nblocks) = this%groupa
+          end if
+
+          do j = 1, this%points
+             nblocks = nblocks + 1
+             block_size(nblocks) = this%comps
+          end do
+
+          if (0 < this%groupb) then
+             nblocks = nblocks + 1
+             block_size(nblocks) = this%groupb
+          end if
+
+       end subroutine domain_block_sizes
 
        ! Initialize the control structure
        elemental subroutine twinit (this)
@@ -1556,61 +1638,27 @@ module twopnt_core
           logical     , intent(out) :: error
 
           ! Local variables
-          integer   :: n,width
+          integer   :: n,width,lda
           intrinsic :: max
           character(*), parameter :: id = 'TWSOLV:  '
 
-          ! SET TRUE TO PRINT EXAMPLES OF ALL MESSAGES.
-          logical, parameter :: mess = .false.
-
           !***** (1) PROLOGUE *****
-
-          ! WRITE MESSAGES only.
-          if (mess .and. text>0) then
-              write (text, 1) id,vars%comps,vars%points,vars%groupa,vars%groupb,n
-              write (text, 2) id,vars%comps,vars%points,vars%groupa,vars%groupb,n,width,(3*width+2)*n,jac%ASIZE
-              stop
-          end if
 
           ! CHECK THE ARGUMENTS.
           n = vars%N()
           call vars%check(error,id,text)
           if (error) return
 
-          width = vars%comps+max(vars%comps,vars%groupa,vars%groupb) - 1
-          error = .not. ((3 * width + 2) * n <= jac%ASIZE)
-          if (error) then
-              if (text>0) write (text,2) id, vars%comps,vars%points,vars%groupa,vars%groupb, n, width, &
-                                         (3*width+2)*n, jac%ASIZE
-              return
-          end if
+          call jac%check_size(id,error,text,vars)
+          if (error) return
+
+          ! Load solution into buffer
+          width = vars%comps + max(vars%comps,vars%groupa,vars%groupb) - 1
+          lda   = 3 * width + 1
 
           !***** (2) SCALE AND SOLVE THE EQUATIONS. *****
           buffer(1:n) = buffer(1:n) * jac%U(1:n)
-          call twgbsl(jac%a, 3 * width + 1, n, width, width, jac%PIVOT, buffer)
-
-          return
-
-          !Error messages.
-          1 format (/1X, a9, 'ERROR.  NUMBERS OF COMPONENTS AND POINTS MUST BE' &
-                   /10X, 'EITHER BOTH ZERO OR BOTH POSITIVE, NUMBERS OF ALL TYPES' &
-                   /10X, 'OF UNKNOWNS MUST BE AT LEAST ZERO, AND TOTAL UNKNOWNS' &
-                   /10X, 'MUST BE POSITIVE.' &
-                  //10X, i10, '  COMPS, COMPONENTS' &
-                   /10X, i10, '  POINTS' &
-                   /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-                   /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-                   /10X, i10, '  TOTAL UNKNOWNS')
-
-          2 format (/1X, a9, 'ERROR.  THE MATRIX SPACE IS TOO SMALL.' &
-                  //10X, i10, '  COMPS, COMPONENTS' &
-                   /10X, i10, '  POINTS' &
-                   /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-                   /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-                   /10X, i10, '  MATRIX ORDER' &
-                   /10X, i10, '  STRICT HALF BANDWIDTH' &
-                  //10X, i10, '  SPACE EXPECTED' &
-                   /10X, i10, '  ASIZE, PROVIDED')
+          call twgbsl(jac%a, lda, n, width, width, jac%PIVOT, buffer)
 
           return
       end subroutine twsolv
@@ -1941,19 +1989,12 @@ module twopnt_core
           ! Packed row dimension
           lda  = 3 * width + 1
 
-          error = .not. ((3 * width + 2) * n <= jac%asize)
-          if (error) then
-             if (text>0) write (text, 2) id, vars%comps,vars%points,vars%groupa,vars%groupb,n,width,(3*width+2)*n,jac%asize
-             return
-          end if
+          call jac%check_size(id,error,text,vars)
+          if (error) return
 
-          if (associated(this%jacobian)) then
-             call this%jacobian(this%work%jac,error,text,buffer,time,stride)
-          else
-             call finite_diff_jacobian(this,error,text,buffer,time,stride)
-          end if
+          call this%jac_eval(jac,error,text,buffer,time,stride)
           if (error) then
-            if (text>0) write (text, 1) merge('ANALYTICAL ','FINITE-DIFF',associated(this%jacobian))
+            if (text>0) write (text, 1)
             return
           endif
 
@@ -1982,28 +2023,198 @@ module twopnt_core
               if (text>0) write (text, 3) id
               return
           end if
+
           jac%condit = one/jac%condit
 
           return
 
           ! Formats section
-          1 format(/1X, a9, 'ERROR RETURNED EVALUATING ',a,' JACOBIAN.')
-          2 format(/1X, a9, 'ERROR.  THE MATRIX SPACE IS TOO SMALL.' &
-                 //10X, i10, '  COMPS, COMPONENTS' &
-                  /10X, i10, '  POINTS' &
-                  /10X, i10, '  GROUPA, GROUP A UNKNOWNS' &
-                  /10X, i10, '  GROUPB, GROUP B UNKNOWNS' &
-                  /10X, i10, '  MATRIX ORDER' &
-                  /10X, i10, '  STRICT HALF BANDWIDTH' &
-                 //10X, i10, '  SPACE REQUIRED' &
-                  /10X, i10, '  ASIZE, PROVIDED')
+          1 format(/1X, a9, 'ERROR RETURNED EVALUATING JACOBIAN MATRIX.')
           3 format(/1X, a9, 'ERROR.  THE JACOBIAN MATRIX IS SINGULAR.')
 
       end subroutine twprep
 
+      !> Export Jacobian to file as a dense matrix
+      subroutine write_jacobian(jac,domain,fileName)
+          class(TwoPntJacobian), intent(in)  :: jac
+          type(TwoPntBVPDomain), intent(in)  :: domain
+          character(*), intent(in) :: fileName
+
+          integer :: iunit,row
+          real(RK), allocatable :: dense(:,:)
+
+          ! Get dense matrix
+          call jac%to_dense(domain,dense)
+
+          ! Write to disk
+          open(newunit=iunit,file=fileName,form='formatted',action='write')
+          do row=1,size(dense,1)
+             write(iunit,1) dense(row,:)
+          end do
+          close(iunit)
+
+          1 format(*(1x,1pe15.5e3))
+
+      end subroutine write_jacobian
+
+      !> Test matrix roundtrip
+      subroutine jacobian_test_roundtrip()
+          type(TwoPntBVPDomain) :: domain
+          type(TwoPntJacobian) :: jac
+          integer, parameter :: comps=5,points=5,pmax=10
+          integer :: i,j,n,width,lda,ptr
+          real(RK) :: ABOVE(comps) = one, BELOW(comps) = zero
+          logical :: error
+          integer, parameter :: text = output_unit
+          real(RK), allocatable :: fwd(:,:),back(:,:)
+
+          ! Create new domain and Jacobian matrix
+          call domain%new(error,0,0,comps,points,pmax,0,ABOVE,BELOW,'TEST')
+          call jac%init(domain)
+
+          N     = domain%N()
+          width = domain%comps + max(domain%comps,domain%groupa,domain%groupb) - 1
+          lda   = 3 * width + 1 ! Packed row dimension
+          allocate(fwd(N,N),source=zero)
+
+          do j=1,n
+             do i=j-comps,j+comps
+                if (i<=0 .or. i>n) cycle
+                fwd(i,j) = real(i,RK)
+             end do
+          end do
+
+          call jac%from_dense(error,text,domain,fwd)
+          call jac%to_dense(domain,back)
+
+          if (.not.all(fwd==back)) then
+              do j=1,n
+                 do i=j-comps,j+comps
+                    if (i<=0 .or. i>n) cycle
+                    ptr = dense_to_banded_pointer(N,i,j,lda,width,width)
+                    print 1, 'fwd',i,j,fwd(i,j),'back',i,j,back(i,j)
+                 end do
+              end do
+              stop 'Banded<=>Dense roundtrip failed'
+          end if
+
+          1 format(2(a,'(',i2,',',i2,')=',1pe15.5e3,:,';'))
+
+      end subroutine jacobian_test_roundtrip
+
+      !> Expand banded storage to a dense matrix
+      subroutine banded_to_dense(jac,domain,dense)
+          class(TwoPntJacobian), intent(in)  :: jac
+          type(TwoPntBVPDomain), intent(in)  :: domain
+
+          real(RK), allocatable, intent(out) :: dense(:,:)
+
+          integer :: n,width,diag,lda,row,col,i1,i2,offset
+          intrinsic :: min, max
+
+          n     = domain%N()
+          width = domain%comps + max(domain%comps,domain%groupa,domain%groupb) - 1
+          diag  = 2 * width + 1
+          lda   = 3 * width + 1
+
+          ! Allocate matrix
+          allocate(dense(N,N),source=zero)
+
+          do col = 1, n
+             offset = diag - col + lda * (col - 1)
+             i1 = max(1,col-width)
+             i2 = min(n,col+width)
+             do row = i1, i2
+                dense(row,col) = jac%A(offset + row)
+             end do
+          end do
+
+      end subroutine banded_to_dense
+
+      !> Load Jacobian from a dense matrix
+      subroutine from_dense(jac,error,text,domain,dense)
+          class(TwoPntJacobian), intent(inout) :: jac
+          type(TwoPntBVPDomain), intent(in)    :: domain
+          real(RK)             , intent(in)    :: dense(:,:)
+          logical              , intent(out)   :: error
+          integer              , intent(in)    :: text
+
+          integer :: n,width,lda,col,i1,i2,row,ptr
+          character(len=*), parameter :: id = 'JACOBI:  '
+
+
+          !> Matrix sizes
+          n     = domain%N()
+          width = domain%comps + max(domain%comps,domain%groupa,domain%groupb) - 1
+          lda   = 3 * width + 1 ! Packed row dimension
+          error = .false.
+
+          !> Check dense matrix size
+          if (any(shape(dense)/=N)) then
+              error = .true.
+              if (text>0) write (text,1) N, shape(dense)
+              return
+          end if
+
+          !> Check Jacobian storage
+          call jac%check_size(id,error,text,domain)
+          if (error) return
+
+          ! Cleanup space
+          jac%A(1:lda*n) = zero
+
+          ! if a  is a band matrix, the following program segment will set up the input.
+          do col = 1, n
+             i1 = max(1, col-width)
+             i2 = min(n, col+width)
+             do row = i1, i2
+                ptr = dense_to_banded_pointer(N,row,col,lda,width,width)
+                if (ptr>0) jac%A(ptr) = dense(row,col)
+             end do
+
+             !if (col==1) print *, 'COLUMN ',col,' ROW RANGE = ',i1,i2
+             !if (col==1) print *, 'FIRST ROW = ',jac_dense(:,col)
+
+          end do
+
+
+          1 format(/1X, a9,  'ERROR. DENSE MATRIX INPUT HAS INVALID SIZE.' &
+                 //10X, i10, '  PROBLEM UNKNOWNS ' &
+                  /10X, i10, '  INPUT MATRIX ROWS' &
+                  /10X, i10, '  INPUT MATRIX COLUMNS')
+
+      end subroutine from_dense
+
+      ! Convert dense (i,j) row/column indices to packed banded storage pointer
+      elemental integer function dense_to_banded_pointer(N,i,j,lda,ml,mu) result(ptr)
+          integer, intent(in) :: N      ! Matrix size A(N,N)
+          integer, intent(in) :: i,j    ! Row, column index
+          integer, intent(in) :: lda    ! Row storage of the packed band matrix AP(lda,n)
+          integer, intent(in) :: ml, mu ! Left, upper bandwidth
+
+          integer :: m,i1,i2,k
+
+          ! Total band size: upper + lower + diagonal
+          m = ml + mu + 1
+
+          ! Valid row bounds at the current column
+          i1 = max(1, j-mu)
+          i2 = min(n, j+ml)
+
+          if (i>=i1 .and. i<=i2 .and. j>0 .and. j<=n) then
+             k   = i - j + m      ! A(I,J)  <=> AP(K,J)
+             ptr = lda*(j-1) + k  ! AP(K,J) <=> ARRAY(PTR)
+          else
+             ! Invalid row/column range
+             ptr = 0
+          end if
+
+      end function dense_to_banded_pointer
+
       !> Compute Jacobian using finite differences
-      subroutine finite_diff_jacobian(this,error,text,buffer,time,stride)
+      subroutine finite_diff_jacobian(this,jac,error,text,buffer,time,stride)
           class(TwoPntBVProblem), intent(inout) :: this
+          type(TwoPntJacobian), intent(inout) :: jac
           logical, intent(out) :: error
           integer, intent(in)  :: text
           real(RK), intent(inout) :: buffer(:)
@@ -2015,7 +2226,7 @@ module twopnt_core
           real(RK) :: delta, temp
           logical :: found
 
-          associate(vars=>this%domain, jac=>this%work%jac)
+          associate(vars=>this%domain)
 
           ! Initialize counters and pointers
           n     = vars%N()
@@ -2027,23 +2238,8 @@ module twopnt_core
           ! Packed row dimension
           lda  = 3 * width + 1
 
-          ! BLOCKS AND BLOCK SIZES
-          ! Temporarily store block sizes and pointers in array "pivot"
-          blocks = 0
-          if (0 < vars%groupa) then
-             blocks = blocks + 1
-             jac%pivot(blocks) = vars%groupa
-          end if
-
-          do j = 1, vars%points
-             blocks = blocks + 1
-             jac%pivot(blocks) = vars%comps
-          end do
-
-          if (0 < vars%groupb) then
-             blocks = blocks + 1
-             jac%pivot(blocks) = vars%groupb
-          end if
+          ! BLOCKS AND BLOCK SIZES (Temporarily store sizes in PIVOT)
+          call vars%blocks(blocks,jac%PIVOT)
 
           ! ***** (2) INITIALIZE THE COLUMNS OF THE MATRIX *****
 
@@ -2058,6 +2254,10 @@ module twopnt_core
           if (error) return
 
           ! Place function values into the matrix.
+
+          ! cfirst:clast = column range of this block
+          ! rfirst:rlast = row    range of this block
+
           clast = 0
           do block = 1, blocks
              cfirst = clast + 1
@@ -2193,6 +2393,9 @@ module twopnt_core
           end do column_groups
 
           endassociate
+
+          ! Write jacobian and stop for now
+          call jac%write(this%domain,'dat.jacobian_finitediff')
 
       end subroutine finite_diff_jacobian
 
@@ -2420,7 +2623,7 @@ module twopnt_core
       time_integration: do while (step < last)
 
           ! Increase dt if possible
-          if (age==setup%steps2) new_dt = increase_timestep(setup,low,high,stride,age,exist)
+          if (age>=setup%steps2) new_dt = increase_timestep(setup,low,high,stride,age,exist)
           if (levelm>1 .and. text>0) then
              if (new_dt) then
                 write (text, 10) id, step, yword, log10(stride)
@@ -2719,7 +2922,9 @@ module twopnt_core
           ! Number of steps
           steps      = 0
           age        = 0
-          update_jac = .false.
+          deltab     = one
+          deltad     = one
+          update_jac = age>=xxage
           converged  = .false.
 
           newton_iterations: do while (steps<this%setup%newton_its .and. .not.converged)
@@ -2733,7 +2938,7 @@ module twopnt_core
                   call twcopy(vars%N(),v0,buffer)
 
                   ! Prepare Jacobian
-                  call this%jac_prep(error,text,jac,buffer,vars,time,stride)
+                  call this%prep(error,text,jac,buffer,vars,time,stride)
 
                   ! Update condition number
                   jcount = jcount + 1
@@ -2766,7 +2971,7 @@ module twopnt_core
 
                   ! SOLVE J S0 = Y0.
                   buffer = y0
-                  call this%jac_solve(error,text,jac,buffer,vars)
+                  call this%solve(error,text,jac,buffer,vars)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'SOLVE'
                       return
@@ -2780,7 +2985,7 @@ module twopnt_core
 
               endif update_F
 
-              ! CHOOSE DELTAB.
+              ! Choose max damping coefficient that keeps solution within bounds
               call newton_damping(v0,s0,above,below,deltab,force,entry,value)
 
               error = deltab < zero
@@ -2834,7 +3039,7 @@ module twopnt_core
 
                   ! SOLVE J*S1 = Y1
                   buffer = y1
-                  call this%jac_solve(error,text,jac,buffer,vars)
+                  call this%solve(error,text,jac,buffer,vars)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'SOLVE'
                       return
@@ -2844,6 +3049,7 @@ module twopnt_core
 
                   ! Check convergence (abs1, rel1)
                   call check_convergence(xxrel,xxabs,v1,s1,abs1,rel1,converged)
+                  if (converged) exit newton_iterations
 
                   ! Check progress
                   deltad = half * deltad
@@ -2851,7 +3057,7 @@ module twopnt_core
 
               end do decay_iterations
 
-              is_diverging: if (steps>=this%setup%newton_its .or. expone>this%setup%backtrack_its) then
+              is_diverging: if (steps>this%setup%newton_its .or. expone>this%setup%backtrack_its) then
 
                  ! Check if we can try restarting this iteration with an updated Jacobian
                  update_jac = age>0
@@ -2904,7 +3110,6 @@ module twopnt_core
              end if
           end if
 
-          success = .true.
           return
           endassociate
 
