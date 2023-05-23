@@ -180,6 +180,7 @@ module twopnt_core
            ! Conversion
            procedure :: to_dense => banded_to_dense
            procedure :: from_dense
+           procedure :: from_csr
 
 
     end type TwoPntJacobian
@@ -1638,7 +1639,7 @@ module twopnt_core
           logical     , intent(out) :: error
 
           ! Local variables
-          integer   :: n,width,lda
+          integer   :: n,width,lda,info
           intrinsic :: max
           character(*), parameter :: id = 'TWSOLV:  '
 
@@ -1967,7 +1968,7 @@ module twopnt_core
           logical ,     intent(in)    :: time
           real(RK),     intent(in)    :: stride
 
-          integer :: nzero, diag, lda, n, width
+          integer :: nzero, diag, lda, n, width, info
           intrinsic :: max
 
           ! Parameters
@@ -2062,7 +2063,7 @@ module twopnt_core
           type(TwoPntBVPDomain) :: domain
           type(TwoPntJacobian) :: jac
           integer, parameter :: comps=5,points=5,pmax=10
-          integer :: i,j,n,width,lda,ptr
+          integer :: i,j,n,width,lda
           real(RK) :: ABOVE(comps) = one, BELOW(comps) = zero
           logical :: error
           integer, parameter :: text = output_unit
@@ -2091,8 +2092,8 @@ module twopnt_core
               do j=1,n
                  do i=j-comps,j+comps
                     if (i<=0 .or. i>n) cycle
-                    ptr = dense_to_banded_pointer(N,i,j,lda,width,width)
                     print 1, 'fwd',i,j,fwd(i,j),'back',i,j,back(i,j)
+                    print *, 'ptr = ',dense_to_banded_pointer(N,i,j,lda,width,width),' jac%A=',jac%A(dense_to_banded_pointer(N,i,j,lda,width,width))
                  end do
               end do
               stop 'Banded<=>Dense roundtrip failed'
@@ -2152,7 +2153,7 @@ module twopnt_core
           !> Check dense matrix size
           if (any(shape(dense)/=N)) then
               error = .true.
-              if (text>0) write (text,1) N, shape(dense)
+              if (text>0) write (text,1) id, N, shape(dense)
               return
           end if
 
@@ -2172,9 +2173,6 @@ module twopnt_core
                 if (ptr>0) jac%A(ptr) = dense(row,col)
              end do
 
-             !if (col==1) print *, 'COLUMN ',col,' ROW RANGE = ',i1,i2
-             !if (col==1) print *, 'FIRST ROW = ',jac_dense(:,col)
-
           end do
 
 
@@ -2184,6 +2182,56 @@ module twopnt_core
                   /10X, i10, '  INPUT MATRIX COLUMNS')
 
       end subroutine from_dense
+
+      !> Load Jacobian from a CSR sparse matrix
+      subroutine from_csr(jac,error,text,domain,IA,JA,A)
+          class(TwoPntJacobian), intent(inout) :: jac
+          type(TwoPntBVPDomain), intent(in)    :: domain
+          integer              , intent(in)    :: IA(:),JA(:)
+          real(RK)             , intent(in)    :: A(:)
+          logical              , intent(out)   :: error
+          integer              , intent(in)    :: text
+
+          integer :: n,width,lda,col,j,j1,j2,row,ptr
+          character(len=*), parameter :: id = 'JACOBI:  '
+
+          !> Matrix sizes
+          N     = domain%N()
+          width = domain%comps + max(domain%comps,domain%groupa,domain%groupb) - 1
+          lda   = 3 * width + 1 ! Packed row dimension
+          error = .false.
+
+          !> Check dense matrix size
+          if (size(IA)/=N+1 .or. size(JA)/=IA(N+1)-1) then
+              error = .true.
+              if (text>0) write (text,1) id, N, size(IA)-1, IA(N+1)-1
+              return
+          end if
+
+          !> Check Jacobian storage
+          call jac%check_size(id,error,text,domain)
+          if (error) return
+
+          ! Cleanup space
+          jac%A(1:lda*n) = zero
+
+          ! if a  is a band matrix, the following program segment will set up the input.
+          do row=1,N
+             j1 = IA(row)
+             j2 = IA(row+1)-1
+             do j = j1,j2
+                col = JA(j)
+                ptr = dense_to_banded_pointer(N,row,col,lda,width,width)
+                if (ptr>0) jac%A(ptr) = A(j)
+             end do
+          end do
+
+          1 format(/1X, a9,  'ERROR. CSR MATRIX INPUT HAS INVALID SIZE.' &
+                 //10X, i10, '  PROBLEM UNKNOWNS ' &
+                  /10X, i10, '  INPUT MATRIX ROWS ' &
+                  /10X, i10, '  INPUT MATRIX NONZEROS')
+
+      end subroutine from_csr
 
       ! Convert dense (i,j) row/column indices to packed banded storage pointer
       elemental integer function dense_to_banded_pointer(N,i,j,lda,ml,mu) result(ptr)
@@ -3320,6 +3368,8 @@ module twopnt_core
 
           character(len=80) :: string,jword
 
+          !call jacobian_test_roundtrip()
+
           associate(setup=>this%setup,vars=>this%domain,work=>this%work)
 
           !***** ENTRY BLOCK.  INITIALIZE A NEW PROBLEM. *****
@@ -3613,7 +3663,7 @@ module twopnt_core
           integer :: j
           logical :: error
 
-          if (text==0) return
+          if (text==0 .or. setup%levelm<=0) return
 
           column(:) = ' '
           string    = ' '
@@ -3648,10 +3698,8 @@ module twopnt_core
 
              case (qsearc)
 
-                if (setup%levelm>0) then
-                    if (maxcon/=zero) call twlogr(column(3),maxcon)
-                    string = search_task_summary(xrepor,search_steps)
-                endif
+                if (maxcon/=zero) call twlogr(column(3),maxcon)
+                string = search_task_summary(xrepor,search_steps)
 
                 ! Level 2
                 if (setup%levelm>1) then
@@ -3664,10 +3712,8 @@ module twopnt_core
 
              case (qtimst)
 
-                if (setup%levelm>0) then
-                   if (maxcon/=zero) call twlogr(column(3),maxcon)
-                   string = evolve_task_summary(xrepor,time_steps,stride)
-                endif
+                if (maxcon/=zero) call twlogr(column(3),maxcon)
+                string = evolve_task_summary(xrepor,time_steps,stride)
 
                 ! Level 2
                 if (setup%levelm>1) then
@@ -3682,6 +3728,8 @@ module twopnt_core
                 write (text, '()')
                 string = refine_step_summary(ratio,found,vars%points)
           end select
+
+          ! Write step
           write (text, 10023) column,trim(string)
 
           return
@@ -3719,7 +3767,8 @@ module twopnt_core
              call this%show(error,text,u,vars,.true.)
          endif
 
-         call stats%print_stats(text,setup%adapt)
+         ! If detailed output, print CPU time stats
+         if (setup%leveld>0) call stats%print_stats(text,setup%adapt)
 
          ! Report the completion status.
          if (setup%levelm>0) then
