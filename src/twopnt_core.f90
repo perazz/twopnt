@@ -2442,9 +2442,6 @@ module twopnt_core
 
           endassociate
 
-          ! Write jacobian and stop for now
-          call jac%write(this%domain,'dat.jacobian_finitediff')
-
       end subroutine finite_diff_jacobian
 
       !> Sum columns, put result in u(1:n), return count of zero columns
@@ -2794,6 +2791,8 @@ module twopnt_core
       success = step>first
       if (step<last) report = xrepor
 
+      time = .false.
+
       return
       endassociate
 
@@ -3007,24 +3006,22 @@ module twopnt_core
               update_F: if (age==0 .or. steps==0) then
 
                   ! EVALUATE Y0 := F(V0).
-                  buffer = v0
-                  call this%fwrap(error,text,vars%points,time,stride,vars%x,buffer)
+                  y0 = v0
+                  call this%fwrap(error,text,vars%points,time,stride,vars%x,y0)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'RESIDUAL'
                       return
                   end if
-                  y0     = buffer
                   y0norm = twnorm(vars%N(),y0)
                   y1norm = y0norm
 
                   ! SOLVE J S0 = Y0.
-                  buffer = y0
-                  call this%solve(error,text,jac,buffer,vars)
+                  s0 = y0
+                  call this%solve(error,text,jac,s0,vars)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'SOLVE'
                       return
                   end if
-                  s0     = buffer
                   s0norm = twnorm(vars%N(),s0)
 
                   ! Check for success
@@ -3056,7 +3053,7 @@ module twopnt_core
                  if (update_jac) cycle newton_iterations
 
                  if (levelm>0 .and. text>0) then
-                    call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,jac%condit)
+                    call print_newton_step(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,jac%condit)
                     call print_invalid_ranges(id,text,vars,above,below,v0,s0)
                  end if
 
@@ -3086,13 +3083,12 @@ module twopnt_core
                   y1norm = twnorm(vars%N(), y1)
 
                   ! SOLVE J*S1 = Y1
-                  buffer = y1
-                  call this%solve(error,text,jac,buffer,vars)
+                  s1 = y1
+                  call this%solve(error,text,jac,s1,vars)
                   if (error) then
                       if (levelm>0 .and. text>0) write (text, 5) id, 'SOLVE'
                       return
                   end if
-                  s1     = buffer
                   s1norm = twnorm(vars%N(), s1)
 
                   ! Check convergence (abs1, rel1)
@@ -3113,7 +3109,7 @@ module twopnt_core
 
                  ! Failed too many times.
                  if (levelm>0 .and. text>0) then
-                    call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,jac%condit)
+                    call print_newton_step(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,jac%condit)
                     write (text, 1) id
                  end if
 
@@ -3125,7 +3121,7 @@ module twopnt_core
 
               ! Print summary.
               if (levelm>0 .and. text>0) &
-              call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,jac%condit)
+              call print_newton_step(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,jac%condit)
 
               ! Advance step
               steps  = steps + 1
@@ -3143,7 +3139,7 @@ module twopnt_core
 
           ! Print summary.
           if (levelm>0 .and. text>0) then
-             call print_newt_summary(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,jac%condit)
+             call print_newton_step(text,steps,y0norm,s0norm,abs0,rel0,deltab,deltad,jac%condit)
 
              if (leveld>0) then
                 ! Ask to display the final solution
@@ -3246,7 +3242,7 @@ module twopnt_core
 
       end subroutine newton_damping
 
-      subroutine print_newt_summary(text,number,y0nrm,s0nrm,eabs,erel,db,dd,condit)
+      subroutine print_newton_step(text,number,y0nrm,s0nrm,eabs,erel,db,dd,condit)
           integer, intent(in) :: text
           integer, intent(in) :: number ! of iterations
           real(RK), intent(in) :: y0nrm,s0nrm
@@ -3272,7 +3268,7 @@ module twopnt_core
 
           1 format(10X, i6, 3(3X, a6), 2(3X, a6, 2X, a6))
 
-      end subroutine print_newt_summary
+      end subroutine print_newton_step
 
       subroutine print_evolve_header(text,id,levelm,step,ynorm,stride)
           integer, intent(in) :: text,levelm,step
@@ -3417,8 +3413,7 @@ module twopnt_core
           call work%store_solution(u,vars,setup%adapt)
 
           ! Save the last solution
-          call twcopy (vars%N(), from=u, to=work%buffer)
-          call this%save(error,vars,work%buffer)
+          call this%save(error,vars,u)
 
           ! PRINT LEVELS 11, 21, AND 22.
           if (setup%leveld>0 .and. text>0) then
