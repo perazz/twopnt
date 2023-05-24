@@ -2063,7 +2063,7 @@ module twopnt_core
           type(TwoPntBVPDomain) :: domain
           type(TwoPntJacobian) :: jac
           integer, parameter :: comps=5,points=5,pmax=10
-          integer :: i,j,n,width,lda
+          integer :: i,j,n,width,lda,ptr
           real(RK) :: ABOVE(comps) = one, BELOW(comps) = zero
           logical :: error
           integer, parameter :: text = output_unit
@@ -2092,8 +2092,9 @@ module twopnt_core
               do j=1,n
                  do i=j-comps,j+comps
                     if (i<=0 .or. i>n) cycle
+                    ptr = dense_to_banded_pointer(n,i,j,lda,width,width)
                     print 1, 'fwd',i,j,fwd(i,j),'back',i,j,back(i,j)
-                    print *, 'ptr = ',dense_to_banded_pointer(N,i,j,lda,width,width),' jac%A=',jac%A(dense_to_banded_pointer(N,i,j,lda,width,width))
+                    print *, 'ptr = ',ptr,' jac%A=',jac%A(ptr)
                  end do
               end do
               stop 'Banded<=>Dense roundtrip failed'
